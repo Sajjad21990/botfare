@@ -15,10 +15,11 @@
 | 2. Real money and dashboards | Tue 10 | ✅ Done (one optional item needs you) | 10 / 11 |
 | 3. Agent detection, AI and polish | Wed 11 | 🔄 Built two days early; Log in with PayPal needs you | 8 / 9 |
 | 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 8 / 8 |
+| 3c. Signed receipts (proof of payment, delivery, sourcing) | Mon 9 | 🔄 In progress | 0 / 5 |
 | 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
 | 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
 
-**Overall: about 74% done** (45 of 61 items); ahead of the plan. Next: deploy to Render, then run one live Fare Court verdict and one Fare Advisor recommendation with `ANTHROPIC_API_KEY` set.
+**Overall: about 68% done** (45 of 66 items); ahead of the plan. Next: deploy to Render, then run one live Fare Court verdict and one Fare Advisor recommendation with `ANTHROPIC_API_KEY` set.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -99,6 +100,18 @@ Why: micropayments fail on the *decision* cost, not the technology (Szabo 1999, 
 | ✅ | Integration, e2e coverage, review and fixes | `pnpm seed:traffic` tells the Advisor story (premium roundup declined as "Thin listicle, not worth 50¢", burr-basics and dialing-in cited); e2e 25/25 on 3100/4100 (9 new Fare checks, optional AI check with `E2E_AI=1`); 575 unit and DB tests; build and spike 05 pass |
 | ✅ | Fare review: 10 confirmed findings fixed, each with a regression test | Dispute HTML-to-text is one linear, capped pass and runs only after the window, attestation and digest checks (1 MB of unclosed `<a` took minutes, now ms); attested `Content-Type` stored as its media type and given to the judge inside `<case>`; decline notes need a price the page really has, one per key and page (no query strings), three per owner, page and day; telemetry drops control-character events one by one and keeps 20,000 per publisher per day; the funnel counts each rule at its current price only (no AI advice until agents see a new price); "Disputed · refunded" totals Fare Court refunds only; the SDK and the research agent return a paid redirect with its receipt instead of following it; each publisher persona sign-in puts one dispute back in review; weekly Render cron `botfare-demo-refresh` (`pnpm seed:traffic --weekly`) keeps the story inside the 14-day window, and offers and citations count each run's own purchases once |
 
+## Phase 3c: Signed receipts 🔄 (0 / 5)
+
+Why: everything else proves agents and publishers are honest; signed receipts let anyone check BotFare too. See [`docs/PLAN.md`](PLAN.md), decision 18.
+
+| | Task | Notes |
+| --- | --- | --- |
+| ⏳ | Contract: payment, delivery and refund statements, receipt key directory (JWKS), browser-safe verifier | `@botfare/contracts/receipts` |
+| ⏳ | BotFare signs statements (Ed25519 JWS): payment at settle (in `PAYMENT-RESPONSE` `extra.botfareReceipt`), delivery at attestation, refund at refund; key from a secret seed; JWKS endpoint | Key rotation by `kid` |
+| ⏳ | Agent side: SDK `verifyReceipt()`, signed receipts in MCP results, research agent sources manifest | |
+| ⏳ | ⭐ Public `/verify` page and "Verify sources" panel on the research agent's answer (verification runs in the browser) | Demo: three green checks per source |
+| ⏳ | Integration, e2e, review, "Trust and cryptography" write-up (README, landing) | |
+
 ## Phase 4: Deploy to Render ⏳
 
 Deploying is the last build step, by choice. It must happen by Wednesday night so the live demo can be checked before recording.
@@ -149,3 +162,4 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | 8 Nov | Sites created before detection keep their behaviour (`chargeKnownBots` on → known-bots, off → off); new sites start at known-bots; Crema Notes runs at standard |
 | 9 Nov | AI on every side of the fare: build Fare Court (AI micro-dispute arbitration with digest-attested delivery) and Fare Advisor (pricing from agents' decline reasons, paid, cited and disputed reads) now; Allowance moves to the backlog |
 | 8 Nov (evening) | Fare Court's per-key limits do not fit the shared demo research key every judge uses: it gets 200 disputes a day and no dispute-rate rule, so instant refunds keep working for the next judge; every other key keeps `DISPUTE_POLICY` |
+| 9 Nov | Signed receipts (payment, delivery, refund statements; JWKS; Verify sources). Tamper-evident ledger is a stretch; zkTLS delivery proofs go to What's next |

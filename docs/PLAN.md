@@ -70,6 +70,14 @@ These come from the research on 8 Nov and override anything older in this doc or
     - Demo: "0 of 23 agents bought Premium roundup at 50¢; 14 said thin listicle. Suggested 8¢." Apply, and the next agent run buys it.
 17. **Allowance (plain-English budgets, approvals, Vault, authorize-and-void undo window) moves to the backlog** and to "What's next" on Devpost; full Allowance is a second product domain and would dilute the x402 story this week.
 
+## Decisions (9 Nov): signed receipts
+
+18. **Signed receipts: proof of payment, delivery and sourcing.** BotFare already proves agents and publishers are honest (signed payments, signed agent requests, delivery digests); signed receipts let anyone check BotFare too, without asking its database.
+    - At settlement BotFare signs a **payment statement** (Ed25519 JWS, `typ: botfare-receipt+jwt`): receipt, payer key, site, URL, amount, 95/5 split, time, detection signal. It travels in the x402 `PAYMENT-RESPONSE` (`extra.botfareReceipt`). When the publisher attests the delivered bytes, BotFare signs a **delivery statement** (receipt + RFC 9530 content digest); a refund gets a signed **refund statement**.
+    - Public keys are published as a JWKS; verification works offline in Node and in the browser (`@botfare/contracts/receipts`), on a public `/verify` page, through `verifyReceipt()` in the SDK, and in the MCP tools.
+    - The research agent's answer carries a **sources manifest**; a "Verify sources" panel checks, in the browser, that each cited page was paid (BotFare signature), delivered (signed digest) and that the bytes the agent read match. "This answer paid for its sources, and you can verify every one."
+    - Honest limit: a signed receipt proves BotFare issued it and cannot deny it; it does not prove BotFare never edits history. A tamper-evident ledger (signed Merkle checkpoints) is the stretch for that.
+
 ## Problem
 
 AI agents read pages and call APIs for free, and the one open standard for paying per request can't settle to the payment accounts most people already have.
