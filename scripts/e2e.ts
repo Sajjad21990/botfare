@@ -1,12 +1,27 @@
 /**
- * `pnpm e2e`: Phase 1 end to end on real processes and the local Postgres.
+ * `pnpm e2e`: end to end on real processes and the local Postgres.
  *
- * Starts the BotFare web app (next dev on :3000, reused if already up) and the Crema Notes demo
- * (:4000) with the values `pnpm seed` wrote to .env, then pays for content with the agent SDK
- * and checks every ledger movement. Prints PASS / FAIL lines and exits non-zero on any FAIL.
- * Set E2E_VERBOSE=1 to stream the child processes' logs.
+ * Starts the BotFare web app (reused if already up on WEB_PORT) and the Crema Notes demo
+ * (DEMO_PORT) with the values `pnpm seed` wrote to .env, then pays for content with the agent SDK
+ * and checks every ledger movement, and checks agent detection (who pays, and why) against the
+ * seeded Crema Notes settings (standard level, Turnstile test key). Prints PASS / FAIL lines and
+ * exits non-zero on any FAIL.
+ *
+ * Environment:
+ * - WEB_PORT (default 3000), DEMO_PORT (default 4000): run beside a dev setup with
+ *   `WEB_PORT=3100 DEMO_PORT=4100 E2E_WEB=start pnpm e2e`.
+ * - E2E_WEB: how to start the web app when nothing answers on WEB_PORT: `dev` (next dev, the
+ *   default) or `start` (next start on the last `pnpm --filter @botfare/web build`; use it when a
+ *   next dev already runs on another port, since Next allows one dev server per app directory).
+ * - E2E_VERBOSE=1 streams the child processes' logs.
+ *
+ * The human-check step posts Cloudflare's dummy Turnstile token, so the demo calls Cloudflare's
+ * real siteverify with the always-pass test secret: it needs network access.
  */
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import {
   AGENT_HEADER,
   decodeAgentKey,
@@ -21,9 +36,11 @@ import {
   createDb,
   type Db,
   getAgentKeyById,
+  getReceipt,
   getSite,
   listReceipts,
 } from "@botfare/core";
+import { BOTFARE_SIGNAL_EXTRA, HUMAN_CHECK_PATH, HUMAN_PASS_COOKIE } from "@botfare/express";
 import { BotFareSpendLimitError, createBotFareAgent, type WireEvent } from "@botfare/sdk";
 import { PAYPAL_SANDBOX, PrepaidPayPalClient } from "@botfare/x402-paypal";
 import { decodePaymentRequiredHeader, decodePaymentSignatureHeader } from "@x402/core/http";
@@ -32,13 +49,44 @@ import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@
 import type { JWK } from "jose";
 import { loadRootEnv, ROOT, requireEnv } from "./lib/env-file";
 
-const WEB_PORT = 3000;
-const DEMO_PORT = 4000;
+function port(name: string, fallback: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    throw new Error(`${name} must be a TCP port, got ${process.env[name]}`);
+  }
+  return value;
+}
+
+const WEB_PORT = port("WEB_PORT", 3000);
+const DEMO_PORT = port("DEMO_PORT", 4000);
+const WEB_MODE = process.env.E2E_WEB === "start" ? "start" : "dev";
 const WEB_URL = `http://localhost:${WEB_PORT}`;
 const DEMO_URL = `http://localhost:${DEMO_PORT}`;
 const VERBOSE = process.env.E2E_VERBOSE === "1";
-const BROWSER_UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+
+/** What Chrome 130 on macOS sends for a top-level navigation (a person clicking a link). */
+const CHROME_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Sec-Ch-Ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+  "Sec-Ch-Ua-Mobile": "?0",
+  "Sec-Ch-Ua-Platform": '"macOS"',
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-User": "?1",
+  "Sec-Fetch-Dest": "document",
+  "Upgrade-Insecure-Requests": "1",
+};
+const HEADLESS_CHROME_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/130.0.0.0 Safari/537.36";
+const GPTBOT_UA =
+  "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.2; +https://openai.com/gptbot";
+/** Cloudflare's dummy token: what the test site key's widget yields; the test secret accepts it. */
+const TURNSTILE_DUMMY_TOKEN = "XXXX.DUMMY.TOKEN.XXXX";
 
 // ---------------------------------------------------------------------------------------------
 // Output
@@ -211,6 +259,30 @@ function expectDelta(
   }
 }
 
+/** The detection signal botfare() put in a 402's requirements (`accepts[0].extra.botfareSignal`). */
+function signalOf(response: Response): unknown {
+  const header = response.headers.get("PAYMENT-REQUIRED");
+  if (!header) return undefined;
+  return decodePaymentRequiredHeader(header).accepts[0]?.extra?.[BOTFARE_SIGNAL_EXTRA];
+}
+
+/** A raw @x402/fetch client (no BotFare SDK, no agent header) sending the given User-Agent. */
+function rawPayingFetch(userAgent: string, keyId: string, privateJwk: unknown) {
+  const sentAgentHeader: boolean[] = [];
+  const base: typeof fetch = (input, init) => {
+    const request = new Request(input, init);
+    sentAgentHeader.push(request.headers.has(AGENT_HEADER));
+    const headers = new Headers(request.headers);
+    headers.set("User-Agent", userAgent);
+    return fetch(new Request(request, { headers }));
+  };
+  const client = new x402Client().register(
+    PAYPAL_SANDBOX,
+    new PrepaidPayPalClient({ keyId, privateJwk: privateJwk as JWK }),
+  );
+  return { fetch: wrapFetchWithPayment(base, client), sentAgentHeader };
+}
+
 const micros = (value: number) => `${value > 0 ? "+" : ""}${value.toLocaleString("en-US")}`;
 
 // ---------------------------------------------------------------------------------------------
@@ -223,6 +295,8 @@ async function main(): Promise<void> {
   const siteSecret = requireEnv("BOTFARE_SITE_SECRET");
   const agentKey = requireEnv("BOTFARE_AGENT_KEY");
   const auth = siteAuthHeader(siteId, siteSecret);
+  // The SDK sends this origin as Signature-Agent; point it at the app under test.
+  process.env.BOTFARE_URL = WEB_URL;
 
   const { db, close } = createDb(databaseUrl, { max: 4 });
   try {
@@ -240,8 +314,23 @@ async function main(): Promise<void> {
     if (await isUp(`${WEB_URL}/api/health`, healthy)) {
       console.log(`Reusing the BotFare app already running on ${WEB_URL}`);
     } else {
-      console.log(`Starting the BotFare app (next dev) on ${WEB_URL}`);
-      const web = start("web", ["--filter", "@botfare/web", "dev"], { ...process.env });
+      if (await answers(WEB_URL)) {
+        throw new Error(`Something that is not the BotFare app is listening on ${WEB_URL}`);
+      }
+      if (WEB_MODE === "start" && !existsSync(join(ROOT, "apps/web/.next/BUILD_ID"))) {
+        throw new Error("E2E_WEB=start needs a build: run pnpm --filter @botfare/web build");
+      }
+      console.log(`Starting the BotFare app (next ${WEB_MODE}) on ${WEB_URL}`);
+      const web = start(
+        "web",
+        ["--filter", "@botfare/web", "exec", "next", WEB_MODE, "--port", String(WEB_PORT)],
+        {
+          ...process.env,
+          BOTFARE_URL: WEB_URL,
+          // next start refuses to run without one; a throwaway secret is fine for this run.
+          SESSION_SECRET: process.env.SESSION_SECRET || randomBytes(32).toString("hex"),
+        },
+      );
       await waitFor("BotFare app", `${WEB_URL}/api/health`, healthy, 180_000, web);
     }
     if (await answers(DEMO_URL)) {
@@ -278,7 +367,11 @@ async function main(): Promise<void> {
 
     const articleUrl = `${DEMO_URL}/articles/burr-basics`;
     const wire: WireEvent[] = [];
-    const agent = createBotFareAgent({ agentKey, onWire: (event) => wire.push(event) });
+    const agent = createBotFareAgent({
+      agentKey,
+      botfareUrl: WEB_URL,
+      onWire: (event) => wire.push(event),
+    });
 
     const warmDeadline = Date.now() + 30_000;
     while ((await agent.getOffer(articleUrl).catch(() => null)) === null) {
@@ -289,15 +382,13 @@ async function main(): Promise<void> {
     console.log("Both services are up\n");
 
     // 3. Checks.
-    await check("Human reads an article free", async () => {
-      const response = await fetch(articleUrl, {
-        headers: { "User-Agent": BROWSER_UA, Accept: "text/html" },
-      });
+    await check("Human in a real browser (full Chrome headers) reads an article free", async () => {
+      const response = await fetch(articleUrl, { headers: CHROME_HEADERS });
       const html = await response.text();
       expect(response.status === 200, `status ${response.status}`);
       expect(!response.headers.has("PAYMENT-REQUIRED"), "a human got PAYMENT-REQUIRED");
       expect(html.includes("<article"), "no article body in the page");
-      return `200, ${html.length} bytes, no payment headers`;
+      return `200, ${html.length} bytes, no payment headers at level standard`;
     });
 
     await check("getOffer reads price and preview, moves no money", async () => {
@@ -314,6 +405,7 @@ async function main(): Promise<void> {
     });
 
     let receiptId = "";
+    let brewReceiptId = "";
     let signatureHeader = "";
     const beforePay = await snapshot();
     await check("Agent pays 3¢ and gets the article with a receipt", async () => {
@@ -436,6 +528,7 @@ async function main(): Promise<void> {
           { wallet: -10_000, earnings: 9_500, fees: 500, receipts: 1 },
           "brew",
         );
+        brewReceiptId = receipt.transaction;
         return `402, then 200 with ${receipt.transaction}; wallet -10,000 micros`;
       },
     );
@@ -471,6 +564,200 @@ async function main(): Promise<void> {
         "repeat refund",
       );
       return `wallet +30,000 micros, repeat call alreadyRefunded`;
+    });
+
+    // 4. Agent detection: who pays, and why (Crema Notes: standard level, Turnstile test key).
+    const detectUrl = `${DEMO_URL}/articles/grinders-under-200`;
+
+    await check(
+      "curl and python-requests without the agent header get 402 (automation)",
+      async () => {
+        const before = await snapshot();
+        const seen: string[] = [];
+        for (const userAgent of ["curl/8.7.1", "python-requests/2.32.3"]) {
+          const response = await fetch(detectUrl, {
+            headers: { "User-Agent": userAgent, Accept: "*/*" },
+          });
+          await response.body?.cancel();
+          expect(response.status === 402, `${userAgent} got ${response.status}`);
+          const signal = signalOf(response);
+          expect(signal === "automation", `${userAgent} signal ${String(signal)}`);
+          seen.push(`${userAgent.split("/")[0]} 402 ${signal}`);
+        }
+        expectDelta(
+          delta(before, await snapshot()),
+          { wallet: 0, earnings: 0, fees: 0, receipts: 0 },
+          "402",
+        );
+        return seen.join(", ");
+      },
+    );
+
+    await check(
+      "A script wearing a Chrome user agent without browser headers gets 402",
+      async () => {
+        const response = await fetch(detectUrl, {
+          headers: { "User-Agent": CHROME_HEADERS["User-Agent"], Accept: "text/html" },
+        });
+        await response.body?.cancel();
+        expect(response.status === 402, `status ${response.status}`);
+        expect(signalOf(response) === "automation", `signal ${String(signalOf(response))}`);
+        return "402 automation (no Accept-Language, no Sec-Fetch-*)";
+      },
+    );
+
+    await check("GPTBot user agent from 127.0.0.1 is flagged bot-impostor", async () => {
+      const response = await fetch(detectUrl, {
+        headers: { "User-Agent": GPTBOT_UA, Accept: "*/*" },
+      });
+      await response.body?.cancel();
+      expect(response.status === 402, `status ${response.status}`);
+      const signal = signalOf(response);
+      expect(signal === "bot-impostor", `signal ${String(signal)}`);
+      return "402 bot-impostor (outside OpenAI's published ranges)";
+    });
+
+    let signedReceiptId = "";
+    await check(
+      "SDK request is signed (Web Bot Auth), recognised as signed-agent, and pays",
+      async () => {
+        const signed: string[] = [];
+        const signedWire: WireEvent[] = [];
+        const signedAgent = createBotFareAgent({
+          agentKey,
+          botfareUrl: WEB_URL,
+          onWire: (event) => signedWire.push(event),
+          fetch: (input, init) => {
+            const request = new Request(input, init);
+            signed.push(request.headers.get("signature-input") ?? "");
+            return fetch(request);
+          },
+        });
+        const before = await snapshot();
+        const result = await signedAgent.fetch(detectUrl);
+        await result.response.body?.cancel();
+        expect(result.response.status === 200 && result.paid, `status ${result.response.status}`);
+        expect(signed.length === 2, `${signed.length} requests sent`);
+        expect(
+          signed.every((input) => input.includes('tag="web-bot-auth"')),
+          "a request was not signed",
+        );
+        const required = signedWire.find((event) => event.stage === "payment-required");
+        const signal =
+          required?.stage === "payment-required"
+            ? required.decoded.accepts[0]?.extra?.[BOTFARE_SIGNAL_EXTRA]
+            : undefined;
+        expect(signal === "signed-agent", `402 signal ${String(signal)}`);
+        signedReceiptId = result.receipt?.transaction ?? "";
+        expectDelta(
+          delta(before, await snapshot()),
+          { wallet: -30_000, earnings: 28_500, fees: 1_500, receipts: 1 },
+          "signed",
+        );
+        return `both legs signed, 402 signal signed-agent, ${signedReceiptId}`;
+      },
+    );
+
+    let automationReceiptId = "";
+    await check(
+      "python-requests that pays through raw @x402/fetch is charged as automation",
+      async () => {
+        const paying = rawPayingFetch("python-requests/2.32.3", keyId, privateJwk);
+        const before = await snapshot();
+        const response = await paying.fetch(`${DEMO_URL}/articles/latte-art-hearts`);
+        await response.body?.cancel();
+        expect(response.status === 200, `status ${response.status}`);
+        expect(!paying.sentAgentHeader.includes(true), "the agent header was sent");
+        const receipt = decodePaymentResponseHeader(response.headers.get("PAYMENT-RESPONSE") ?? "");
+        expect(receipt.success, "no successful PAYMENT-RESPONSE");
+        automationReceiptId = receipt.transaction;
+        expectDelta(
+          delta(before, await snapshot()),
+          { wallet: -30_000, earnings: 28_500, fees: 1_500, receipts: 1 },
+          "automation",
+        );
+        return `402 then 200, ${automationReceiptId}`;
+      },
+    );
+
+    await check(
+      "Headless browser: Turnstile page, test token sets the pass, next read is free",
+      async () => {
+        const path = "/articles/dialing-in-espresso";
+        const headless = { "User-Agent": HEADLESS_CHROME_UA, Accept: "text/html" };
+        const before = await snapshot();
+
+        const paywall = await fetch(`${DEMO_URL}${path}`, { headers: headless });
+        const page = await paywall.text();
+        expect(paywall.status === 402, `first request got ${paywall.status}`);
+        expect(signalOf(paywall) === "automation", `signal ${String(signalOf(paywall))}`);
+        expect(page.includes("Reading as a human? Continue free."), "no human-check page");
+        expect(page.includes('class="cf-turnstile"'), "no Turnstile widget");
+
+        const form = new URLSearchParams({
+          "cf-turnstile-response": TURNSTILE_DUMMY_TOKEN,
+          return: path,
+        });
+        const passed = await fetch(`${DEMO_URL}${HUMAN_CHECK_PATH}`, {
+          method: "POST",
+          headers: { ...headless, "Content-Type": "application/x-www-form-urlencoded" },
+          body: form,
+          redirect: "manual",
+        });
+        await passed.body?.cancel();
+        expect(passed.status === 303, `${HUMAN_CHECK_PATH} answered ${passed.status}`);
+        expect(
+          passed.headers.get("location") === path,
+          `location ${passed.headers.get("location")}`,
+        );
+        const setCookie = passed.headers.get("set-cookie") ?? "";
+        const cookie = setCookie.split(";")[0] ?? "";
+        expect(cookie.startsWith(`${HUMAN_PASS_COOKIE}=v1.`), "no human pass cookie");
+        expect(/HttpOnly/i.test(setCookie) && /SameSite=Lax/i.test(setCookie), "cookie flags");
+
+        const free = await fetch(`${DEMO_URL}${path}`, {
+          headers: { ...headless, Cookie: cookie },
+        });
+        const html = await free.text();
+        expect(free.status === 200, `with the pass got ${free.status}`);
+        expect(!free.headers.has("PAYMENT-REQUIRED"), "PAYMENT-REQUIRED with the pass");
+        expect(html.includes("<article"), "no article with the pass");
+
+        // The pass covers scores only: a self-identified agent still pays.
+        const agentWithPass = await fetch(`${DEMO_URL}${path}`, {
+          headers: { ...headless, Cookie: cookie, [AGENT_HEADER]: "1" },
+        });
+        await agentWithPass.body?.cancel();
+        expect(agentWithPass.status === 402, `agent with the pass got ${agentWithPass.status}`);
+        expect(signalOf(agentWithPass) === "agent-header", "agent with the pass: wrong signal");
+        expectDelta(
+          delta(before, await snapshot()),
+          { wallet: 0, earnings: 0, fees: 0, receipts: 0 },
+          "human",
+        );
+        return "402 page -> 303 + botfare_human cookie -> 200 free; agent header still 402";
+      },
+    );
+
+    await check("Receipts record why each request paid (detection_signal)", async () => {
+      const expected: Array<[string, string, string]> = [
+        ["SDK paid fetch", receiptId, "signed-agent"],
+        ["signed SDK fetch", signedReceiptId, "signed-agent"],
+        ["python-requests via x402", automationReceiptId, "automation"],
+        ["Node fetch on the everyone-priced brew API", brewReceiptId, "automation"],
+      ];
+      const seen: string[] = [];
+      for (const [label, id, signal] of expected) {
+        expect(id, `no receipt for ${label}`);
+        const receipt = await getReceipt(db, id);
+        expect(receipt, `receipt ${id} not found`);
+        expect(
+          receipt.detectionSignal === signal,
+          `${label}: ${receipt.detectionSignal}, expected ${signal}`,
+        );
+        seen.push(`${id.slice(0, 13)}… ${signal}`);
+      }
+      return seen.join(", ");
     });
 
     await check("Ledger sums to zero and cached balances match entries", async () => {
