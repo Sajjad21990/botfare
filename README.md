@@ -106,7 +106,7 @@ What it may read: the demo publisher (the site registered at `DEMO_ORIGIN` / `DE
 
 ## AI on every side of the fare
 
-Micropayments have failed for 25 years less on technology than on the **decision cost**: every tiny payment asks for a decision that costs more attention than the payment is worth (Nick Szabo, ["Micropayments and Mental Transaction Costs"](https://nakamotoinstitute.org/micropayments-and-mental-transaction-costs/), 1999; Clay Shirky, "The Case Against Micropayments", 2000). x402 removes the technical cost and BotFare's batching removes PayPal's fee; the decision cost is still there at every seat. **BotFare puts AI on the decisions that are too small for a person, and keeps money movement in code.**
+Micropayments have failed for more than 25 years less on technology than on the **decision cost**: every tiny payment asks for a decision that costs more attention than the payment is worth (Nick Szabo, ["Micropayments and Mental Transaction Costs"](https://nakamotoinstitute.org/micropayments-and-mental-transaction-costs/), 1999; Clay Shirky, "The Case Against Micropayments", 2000). x402 removes the technical cost and BotFare's batching removes PayPal's fee; the decision cost is still there at every seat. **BotFare puts AI on the decisions that are too small for a person, and keeps money movement in code.**
 
 | Seat | The micro-decision | AI in BotFare |
 | --- | --- | --- |

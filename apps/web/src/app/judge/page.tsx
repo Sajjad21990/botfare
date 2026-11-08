@@ -79,9 +79,9 @@ export default function JudgePage() {
               title="Be the publisher"
               description="Crema Notes, a coffee site, charges AI agents per article."
               points={[
-                "Earnings from paid agent requests",
-                "Prices per path and bot detection",
-                "Withdraw now: a real sandbox Payout",
+                "Earnings from paid agent requests; Withdraw now is a real sandbox Payout",
+                "Fare Advisor: why agents passed on a page, with a one-click price change",
+                "Fare Court: disputes Claude sent to you, with its reasoning",
               ]}
             >
               <PersonaStepButton persona="publisher" href="/publisher" label="Open the publisher" />
@@ -103,9 +103,9 @@ export default function JudgePage() {
               title="Run the research agent"
               description="An AI agent reads 402 offers and decides what to buy."
               points={[
-                "Free price check before every purchase",
-                "Buys or skips with a reason",
-                "Answer with citations linked to receipts",
+                "Free price check before every purchase; buys or skips with a reason",
+                "Fare Court: a paid page that turns out to be a stub gets disputed and refunded",
+                "Answer with citations linked to receipts (they feed Fare Advisor)",
               ]}
             >
               <PersonaStepButton persona="agentOwner" href="/agent" label="Run the agent" />
