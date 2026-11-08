@@ -21,6 +21,7 @@ Solo entry for the PayPal AI Hackathon (Devpost). **Deadline: Thu 12 Nov 2026, 1
 apps/web             Next.js: dashboards, wallet, research agent, /judge, facilitator /api/x402/*, PayPal webhooks
 apps/demo            Express demo publisher (original articles + /api/brew-ratio) behind @botfare/express
 packages/x402-paypal the plug-in: client, server and facilitator parts, JWS helpers, ledger port, in-memory ledger
+packages/contracts   shared wire contracts: IDs, site auth header, site config + pricing rules, agent key string, preview
 packages/express     botfare({ siteId, siteSecret }): humans free, dashboard prices (DynamicPrice), @x402/express
 packages/sdk         createBotFareFetch() on @x402/fetch, getOffer()
 packages/mcp         MCP server: get_offer, fetch_paid, wallet_balance, recent_receipts
@@ -33,6 +34,9 @@ scripts/spike        Day-0 PayPal and x402 spikes
 - `pnpm install` · `pnpm typecheck` · `pnpm lint` (Biome) · `pnpm format` · `pnpm test` (vitest)
 - `pnpm db:up` / `pnpm db:down`: Postgres 17 in Docker (`botfare` and `botfare_test` databases)
 - `pnpm spike:01`…`spike:05`: Day-0 spikes; results in `docs/SPIKE_RESULTS.md`
+- `pnpm --filter @botfare/web dev` (Next.js on :3000) · `pnpm --filter @botfare/demo dev` (demo publisher)
+- Workspace packages export TypeScript source; Next.js transpiles them (`transpilePackages`), everything else runs on tsx.
+- `apps/web` uses TypeScript 5.9 (Next's type checker); the rest of the repo uses TypeScript 7.
 
 ## Rules
 - PayPal **sandbox only** (`https://api-m.sandbox.paypal.com`); never call live endpoints.

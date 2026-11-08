@@ -1,0 +1,16 @@
+{
+  "name": "@botfare/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared wire contracts between BotFare's app, middleware, SDK and demo: IDs, site config, auth headers, agent keys.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

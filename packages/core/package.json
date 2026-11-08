@@ -1,0 +1,27 @@
+{
+  "name": "@botfare/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Postgres schema and double-entry ledger for BotFare; implements the x402-paypal ledger port.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/migrate.ts"
+  },
+  "dependencies": {
+    "@botfare/contracts": "workspace:*",
+    "@botfare/paypal": "workspace:*",
+    "@botfare/x402-paypal": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "jose": "6.2.15",
+    "postgres": "4.1.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11"
+  }
+}

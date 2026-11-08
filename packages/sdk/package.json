@@ -1,0 +1,21 @@
+{
+  "name": "@botfare/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent SDK: pay BotFare-enabled sites over x402 from a PayPal-funded balance.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@botfare/contracts": "workspace:*",
+    "@botfare/x402-paypal": "workspace:*",
+    "@x402/core": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "jose": "6.2.15",
+    "zod": "4.6.7"
+  }
+}

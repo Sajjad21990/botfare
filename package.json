@@ -24,7 +24,11 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
+    "@botfare/contracts": "workspace:*",
+    "@botfare/core": "workspace:*",
+    "@botfare/express": "workspace:*",
     "@botfare/paypal": "workspace:*",
+    "@botfare/sdk": "workspace:*",
     "@botfare/x402-paypal": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",
