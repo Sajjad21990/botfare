@@ -1,4 +1,5 @@
 import { AGENT_HEADER, decodeAgentKey } from "@botfare/contracts";
+import type { DisputeOutcome } from "@botfare/contracts/fare";
 import { createRequestSigner, type RequestSigner } from "@botfare/contracts/web-bot-auth";
 import { PAYPAL_SANDBOX, PrepaidPayPalClient } from "@botfare/x402-paypal";
 import { MAX_CONTROL_PLANE_RESPONSE_BYTES, readLimitedText } from "@x402/core/http";
@@ -6,6 +7,12 @@ import type { SettleResponse } from "@x402/core/types";
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import type { JWK } from "jose";
 import { BotFareAgentKeyError, BotFareSpendLimitError } from "./errors";
+import {
+  type CitationReportInput,
+  createFareApi,
+  type DeclineInput,
+  type DisputeInput,
+} from "./fare";
 import { type Offer, parseOffer, readPaymentRequired } from "./offer";
 import { readReceipt } from "./receipt";
 import {
@@ -38,11 +45,22 @@ export interface BotFareAgentOptions {
 }
 
 export interface PaidResult {
+  /**
+   * The publisher's response. For a paid response its body has already been read into `body`,
+   * and `response` replays those same bytes, so read either (or both).
+   */
   response: Response;
   /** True when the publisher settled a payment for this response. */
   paid: boolean;
   /** Decoded PAYMENT-RESPONSE (also present when settlement failed, with `success: false`). */
   receipt: SettleResponse | null;
+  /** The receipt ID (`rcpt_…`) of a settled payment: what `agent.dispute()` takes. */
+  receiptId: string | null;
+  /**
+   * The exact bytes delivered for a paid response (what the publisher attested by digest), kept
+   * so a Fare Court dispute can submit them; null when nothing was paid.
+   */
+  body: Uint8Array | null;
   /** The 402 offer that was paid (or refused by the publisher); null if no 402 was seen. */
   offer: Offer | null;
   /** Why the publisher refused the payment (x402 `error` reason), when the result is still a 402. */
@@ -61,6 +79,16 @@ export interface BotFareAgent {
    * Over-cap prices throw BotFareSpendLimitError before anything is signed.
    */
   fetch(url: string, init?: RequestInit): Promise<PaidResult>;
+  /**
+   * Fare Court: disputes a paid receipt whose content did not match the offer (a stub, a paywall,
+   * an error page, something unrelated). Pass the delivered bytes (`PaidResult.body`). Needs a
+   * BotFare URL (`botfareUrl` or BOTFARE_URL). Throws BotFareApiError if BotFare cannot take it.
+   */
+  dispute(input: DisputeInput): Promise<DisputeOutcome>;
+  /** Fare Advisor: a free, best-effort note saying why an offer was skipped. Never throws. */
+  decline(offer: { url: string; priceCents: number }, input: DeclineInput): Promise<boolean>;
+  /** Fare Advisor: which receipts an answer cited. Best effort; never throws. */
+  reportCitations(report: CitationReportInput): Promise<boolean>;
 }
 
 export const DEFAULT_MAX_PER_REQUEST_USD = 0.1;
@@ -70,13 +98,18 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
   const maxPerRequestCents = toCapCents(options.maxPerRequestUsd ?? DEFAULT_MAX_PER_REQUEST_USD);
   const baseFetch = options.fetch ?? globalThis.fetch;
   const onWire = options.onWire;
+  const botfareUrl = readBotFareUrl(options.botfareUrl);
+  const signingKey = privateJwk as Parameters<typeof createRequestSigner>[0]["privateJwk"];
   const signer =
     options.signRequests === false
       ? null
-      : createRequestSigner({
-          privateJwk: privateJwk as Parameters<typeof createRequestSigner>[0]["privateJwk"],
-          signatureAgent: readBotFareUrl(options.botfareUrl),
-        });
+      : createRequestSigner({ privateJwk: signingKey, signatureAgent: botfareUrl });
+  // Calls to BotFare's own API are always signed: the signature is the agent's credential there.
+  const fare = createFareApi({
+    botfareUrl,
+    signer: signer ?? createRequestSigner({ privateJwk: signingKey, signatureAgent: botfareUrl }),
+    fetch: baseFetch,
+  });
 
   // The official x402 client with BotFare's scheme; spend controls run before the plug-in signs.
   const client = new x402Client()
@@ -130,10 +163,19 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
     }
 
     const receipt = readReceipt(response);
+    const paid = receipt?.success === true;
+    let body: Uint8Array | null = null;
+    if (paid) {
+      // Keep the exact bytes for a possible dispute, and hand back a response that replays them.
+      body = new Uint8Array(await response.arrayBuffer());
+      response = replayResponse(response, body);
+    }
     return {
       response,
-      paid: receipt?.success === true,
+      paid,
       receipt,
+      receiptId: paid && receipt?.transaction ? receipt.transaction : null,
+      body,
       offer,
       ...(response.status === 402 && failureReason ? { failureReason } : {}),
     };
@@ -145,7 +187,23 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
     signatureKeyId: async () => (signer ? signer.keyid() : null),
     getOffer,
     fetch: fetchPaid,
+    dispute: fare.dispute,
+    decline: fare.decline,
+    reportCitations: fare.reportCitations,
   };
+}
+
+/** A Response over already-read bytes, with the original's status, headers and URL. */
+function replayResponse(original: Response, body: Uint8Array): Response {
+  // A copy backed by a plain ArrayBuffer, so the caller's `body` and the replay never share state.
+  const replay = new Response(body.length > 0 ? body.slice() : null, {
+    status: original.status,
+    statusText: original.statusText,
+    headers: original.headers,
+  });
+  Object.defineProperty(replay, "url", { value: original.url });
+  Object.defineProperty(replay, "redirected", { value: original.redirected });
+  return replay;
 }
 
 /** The request with Signature-Agent, Signature-Input and Signature set (unchanged without a signer). */

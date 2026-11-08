@@ -27,3 +27,13 @@ export class BotFareSpendLimitError extends Error {
     this.maxPerRequestCents = maxPerRequestCents;
   }
 }
+
+/** BotFare's agent API could not be reached or refused a request (`status` 0: not reached). */
+export class BotFareApiError extends Error {
+  override readonly name = "BotFareApiError";
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}

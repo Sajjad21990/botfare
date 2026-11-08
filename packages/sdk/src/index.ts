@@ -3,6 +3,13 @@
  * Built on the official @x402/fetch with BotFare's `prepaid` scheme on `paypal:sandbox`.
  */
 
+export type {
+  DeclineCategory,
+  DisputeOutcome,
+  DisputeReason,
+  DisputeStatus,
+  DisputeVerdict,
+} from "@botfare/contracts/fare";
 export {
   createDirectoryKeyResolver,
   createRequestSigner,
@@ -20,7 +27,18 @@ export {
   DEFAULT_MAX_PER_REQUEST_USD,
   type PaidResult,
 } from "./agent";
-export { BotFareAgentKeyError, BotFareOfferError, BotFareSpendLimitError } from "./errors";
+export {
+  BotFareAgentKeyError,
+  BotFareApiError,
+  BotFareOfferError,
+  BotFareSpendLimitError,
+} from "./errors";
+export {
+  type CitationReportInput,
+  type DeclineInput,
+  type DisputeInput,
+  disputeOutcomeSchema,
+} from "./fare";
 export { type Offer, parseOffer } from "./offer";
 export { readReceipt } from "./receipt";
 export type { WireEvent, WireListener } from "./wire";
