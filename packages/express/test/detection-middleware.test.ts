@@ -1,6 +1,11 @@
 import { decodePaymentRequiredHeader } from "@x402/core/http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { sampleCrawlerIp, TURNSTILE_TEST_SECRET, TURNSTILE_TEST_SITE_KEY } from "../src";
+import {
+  resolveTurnstileSecret,
+  sampleCrawlerIp,
+  TURNSTILE_TEST_SECRET,
+  TURNSTILE_TEST_SITE_KEY,
+} from "../src";
 import { detectionConfig, startFakeBotFare, startFakeTurnstile, startPublisher } from "./helpers";
 import { generateSigningKey, signRequest } from "./signing";
 
@@ -188,6 +193,80 @@ describe("botfare(): human check settings", () => {
     }
   });
 
+  it("uses the test secret with the test site key even when a real secret is configured", async () => {
+    const turnstile = await startFakeTurnstile();
+    const botfare = await startFakeBotFare(
+      detectionConfig({ level: "standard", turnstileSiteKey: TURNSTILE_TEST_SITE_KEY }),
+    );
+    const site = await startPublisher({
+      botfareUrl: botfare.url,
+      turnstileSecret: "real-widget-secret",
+      turnstileVerifyUrl: turnstile.verifyUrl,
+    });
+    try {
+      const res = await fetch(`${site.url}/articles/burr-basics`, { headers: FAKE_BROWSER });
+      expect(await res.text()).toContain(`data-sitekey="${TURNSTILE_TEST_SITE_KEY}"`);
+      await fetch(`${site.url}/__botfare/human`, {
+        method: "POST",
+        body: new URLSearchParams({ "cf-turnstile-response": "XXXX.DUMMY.TOKEN.XXXX" }),
+        redirect: "manual",
+      });
+      expect(turnstile.requests.at(-1)?.secret).toBe(TURNSTILE_TEST_SECRET);
+    } finally {
+      await site.close();
+      await botfare.close();
+      await turnstile.close();
+    }
+  });
+
+  it("never pairs a real site key with a test secret, and says so once", async () => {
+    const botfare = await startFakeBotFare(
+      detectionConfig({ level: "standard", turnstileSiteKey: "0x4AAAAAAAreal-site-key" }),
+    );
+    const site = await startPublisher({
+      botfareUrl: botfare.url,
+      turnstileSecret: TURNSTILE_TEST_SECRET,
+      configTtlMs: 0,
+    });
+    try {
+      for (let i = 0; i < 2; i++) {
+        const res = await fetch(`${site.url}/articles/burr-basics`, { headers: FAKE_BROWSER });
+        expect(res.status).toBe(402);
+        expect(await res.text()).not.toContain("Continue free");
+      }
+      const post = await fetch(`${site.url}/__botfare/human`, {
+        method: "POST",
+        body: new URLSearchParams({ "cf-turnstile-response": "anything" }),
+        redirect: "manual",
+      });
+      expect(post.status).toBe(404);
+      expect(post.headers.get("set-cookie")).toBeNull();
+      const warnings = site.logs.filter((l) => l.includes("Cloudflare's test secret"));
+      expect(warnings).toHaveLength(1);
+    } finally {
+      await site.close();
+      await botfare.close();
+    }
+  });
+
+  it("logs when a real site key has no secret", async () => {
+    const botfare = await startFakeBotFare(
+      detectionConfig({ level: "standard", turnstileSiteKey: "0x4AAAAAAAreal-site-key" }),
+    );
+    const savedEnv = process.env.TURNSTILE_SECRET_KEY;
+    delete process.env.TURNSTILE_SECRET_KEY;
+    const site = await startPublisher({ botfareUrl: botfare.url });
+    try {
+      const res = await fetch(`${site.url}/articles/burr-basics`, { headers: FAKE_BROWSER });
+      expect(res.status).toBe(402);
+      expect(site.logs.some((l) => l.includes("TURNSTILE_SECRET_KEY is not set"))).toBe(true);
+    } finally {
+      if (savedEnv !== undefined) process.env.TURNSTILE_SECRET_KEY = savedEnv;
+      await site.close();
+      await botfare.close();
+    }
+  });
+
   it("never shows the human check on an 'everyone' path", async () => {
     const botfare = await startFakeBotFare(
       detectionConfig({ level: "standard", turnstileSiteKey: "test-site-key" }),
@@ -201,6 +280,70 @@ describe("botfare(): human check settings", () => {
     } finally {
       await site.close();
       await botfare.close();
+    }
+  });
+});
+
+describe("resolveTurnstileSecret()", () => {
+  it("pairs test keys with the test secret and real keys only with a real secret", () => {
+    expect(resolveTurnstileSecret(null, "real")).toEqual({});
+    expect(resolveTurnstileSecret(TURNSTILE_TEST_SITE_KEY, "real").secret).toBe(
+      TURNSTILE_TEST_SECRET,
+    );
+    expect(resolveTurnstileSecret("3x00000000000000000000FF", undefined).secret).toBe(
+      TURNSTILE_TEST_SECRET,
+    );
+    expect(resolveTurnstileSecret("0x4AAAAAAAkey", "real").secret).toBe("real");
+    const noSecret = resolveTurnstileSecret("0x4AAAAAAAkey", undefined);
+    expect(noSecret.secret).toBeUndefined();
+    expect(noSecret.problem).toContain("not set");
+    const testSecret = resolveTurnstileSecret("0x4AAAAAAAkey", TURNSTILE_TEST_SECRET);
+    expect(testSecret.secret).toBeUndefined();
+    expect(testSecret.problem).toContain("test secret");
+  });
+});
+
+describe("botfare(): facilitator unreachable", () => {
+  it("still gives a suspected human the human check, and agents a 503", async () => {
+    const turnstile = await startFakeTurnstile();
+    const botfare = await startFakeBotFare(
+      detectionConfig({ level: "standard", turnstileSiteKey: "test-site-key" }),
+    );
+    botfare.setSupportedFailing(true);
+    const site = await startPublisher({
+      botfareUrl: botfare.url,
+      turnstileSecret: "test-secret",
+      turnstileVerifyUrl: turnstile.verifyUrl,
+    });
+    const article = "/articles/burr-basics";
+    try {
+      const browser = await fetch(`${site.url}${article}`, { headers: FAKE_BROWSER });
+      expect(browser.status).toBe(503);
+      expect(browser.headers.get("retry-after")).toBe("5");
+      const html = await browser.text();
+      expect(html).toContain("Reading as a human? Continue free.");
+      expect(html).toContain('data-sitekey="test-site-key"');
+      expect(html).toContain("payments are briefly unavailable");
+
+      const agent = await fetch(`${site.url}${article}`, { headers: { "user-agent": "curl/8" } });
+      expect(agent.status).toBe(503);
+      expect(await agent.json()).toMatchObject({ error: "botfare_unavailable" });
+
+      const pass = await fetch(`${site.url}/__botfare/human`, {
+        method: "POST",
+        body: new URLSearchParams({ "cf-turnstile-response": "pass-token", return: article }),
+        redirect: "manual",
+      });
+      expect(pass.status).toBe(303);
+      const cookie = (pass.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+      const again = await fetch(`${site.url}${article}`, {
+        headers: { ...FAKE_BROWSER, cookie },
+      });
+      expect(again.status).toBe(200);
+    } finally {
+      await site.close();
+      await botfare.close();
+      await turnstile.close();
     }
   });
 });

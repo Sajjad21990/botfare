@@ -63,7 +63,8 @@ services:
       - key: BOTFARE_SITE_SECRET
         sync: false
       # Optional: Cloudflare Turnstile secret for the human check. Empty is fine while Crema Notes
-      # uses Cloudflare's test site key: botfare() then uses Cloudflare's always-pass test secret.
+      # uses Cloudflare's test site key: botfare() always uses Cloudflare's always-pass test secret
+      # for it. Set a real secret only together with that widget's site key in the dashboard.
       - key: TURNSTILE_SECRET_KEY
         sync: false
 

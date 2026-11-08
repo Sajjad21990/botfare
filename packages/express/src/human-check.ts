@@ -11,6 +11,8 @@
  *
  * Cloudflare's documented test keys work for demos: site key `1x00000000000000000000AA` with
  * secret `1x0000000000000000000000000000000AA` always passes (token `XXXX.DUMMY.TOKEN.XXXX`).
+ * A test site key always uses that test secret, even when a real secret is configured, and a
+ * real site key never uses a test secret (see `resolveTurnstileSecret`).
  */
 import { randomUUID } from "node:crypto";
 import type { PaywallProvider } from "@x402/core/server";
@@ -27,13 +29,62 @@ export const TURNSTILE_TEST_SECRET = "1x0000000000000000000000000000000AA";
 const MAX_BODY_BYTES = 8 * 1024;
 const VERIFY_TIMEOUT_MS = 5_000;
 
-/** The Turnstile secret for a site key: the publisher's, or Cloudflare's test secret for the test key. */
+/**
+ * Cloudflare's published test site keys (pass, block, invisible, forced challenge). Their widgets
+ * issue the dummy token, which only the test secrets accept, so they never use the publisher's
+ * real secret.
+ */
+const TURNSTILE_TEST_SITE_KEYS = new Set([
+  TURNSTILE_TEST_SITE_KEY,
+  "2x00000000000000000000AB",
+  "1x00000000000000000000BB",
+  "2x00000000000000000000BB",
+  "3x00000000000000000000FF",
+]);
+/** Cloudflare's published test secrets (pass, fail, already spent): never paired with a real key. */
+const TURNSTILE_TEST_SECRETS = new Set([
+  TURNSTILE_TEST_SECRET,
+  "2x0000000000000000000000000000000AA",
+  "3x0000000000000000000000000000000AA",
+]);
+
+export function isTurnstileTestSiteKey(siteKey: string): boolean {
+  return TURNSTILE_TEST_SITE_KEYS.has(siteKey);
+}
+
+/**
+ * The Turnstile secret for the dashboard's site key, given the secret configured in the
+ * publisher's app (`TURNSTILE_SECRET_KEY`):
+ * - a Cloudflare test site key always gets Cloudflare's always-pass test secret, whatever is
+ *   configured (a real secret rejects the test widget's dummy token);
+ * - a real site key gets the configured secret, unless it is missing or one of Cloudflare's test
+ *   secrets (which would accept any token); then the human check is off and `problem` says why.
+ */
+export function resolveTurnstileSecret(
+  siteKey: string | null | undefined,
+  configured: string | undefined,
+): { secret?: string; problem?: string } {
+  if (!siteKey) return {};
+  if (isTurnstileTestSiteKey(siteKey)) return { secret: TURNSTILE_TEST_SECRET };
+  if (!configured) {
+    return {
+      problem: `the dashboard has Turnstile site key ${siteKey} but TURNSTILE_SECRET_KEY is not set, so the human check is off; set it to that widget's secret`,
+    };
+  }
+  if (TURNSTILE_TEST_SECRETS.has(configured)) {
+    return {
+      problem: `TURNSTILE_SECRET_KEY is Cloudflare's test secret, which accepts any token, but the dashboard has the real site key ${siteKey}; the human check is off until you set that widget's secret`,
+    };
+  }
+  return { secret: configured };
+}
+
+/** The Turnstile secret for a site key, or undefined when the human check is off. */
 export function turnstileSecretFor(
-  siteKey: string,
+  siteKey: string | null | undefined,
   configured: string | undefined,
 ): string | undefined {
-  if (configured) return configured;
-  return siteKey === TURNSTILE_TEST_SITE_KEY ? TURNSTILE_TEST_SECRET : undefined;
+  return resolveTurnstileSecret(siteKey, configured).secret;
 }
 
 /** Paywall HTML for a suspected human: the Turnstile widget, plus the offer for agents. */
@@ -47,14 +98,21 @@ export function humanCheckPaywall(siteKey: string, returnTo: string): PaywallPro
   };
 }
 
+/**
+ * The human-check page. With `price` it is a 402 that also carries the x402 offer; without it,
+ * payments are briefly unavailable and the note tells agents to retry.
+ */
 export function humanCheckHtml(input: {
   siteKey: string;
   returnTo: string;
-  price: string;
+  price?: string;
 }): string {
   const siteKey = escapeHtml(input.siteKey);
   const returnTo = escapeHtml(input.returnTo);
-  const price = escapeHtml(input.price);
+  const agents =
+    input.price === undefined
+      ? "AI agents: payments are briefly unavailable. Try again in a few seconds."
+      : `AI agents: this page costs ${escapeHtml(input.price)} per request, paid with x402 through BotFare. The offer is in the <code>PAYMENT-REQUIRED</code> header of this 402 response.`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -87,7 +145,7 @@ export function humanCheckHtml(input: {
     <div class="widget"><div class="cf-turnstile" data-sitekey="${siteKey}" data-callback="botfareHumanPassed" data-expired-callback="botfareHumanExpired"></div></div>
     <button type="submit" id="continue" disabled>Continue free</button>
   </form>
-  <p class="agents">AI agents: this page costs ${price} per request, paid with x402 through BotFare. The offer is in the <code>PAYMENT-REQUIRED</code> header of this 402 response.</p>
+  <p class="agents">${agents}</p>
 </main>
 <script>
   function botfareHumanPassed() { var b = document.getElementById("continue"); b.disabled = false; document.getElementById("human-check").requestSubmit ? document.getElementById("human-check").requestSubmit() : document.getElementById("human-check").submit(); }
@@ -142,7 +200,13 @@ export async function handleHumanCheck(
     const result = (await verify.json()) as { success?: unknown; "error-codes"?: unknown };
     success = result.success === true;
     if (!success) {
-      options.log(`human check failed (${JSON.stringify(result["error-codes"] ?? [])})`);
+      const codes = Array.isArray(result["error-codes"]) ? result["error-codes"] : [];
+      options.log(`human check failed (${JSON.stringify(codes)})`);
+      if (codes.includes("invalid-input-secret")) {
+        options.log(
+          "Cloudflare rejected TURNSTILE_SECRET_KEY: it must be the secret of the widget whose site key is in the dashboard",
+        );
+      }
     }
   } catch (err) {
     options.log(`Turnstile siteverify unreachable (${(err as Error).message})`);

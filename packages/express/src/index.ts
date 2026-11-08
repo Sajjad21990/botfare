@@ -20,7 +20,9 @@ import {
 import {
   HUMAN_CHECK_PATH,
   handleHumanCheck,
+  humanCheckHtml,
   humanCheckPaywall,
+  resolveTurnstileSecret,
   TURNSTILE_SITEVERIFY_URL,
   turnstileSecretFor,
 } from "./human-check";
@@ -28,7 +30,14 @@ import { normalizeConfig, ruleFor } from "./matching";
 import { BOTFARE_SIGNAL_EXTRA, PaymentGate } from "./payment-gate";
 
 export * from "./detection";
-export { HUMAN_CHECK_PATH, TURNSTILE_TEST_SECRET, TURNSTILE_TEST_SITE_KEY } from "./human-check";
+export {
+  HUMAN_CHECK_PATH,
+  isTurnstileTestSiteKey,
+  resolveTurnstileSecret,
+  TURNSTILE_TEST_SECRET,
+  TURNSTILE_TEST_SITE_KEY,
+  turnstileSecretFor,
+} from "./human-check";
 export { isAgentRequest, normalizePath } from "./matching";
 export { BOTFARE_SIGNAL_EXTRA };
 
@@ -42,8 +51,10 @@ export interface BotFareOptions {
   /** Free preview put in the 402 body as `{ preview }`, so agents can decide before paying. */
   preview?: (req: Request) => OfferPreview | undefined | Promise<OfferPreview | undefined>;
   /**
-   * Cloudflare Turnstile secret for the human check. Default: `process.env.TURNSTILE_SECRET_KEY`;
-   * with Cloudflare's test site key, Cloudflare's always-pass test secret.
+   * Cloudflare Turnstile secret for the human check: the secret of the widget whose site key is
+   * in the dashboard. Default: `process.env.TURNSTILE_SECRET_KEY`. Cloudflare's test site keys
+   * always use Cloudflare's always-pass test secret instead, and a test secret is never paired
+   * with a real site key.
    */
   turnstileSecret?: string;
   /** Turnstile siteverify endpoint (tests). Default Cloudflare's. */
@@ -66,7 +77,9 @@ export type BotFareLocals = Detection;
  *   A browser charged only on a score sees the human check instead of a bare paywall (still a 402
  *   with the offer) when the site has a Turnstile key.
  *   If BotFare's facilitator cannot be reached for that, the agent gets
- *   `503 { error: "botfare_unavailable" }` with `Retry-After`; humans are unaffected.
+ *   `503 { error: "botfare_unavailable" }` with `Retry-After`. Humans are unaffected: those with
+ *   no charging signal pass through, and a browser charged only on a score still gets the human
+ *   check (as a 503 page, since there is no offer to show).
  */
 export function botfare(options: BotFareOptions): RequestHandler {
   const { siteId, siteSecret } = options;
@@ -87,8 +100,8 @@ export function botfare(options: BotFareOptions): RequestHandler {
   const directory = new SignatureDirectory({ botfareUrl, log });
   const humanPass = new HumanPass(siteId, siteSecret);
   const configuredSecret = options.turnstileSecret ?? process.env.TURNSTILE_SECRET_KEY;
-  const turnstileSecret = (siteKey: string | null) =>
-    siteKey ? turnstileSecretFor(siteKey, configuredSecret) : undefined;
+  const turnstileSecret = (siteKey: string | null) => turnstileSecretFor(siteKey, configuredSecret);
+  let turnstileProblem: string | undefined;
   void configs.refresh(); // warm the cache at startup; requests never wait on this one alone
 
   let raw: SiteConfig | undefined;
@@ -113,6 +126,13 @@ export function botfare(options: BotFareOptions): RequestHandler {
     if (config !== raw) {
       raw = config;
       normalized = normalizeConfig(config);
+      // Say once (until it changes) why a configured human check cannot run.
+      const { problem } = resolveTurnstileSecret(
+        effectiveDetection(config).turnstileSiteKey,
+        configuredSecret,
+      );
+      if (problem && problem !== turnstileProblem) log(problem);
+      turnstileProblem = problem;
     }
     const rule = ruleFor(req, normalized as SiteConfig);
     if (!rule) return next();
@@ -125,23 +145,39 @@ export function botfare(options: BotFareOptions): RequestHandler {
     res.locals.botfare = detection satisfies BotFareLocals;
     if (!detection.charge || !detection.signal) return next();
 
-    if (!(await gate.ensureReady())) {
-      res
-        .status(503)
-        .set("Retry-After", "5")
-        .json({ error: "botfare_unavailable", message: "Payments are briefly unavailable." });
-      return;
-    }
-
     // "Pay, or prove you're human": only for a request charged on a score, with a site key whose
     // secret we hold. The SDK shows paywall HTML only to browsers (Accept: text/html, Mozilla UA).
     const siteKey = effectiveDetection(config).turnstileSiteKey;
-    const browserPaywall =
-      detection.humanCheckable && siteKey && turnstileSecret(siteKey)
-        ? humanCheckPaywall(siteKey, req.originalUrl)
-        : undefined;
+    const humanCheckKey =
+      detection.humanCheckable && siteKey && turnstileSecret(siteKey) ? siteKey : undefined;
+
+    if (!(await gate.ensureReady())) {
+      res.status(503).set("Retry-After", "5");
+      if (humanCheckKey && isBrowserRequest(req)) {
+        // The human check needs only Cloudflare, so a suspected human still has a way through.
+        res
+          .set("Cache-Control", "no-store")
+          .type("html")
+          .send(humanCheckHtml({ siteKey: humanCheckKey, returnTo: req.originalUrl }));
+        return;
+      }
+      res.json({ error: "botfare_unavailable", message: "Payments are briefly unavailable." });
+      return;
+    }
+
+    const browserPaywall = humanCheckKey
+      ? humanCheckPaywall(humanCheckKey, req.originalUrl)
+      : undefined;
 
     // The SDK middleware answers 402/5xx itself and calls next() only for a verified payment.
     await gate.charge(rule, req, res, next, { signal: detection.signal, browserPaywall });
   };
+}
+
+/** The same test the x402 SDK uses before it serves paywall HTML instead of JSON. */
+function isBrowserRequest(req: Request): boolean {
+  return (
+    (req.get("accept") ?? "").includes("text/html") &&
+    (req.get("user-agent") ?? "").includes("Mozilla")
+  );
 }

@@ -277,8 +277,9 @@ export function DetectionPanel({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          The test key always passes, which suits a demo. Leave the field empty to turn the check
-          off.
+          The test key always passes, which suits a demo, and needs no secret. For your own key, set{" "}
+          <code className="font-mono">TURNSTILE_SECRET_KEY</code> in your app to the same
+          widget&apos;s secret, or the check stays off. Leave the field empty to turn it off.
         </p>
         {scored && !form.turnstileSiteKey.trim() && (
           <Alert>

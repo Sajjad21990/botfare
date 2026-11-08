@@ -93,6 +93,8 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
   const settled: Array<{ extra?: Record<string, unknown> }> = [];
   /** Public JWKs served at the signature directory. */
   let directoryKeys: object[] = [];
+  /** When true, /supported answers 500 (the facilitator is unreachable for the gate). */
+  let supportedFailing = false;
   const ledger = new InMemoryLedger();
   const facilitator = new x402Facilitator().register(
     PAYPAL_SANDBOX,
@@ -120,6 +122,10 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
     res.type("application/http-message-signatures-directory+json").send({ keys: directoryKeys });
   });
   app.get(`${FACILITATOR_PATH}/supported`, (_req, res) => {
+    if (supportedFailing) {
+      res.status(500).json({ error: "down" });
+      return;
+    }
     res.json(facilitator.getSupported());
   });
   app.post(`${FACILITATOR_PATH}/:op`, async (req, res) => {
@@ -149,6 +155,9 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
     },
     setDirectoryKeys(keys: object[]) {
       directoryKeys = keys;
+    },
+    setSupportedFailing(failing: boolean) {
+      supportedFailing = failing;
     },
   };
 }
