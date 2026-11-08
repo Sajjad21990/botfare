@@ -172,9 +172,19 @@ export function demoOptionsFromEnv(env: NodeJS.ProcessEnv = process.env) {
     host: env.HOST ?? "0.0.0.0",
     siteId: env.BOTFARE_SITE_ID || undefined,
     siteSecret: env.BOTFARE_SITE_SECRET || undefined,
-    botfareUrl: env.BOTFARE_URL || undefined,
+    botfareUrl: withScheme(env.BOTFARE_URL),
     origin: env.DEMO_ORIGIN || undefined,
   } satisfies DemoOptions & { port: number; host: string };
+}
+
+/**
+ * BOTFARE_URL may be a bare `host:port` (Render's `fromService` hostport on the private network);
+ * that gets `http://`. Full URLs pass through unchanged.
+ */
+export function withScheme(url: string | undefined): string | undefined {
+  const trimmed = url?.trim();
+  if (!trimmed) return undefined;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 
 export interface RunningDemo {

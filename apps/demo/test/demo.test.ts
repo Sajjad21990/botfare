@@ -1,6 +1,6 @@
 import { pricingRuleSchema } from "@botfare/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type RunningDemo, startDemo } from "../src/app";
+import { demoOptionsFromEnv, type RunningDemo, startDemo, withScheme } from "../src/app";
 import { brewRatio } from "../src/brew-ratio";
 import { loadArticles, parseArticle, truncate } from "../src/content";
 import { markdownToHtml } from "../src/markdown";
@@ -93,6 +93,23 @@ describe("demo publisher in free mode (no BotFare configured)", () => {
     const bad = await fetch(`${demo.url}/api/brew-ratio?method=drip&coffeeGrams=abc`);
     expect(bad.status).toBe(400);
     expect(await bad.json()).toMatchObject({ error: "invalid_query" });
+  });
+});
+
+describe("demoOptionsFromEnv()", () => {
+  it("reads the BotFare settings and accepts a bare host:port for BOTFARE_URL", () => {
+    expect(withScheme("botfare-web:10000")).toBe("http://botfare-web:10000");
+    expect(withScheme("https://botfare.example")).toBe("https://botfare.example");
+    expect(withScheme("  ")).toBeUndefined();
+    expect(
+      demoOptionsFromEnv({ BOTFARE_URL: "botfare-web:10000", BOTFARE_SITE_ID: "site_x" }),
+    ).toMatchObject({
+      port: 4000,
+      host: "0.0.0.0",
+      siteId: "site_x",
+      siteSecret: undefined,
+      botfareUrl: "http://botfare-web:10000",
+    });
   });
 });
 
