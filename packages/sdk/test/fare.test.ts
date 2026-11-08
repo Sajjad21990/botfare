@@ -94,6 +94,53 @@ describe("paid results keep the delivered bytes", () => {
     expect(result.response.url).toBe(`${stack.siteUrl}/articles/burr-basics`);
   });
 
+  it("keeps no bytes past maxKeptBodyBytes, but still delivers the whole body", async () => {
+    const agent = createBotFareAgent({
+      agentKey: stack.agentKey,
+      botfareUrl: botfare.url,
+      maxKeptBodyBytes: 10,
+    });
+    const result = await agent.fetch(`${stack.siteUrl}/articles/burr-basics`);
+    expect(result.paid).toBe(true);
+    expect(result.body).toBeNull();
+    expect(await result.response.text()).toBe(ARTICLE);
+
+    // Without a Content-Length (chunked), the body is read up to the limit and then streamed on.
+    const chunked: typeof fetch = async (input, init) => {
+      const res = await fetch(input, init);
+      if (res.status !== 200) return res;
+      const headers = new Headers(res.headers);
+      headers.delete("content-length");
+      const parts = [ARTICLE.slice(0, 8), ARTICLE.slice(8, 20), ARTICLE.slice(20)];
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          await res.arrayBuffer();
+          for (const part of parts) controller.enqueue(new TextEncoder().encode(part));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: res.status, headers });
+    };
+    const small = createBotFareAgent({
+      agentKey: stack.agentKey,
+      botfareUrl: botfare.url,
+      maxKeptBodyBytes: 10,
+      fetch: chunked,
+    });
+    const streamed = await small.fetch(`${stack.siteUrl}/articles/burr-basics`);
+    expect(streamed.paid).toBe(true);
+    expect(streamed.body).toBeNull();
+    expect(await streamed.response.text()).toBe(ARTICLE);
+    const roomy = createBotFareAgent({
+      agentKey: stack.agentKey,
+      botfareUrl: botfare.url,
+      fetch: chunked,
+    });
+    const kept = await roomy.fetch(`${stack.siteUrl}/articles/burr-basics`);
+    expect(new TextDecoder().decode(kept.body ?? new Uint8Array())).toBe(ARTICLE);
+    expect(await kept.response.text()).toBe(ARTICLE);
+  });
+
   it("leaves unpaid responses untouched, with no body or receipt ID", async () => {
     const agent = createBotFareAgent({ agentKey: stack.agentKey, botfareUrl: botfare.url });
     const result = await agent.fetch(`${stack.siteUrl}/free`);

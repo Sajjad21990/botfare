@@ -1,5 +1,5 @@
 import { AGENT_HEADER, decodeAgentKey } from "@botfare/contracts";
-import type { DisputeOutcome } from "@botfare/contracts/fare";
+import { type DisputeOutcome, MAX_DISPUTE_CONTENT_BYTES } from "@botfare/contracts/fare";
 import { createRequestSigner, type RequestSigner } from "@botfare/contracts/web-bot-auth";
 import { PAYPAL_SANDBOX, PrepaidPayPalClient } from "@botfare/x402-paypal";
 import { MAX_CONTROL_PLANE_RESPONSE_BYTES, readLimitedText } from "@x402/core/http";
@@ -38,6 +38,17 @@ export interface BotFareAgentOptions {
    */
   botfareUrl?: string;
   /**
+   * Fetch for calls to BotFare's own agent API (disputes, decline notes, citations). Default: the
+   * `fetch` option, else the global fetch. Useful when `fetch` only reaches publisher sites.
+   */
+  botfareFetch?: typeof fetch;
+  /**
+   * Paid bodies up to this many bytes are kept in `PaidResult.body` for disputes. Default
+   * MAX_DISPUTE_CONTENT_BYTES (1 MB, the most a dispute may carry); a larger body is streamed to
+   * the caller untouched and `body` is null.
+   */
+  maxKeptBodyBytes?: number;
+  /**
    * Sign every request (including paid retries) with an RFC 9421 HTTP Message Signature, Web Bot
    * Auth style, so publishers can tell a BotFare agent from an impostor. Default true.
    */
@@ -58,7 +69,8 @@ export interface PaidResult {
   receiptId: string | null;
   /**
    * The exact bytes delivered for a paid response (what the publisher attested by digest), kept
-   * so a Fare Court dispute can submit them; null when nothing was paid.
+   * so a Fare Court dispute can submit them; null when nothing was paid or the body was larger
+   * than `maxKeptBodyBytes`.
    */
   body: Uint8Array | null;
   /** The 402 offer that was paid (or refused by the publisher); null if no 402 was seen. */
@@ -108,8 +120,9 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
   const fare = createFareApi({
     botfareUrl,
     signer: signer ?? createRequestSigner({ privateJwk: signingKey, signatureAgent: botfareUrl }),
-    fetch: baseFetch,
+    fetch: options.botfareFetch ?? baseFetch,
   });
+  const maxKeptBodyBytes = options.maxKeptBodyBytes ?? MAX_DISPUTE_CONTENT_BYTES;
 
   // The official x402 client with BotFare's scheme; spend controls run before the plug-in signs.
   const client = new x402Client()
@@ -167,8 +180,9 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
     let body: Uint8Array | null = null;
     if (paid) {
       // Keep the exact bytes for a possible dispute, and hand back a response that replays them.
-      body = new Uint8Array(await response.arrayBuffer());
-      response = replayResponse(response, body);
+      const kept = await keepBody(response, maxKeptBodyBytes);
+      body = kept.body;
+      response = kept.response;
     }
     return {
       response,
@@ -193,10 +207,57 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
   };
 }
 
-/** A Response over already-read bytes, with the original's status, headers and URL. */
-function replayResponse(original: Response, body: Uint8Array): Response {
-  // A copy backed by a plain ArrayBuffer, so the caller's `body` and the replay never share state.
-  const replay = new Response(body.length > 0 ? body.slice() : null, {
+/**
+ * Reads a response body up to `maxBytes` and returns those bytes with a response that replays the
+ * whole body. Past `maxBytes`, nothing is kept: the replay streams what was read so far followed
+ * by the rest of the original stream, so memory stays bounded.
+ */
+async function keepBody(
+  original: Response,
+  maxBytes: number,
+): Promise<{ body: Uint8Array | null; response: Response }> {
+  const declared = Number(original.headers.get("content-length"));
+  if (!original.body || (Number.isFinite(declared) && declared > maxBytes)) {
+    return { body: original.body ? null : new Uint8Array(), response: original };
+  }
+  const reader = original.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    size += value.byteLength;
+    if (size > maxBytes) {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(chunk);
+        },
+        async pull(controller) {
+          const next = await reader.read();
+          if (next.done) controller.close();
+          else controller.enqueue(next.value);
+        },
+        cancel(reason) {
+          return reader.cancel(reason);
+        },
+      });
+      return { body: null, response: rewrap(original, stream) };
+    }
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  // A copy for the replay, so the caller's `body` and the response never share a buffer.
+  return { body, response: rewrap(original, size > 0 ? body.slice() : null) };
+}
+
+/** A new Response over `body` with the original's status, headers, URL and redirect flag. */
+function rewrap(original: Response, body: ConstructorParameters<typeof Response>[0]): Response {
+  const replay = new Response(body, {
     status: original.status,
     statusText: original.statusText,
     headers: original.headers,
