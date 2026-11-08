@@ -3,7 +3,7 @@
  * Money in the ledger is integer micro-dollars (1 USD = 1,000,000); money on the wire and in
  * PayPal records is integer cents.
  */
-import type { PricingRule } from "@botfare/contracts";
+import { DEFAULT_DETECTION, type DetectionConfig, type PricingRule } from "@botfare/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -46,7 +46,10 @@ export const sites = pgTable(
     secretHash: text("secret_hash").notNull(),
     pricing: jsonb("pricing").$type<PricingRule[]>().notNull().default([]),
     freePaths: jsonb("free_paths").$type<string[]>().notNull().default([]),
+    /** Legacy switch, kept for older middleware; `detection.level` supersedes it. */
     chargeKnownBots: boolean("charge_known_bots").notNull().default(false),
+    /** Agent detection settings (detectionConfigSchema), served to the middleware with the config. */
+    detection: jsonb("detection").$type<DetectionConfig>().notNull().default(DEFAULT_DETECTION),
     payoutEmail: text("payout_email"),
     /** Changes on every save so the middleware can skip unchanged configs. */
     version: text("version").notNull(),
@@ -182,6 +185,11 @@ export const receipts = pgTable(
       .notNull()
       .references(() => ledgerTransactions.id),
     refundTransactionId: text("refund_transaction_id").references(() => ledgerTransactions.id),
+    /**
+     * Why the middleware treated the request as an agent (a detectionSignalSchema value), from the
+     * payment requirements' `extra.botfareSignal`; null when absent or unknown.
+     */
+    detectionSignal: text("detection_signal"),
     createdAt: createdAt(),
   },
   (t) => [

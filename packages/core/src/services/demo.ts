@@ -1,9 +1,11 @@
 /**
  * Judge mode keeps the shared demo working. Every judge who picks "Publisher" is the same user, so
  * each persona sign-in puts back what one judge could have changed for the next: Crema Notes'
- * prices and free paths, the payout email, and enough earnings to try "Withdraw now" again.
+ * prices, free paths and bot detection, the payout email, and enough earnings to try "Withdraw
+ * now" again.
  */
 import {
+  CREMA_NOTES_DETECTION,
   DEMO_SITE_FREE_PATHS,
   DEMO_SITE_NAME,
   DEMO_SITE_PRICING,
@@ -16,7 +18,7 @@ import type { Db } from "../db";
 import { earningsBalanceMicros, postTransaction } from "../ledger";
 import { payouts, users } from "../schema";
 import { setPayoutEmail } from "./payouts";
-import { listSites, updateSitePricing } from "./sites";
+import { listSites, siteDetection, updateSiteDetection, updateSitePricing } from "./sites";
 
 /** Earnings the publisher persona has at sign-in, so every judge can try a $1.00+ withdrawal. */
 export const DEMO_EARNINGS_FLOOR_CENTS = 200;
@@ -24,6 +26,8 @@ export const DEMO_EARNINGS_FLOOR_CENTS = 200;
 export interface DemoPublisherReset {
   /** Crema Notes sites whose prices were put back. */
   pricingReset: number;
+  /** Crema Notes sites whose bot detection was put back. */
+  detectionReset: number;
   payoutEmailReset: boolean;
   /** Demo earnings added this time (0 when the balance already reached the floor). */
   earningsAddedCents: number;
@@ -39,23 +43,31 @@ export async function resetDemoPublisher(
   input: { userId: string; payoutEmail: string | null; earningsFloorCents?: number },
 ): Promise<DemoPublisherReset> {
   let pricingReset = 0;
+  let detectionReset = 0;
   for (const site of await listSites(db, input.userId)) {
     if (site.name !== DEMO_SITE_NAME) continue;
     if (
-      samePricing(site.pricing, DEMO_SITE_PRICING) &&
-      JSON.stringify(site.freePaths) === JSON.stringify(DEMO_SITE_FREE_PATHS) &&
-      site.chargeKnownBots === false
+      !samePricing(site.pricing, DEMO_SITE_PRICING) ||
+      JSON.stringify(site.freePaths) !== JSON.stringify(DEMO_SITE_FREE_PATHS) ||
+      site.chargeKnownBots !== false
     ) {
-      continue;
+      await updateSitePricing(db, {
+        siteId: site.id,
+        ownerUserId: input.userId,
+        pricing: DEMO_SITE_PRICING,
+        freePaths: DEMO_SITE_FREE_PATHS,
+        chargeKnownBots: false,
+      });
+      pricingReset += 1;
     }
-    await updateSitePricing(db, {
-      siteId: site.id,
-      ownerUserId: input.userId,
-      pricing: DEMO_SITE_PRICING,
-      freePaths: DEMO_SITE_FREE_PATHS,
-      chargeKnownBots: false,
-    });
-    pricingReset += 1;
+    if (canonical(siteDetection(site)) !== canonical(CREMA_NOTES_DETECTION)) {
+      await updateSiteDetection(db, {
+        siteId: site.id,
+        ownerUserId: input.userId,
+        detection: CREMA_NOTES_DETECTION,
+      });
+      detectionReset += 1;
+    }
   }
 
   let payoutEmailReset = false;
@@ -95,7 +107,16 @@ export async function resetDemoPublisher(
     if (posted.created) earningsAddedCents = cents;
   }
 
-  return { pricingReset, payoutEmailReset, earningsAddedCents };
+  return { pricingReset, detectionReset, payoutEmailReset, earningsAddedCents };
+}
+
+/** JSON with object keys sorted and undefined values dropped, for order-independent comparison. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, inner) =>
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => a.localeCompare(b)))
+      : inner,
+  );
 }
 
 function samePricing(a: PricingRule[], b: PricingRule[]): boolean {

@@ -1,3 +1,4 @@
+import { DEFAULT_DETECTION } from "@botfare/contracts";
 import { generateAgentKeyPair } from "@botfare/x402-paypal";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
@@ -61,6 +62,7 @@ describe("sites", () => {
       pricing: [{ pattern: "/articles/*", method: "GET", priceCents: 3, audience: "agents" }],
       freePaths: [],
       chargeKnownBots: false,
+      detection: DEFAULT_DETECTION,
       version: site.version,
     });
 

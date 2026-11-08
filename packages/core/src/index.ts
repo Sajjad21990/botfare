@@ -18,6 +18,8 @@ export {
 } from "./ledger";
 export { migrate, migrationsFolder } from "./migrate";
 export {
+  type ChargeRequestWithExtra,
+  detectionSignalFromExtra,
   PostgresPrepaidLedger,
   platformFeeMicros,
   type RefundResult,
@@ -55,6 +57,8 @@ export {
   type PublisherSummary,
   publisherSummary,
   receiptsForPublisher,
+  revenueBySignal,
+  type SignalRevenue,
   type WalletSummary,
   walletSummary,
 } from "./services/dashboards";
@@ -98,13 +102,16 @@ export {
   authenticateSite,
   type CreateSiteInput,
   createSite,
+  type DetectionConfigInput,
   getSite,
   getSiteConfig,
   hashSiteSecret,
   listSites,
   type PricingRuleInput,
   rotateSiteSecret,
+  siteDetection,
   toSiteConfig,
+  updateSiteDetection,
   updateSitePricing,
   updateSiteProfile,
 } from "./services/sites";

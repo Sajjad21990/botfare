@@ -1,5 +1,8 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
+  DEFAULT_DETECTION,
+  type DetectionConfig,
+  detectionConfigSchema,
   IdPrefix,
   newId,
   type PricingRule,
@@ -15,6 +18,9 @@ import { type Site, sites } from "../schema";
 
 /** Pricing rules as the dashboard sends them; defaults (method, audience) are filled in. */
 export type PricingRuleInput = z.input<typeof pricingRuleSchema>;
+
+/** Detection settings as the dashboard sends them; defaults (edge headers, thresholds) are filled in. */
+export type DetectionConfigInput = z.input<typeof detectionConfigSchema>;
 
 const pricingSchema = z.array(pricingRuleSchema).max(100);
 const freePathsSchema = z.array(z.string().startsWith("/")).max(100);
@@ -40,6 +46,8 @@ export interface CreateSiteInput {
   pricing: PricingRuleInput[];
   freePaths?: string[];
   chargeKnownBots?: boolean;
+  /** Agent detection; DEFAULT_DETECTION when left out. */
+  detection?: DetectionConfigInput;
   payoutEmail?: string | null;
 }
 
@@ -60,6 +68,7 @@ export async function createSite(
       pricing: pricingSchema.parse(input.pricing),
       freePaths: freePathsSchema.parse(input.freePaths ?? []),
       chargeKnownBots: input.chargeKnownBots ?? false,
+      detection: input.detection ? detectionConfigSchema.parse(input.detection) : DEFAULT_DETECTION,
       payoutEmail: input.payoutEmail ? z.email().parse(input.payoutEmail) : null,
       version: newVersion(),
     })
@@ -103,8 +112,15 @@ export function toSiteConfig(site: Site): SiteConfig {
     pricing: site.pricing,
     freePaths: site.freePaths,
     chargeKnownBots: site.chargeKnownBots,
+    detection: siteDetection(site),
     version: site.version,
   });
+}
+
+/** The site's detection settings with every default filled in (rows written before a field existed). */
+export function siteDetection(site: Pick<Site, "detection">): DetectionConfig {
+  const parsed = detectionConfigSchema.safeParse(site.detection ?? {});
+  return parsed.success ? parsed.data : DEFAULT_DETECTION;
 }
 
 /** Config served to the publisher middleware. */
@@ -165,6 +181,29 @@ export async function updateSiteProfile(
       version: newVersion(),
       updatedAt: new Date(),
     })
+    .where(siteWhere(input.siteId, input.ownerUserId))
+    .returning();
+  return site ?? null;
+}
+
+/**
+ * Saves the site's agent detection settings (validated with detectionConfigSchema, defaults filled
+ * in); bumps the config version so the middleware picks them up. Null when the site is not found
+ * (or not the given owner's).
+ */
+export async function updateSiteDetection(
+  db: DbOrTx,
+  input: {
+    siteId: string;
+    /** When given, only that user's site is updated. */
+    ownerUserId?: string;
+    detection: DetectionConfigInput;
+  },
+): Promise<Site | null> {
+  const detection = detectionConfigSchema.parse(input.detection);
+  const [site] = await db
+    .update(sites)
+    .set({ detection, version: newVersion(), updatedAt: new Date() })
     .where(siteWhere(input.siteId, input.ownerUserId))
     .returning();
   return site ?? null;

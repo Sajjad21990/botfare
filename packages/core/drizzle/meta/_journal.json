@@ -22,6 +22,13 @@
       "when": 1794145055201,
       "tag": "0002_payout_retries",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794146258377,
+      "tag": "0003_detection",
+      "breakpoints": true
     }
   ]
 }

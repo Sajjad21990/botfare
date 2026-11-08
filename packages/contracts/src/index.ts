@@ -359,6 +359,18 @@ export const DEMO_SITE_FREE_PATHS: string[] = [
   "/favicon.ico",
 ];
 
+/** Cloudflare's published Turnstile test site key that always passes (sandbox demos only). */
+export const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
+
+/**
+ * Crema Notes' agent detection as seeded: score-based ("standard") with the Turnstile human check,
+ * so a suspected human can always prove it and read free. Judge mode restores it at sign-in.
+ */
+export const CREMA_NOTES_DETECTION: DetectionConfig = detectionConfigSchema.parse({
+  level: "standard",
+  turnstileSiteKey: TURNSTILE_TEST_SITE_KEY,
+});
+
 /** Agent keys `pnpm seed` and `pnpm seed:traffic` issue to the agent-owner persona. */
 export const DEMO_AGENT_KEY_NAMES: readonly string[] = [
   "Demo research agent",

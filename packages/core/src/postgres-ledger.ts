@@ -1,4 +1,4 @@
-import { IdPrefix, newId } from "@botfare/contracts";
+import { type DetectionSignal, detectionSignalSchema, IdPrefix, newId } from "@botfare/contracts";
 import {
   type AgentKeyRecord,
   type ChargeRequest,
@@ -34,6 +34,20 @@ export function platformFeeMicros(amountMicros: number): number {
 type Evaluation = { ok: true; key: AgentKey; site: Site } | LedgerRefusal;
 
 /**
+ * A charge request as the facilitator may pass it: the plug-in's ChargeRequest plus the payment
+ * requirements' `extra`, where the publisher middleware puts `botfareSignal` (why it asked for
+ * payment). Older facilitators leave `extra` out; the receipt then records no signal.
+ */
+export type ChargeRequestWithExtra = ChargeRequest & { extra?: Record<string, unknown> | null };
+
+/** The detection signal in payment requirements' `extra`, or null when absent or unknown. */
+export function detectionSignalFromExtra(extra: unknown): DetectionSignal | null {
+  if (!extra || typeof extra !== "object") return null;
+  const parsed = detectionSignalSchema.safeParse((extra as Record<string, unknown>).botfareSignal);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
  * The x402 ledger port on Postgres. `check` only reads; `charge` re-runs every check and moves
  * the money in one database transaction, holding the agent key row and then the wallet row
  * `FOR UPDATE`, so concurrent charges cannot both pass the balance or daily-cap check. The
@@ -61,7 +75,7 @@ export class PostgresPrepaidLedger implements PrepaidLedgerPort {
     return evaluation.ok ? { ok: true } : evaluation;
   }
 
-  async charge(request: ChargeRequest): Promise<ChargeResult> {
+  async charge(request: ChargeRequestWithExtra): Promise<ChargeResult> {
     const amountMicros = centsToMicros(request.amountCents);
     const feeMicros = platformFeeMicros(amountMicros);
     try {
@@ -99,6 +113,7 @@ export class PostgresPrepaidLedger implements PrepaidLedgerPort {
           nonce: request.nonce,
           status: "settled",
           transactionId: posted.transactionId,
+          detectionSignal: detectionSignalFromExtra(request.extra),
           createdAt: this.now(),
         });
         return { ok: true, transaction: receiptId };
