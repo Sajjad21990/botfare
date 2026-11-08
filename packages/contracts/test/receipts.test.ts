@@ -32,7 +32,10 @@ async function signer() {
   return { jwks: { keys: [publicJwk({ ...pub, kid, alg: "EdDSA", use: "sig" })] }, kid, sign };
 }
 
-const payment = (receiptId = "rcpt_1", resource = "https://demo.example/articles/a") => ({
+const payment = (
+  receiptId = "rcpt_1",
+  resource: string | null = "https://demo.example/articles/a",
+) => ({
   iss: ISSUER,
   sub: receiptId,
   iat: 1_794_000_000,
@@ -135,6 +138,65 @@ describe("signed receipts", () => {
 
     const swapped = await checkAnswerSource({ ...source, receiptId: "rcpt_2" }, jwks);
     expect([swapped.paid.ok, swapped.delivered.ok]).toEqual([false, false]);
+
+    // A payment that names no URL backs no citation, whatever URL the manifest gives.
+    const unbound = await checkAnswerSource(
+      {
+        ...source,
+        url: "https://other.example/premium",
+        payment: await sign(payment("rcpt_1", null)),
+      },
+      jwks,
+    );
+    expect(unbound.paid).toEqual({ ok: false, message: "Payment is not bound to a URL" });
+  });
+
+  it("does not count a refunded source as paid", async () => {
+    const { jwks, sign } = await signer();
+    const refund = (receiptId: string) =>
+      sign({
+        iss: ISSUER,
+        sub: receiptId,
+        iat: 1_794_000_100,
+        v: 1,
+        kind: "refund",
+        refund: {
+          refundedMicros: 30_000,
+          via: "dispute",
+          disputeId: "dsp_1",
+          refundedAt: "2026-11-09T10:05:00.000Z",
+        },
+      });
+    const source = {
+      url: "https://demo.example/articles/a",
+      receiptId: "rcpt_1",
+      claim: "",
+      payment: await sign(payment()),
+      delivery: null,
+      readDigest: null,
+    };
+    expect((await checkAnswerSource(source, jwks)).paid.ok).toBe(true);
+
+    const refunded = await checkAnswerSource({ ...source, refund: await refund("rcpt_1") }, jwks);
+    expect(refunded.paid).toEqual({
+      ok: false,
+      message: "Fare refunded after a dispute",
+      amountMicros: 30_000,
+    });
+    expect(refunded.refund).toEqual({
+      refunded: true,
+      message: "Fare refunded after a dispute",
+      refundedMicros: 30_000,
+    });
+
+    // Another receipt's refund, or a forged one, changes nothing.
+    const other = await checkAnswerSource({ ...source, refund: await refund("rcpt_2") }, jwks);
+    expect([other.paid.ok, other.refund?.refunded]).toEqual([true, false]);
+    const forged = await checkAnswerSource(
+      { ...source, refund: await (await signer()).sign({}) },
+      jwks,
+    );
+    expect([forged.paid.ok, forged.refund?.refunded]).toEqual([true, false]);
   });
 });
 

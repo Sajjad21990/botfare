@@ -1,7 +1,7 @@
 /** Plain-language wording for BotFare's signed statements (browser-safe, no React). */
 import type { DetectionSignal } from "@botfare/contracts";
 import type { BotFareStatement, StatementKind } from "@botfare/contracts/receipts";
-import { SIGNAL_DESCRIPTIONS, signalLabel } from "@/components/publisher/detection-copy";
+import { SIGNAL_DESCRIPTIONS, signalLabel } from "../publisher/detection-copy";
 
 const MICROS_PER_CENT = 10_000;
 
@@ -88,7 +88,10 @@ export function headline(statement: BotFareStatement): string {
       const p = statement.payment;
       const site = hostOf(p.siteOrigin) ?? p.payTo;
       const path = pathOf(p.resource);
-      return `Paid ${formatFareMicros(p.amountMicros)} to ${site}${path ? ` for ${path}` : ""}`;
+      // A resource on another host than the site's registered origin shows its own host.
+      const resourceHost = hostOf(p.resource);
+      const where = resourceHost && resourceHost !== site ? `${resourceHost}${path}` : path;
+      return `Paid ${formatFareMicros(p.amountMicros)} to ${site}${where ? ` for ${where}` : ""}`;
     }
     case "delivery": {
       const d = statement.delivery;

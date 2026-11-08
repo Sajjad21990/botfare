@@ -225,6 +225,8 @@ export const answerSourceSchema = z.object({
   delivery: z.string().nullable(),
   /** sha-256 Content-Digest of the bytes the agent actually read. */
   readDigest: digest.nullable(),
+  /** Signed refund statement, if the fare was refunded (a verifier fetches the latest one). */
+  refund: z.string().nullable().optional(),
 });
 export type AnswerSource = z.infer<typeof answerSourceSchema>;
 
@@ -241,11 +243,20 @@ export interface SourceCheck {
   paid: { ok: boolean; message: string; amountMicros?: number };
   delivered: { ok: boolean; message: string };
   bytesMatch: { ok: boolean; message: string };
+  /**
+   * Set when the source came with a refund statement: `refunded` is true when it is valid and for
+   * this receipt, and the source then does not count as paid.
+   */
+  refund?: { refunded: boolean; message: string; refundedMicros?: number };
 }
 
 /**
  * Checks one cited source: the payment is signed by BotFare for this receipt and URL, the delivery is
- * signed for the same receipt, and the bytes the agent read match the attested digest.
+ * signed for the same receipt, and the bytes the agent read match the attested digest. A payment
+ * statement that names no URL proves nothing about the cited one, so it does not count as paid; a
+ * valid refund statement for the receipt means the fare was returned, so it does not count either.
+ * The signed `resource` is the URL the paid site's own server said it was serving (never a URL the
+ * agent supplied).
  */
 export async function checkAnswerSource(
   source: AnswerSource,
@@ -265,9 +276,10 @@ export async function checkAnswerSource(
     check.paid = { ok: false, message: payment.message };
   } else if (payment.statement.sub !== source.receiptId) {
     check.paid = { ok: false, message: "Signed for a different receipt" };
+  } else if (payment.statement.kind === "payment" && payment.statement.payment.resource === null) {
+    check.paid = { ok: false, message: "Payment is not bound to a URL" };
   } else if (
     payment.statement.kind === "payment" &&
-    payment.statement.payment.resource !== null &&
     payment.statement.payment.resource !== source.url
   ) {
     check.paid = { ok: false, message: "Signed for a different URL" };
@@ -277,6 +289,25 @@ export async function checkAnswerSource(
       message: "Payment signed by BotFare",
       amountMicros: payment.statement.payment.amountMicros,
     };
+  }
+
+  if (source.refund) {
+    const refund = await verifyStatement(source.refund, keys, { ...options, kind: "refund" });
+    if (!refund.ok) {
+      check.refund = { refunded: false, message: refund.message };
+    } else if (refund.statement.sub !== source.receiptId) {
+      check.refund = { refunded: false, message: "Refund signed for a different receipt" };
+    } else if (refund.statement.kind === "refund") {
+      const { refundedMicros, via } = refund.statement.refund;
+      const message =
+        via === "dispute" ? "Fare refunded after a dispute" : "Fare refunded by the publisher";
+      check.refund = { refunded: true, message, refundedMicros };
+      check.paid = {
+        ok: false,
+        message,
+        ...(check.paid.amountMicros !== undefined ? { amountMicros: check.paid.amountMicros } : {}),
+      };
+    }
   }
 
   let attested: string | null = null;

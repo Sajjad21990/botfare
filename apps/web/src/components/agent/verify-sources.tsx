@@ -153,7 +153,10 @@ export function VerifySources({ citations, manifest }: VerifySourcesProps) {
                 </Link>
               </div>
               <ul className="mt-2 grid gap-2 sm:grid-cols-3">
-                <CheckItem label="Paid" result={row.check.paid} />
+                <CheckItem
+                  label={row.check.refund?.refunded ? "Refunded" : "Paid"}
+                  result={row.check.paid}
+                />
                 <CheckItem label="Delivered" result={row.check.delivered} />
                 <CheckItem label="Bytes match" result={row.check.bytesMatch} />
               </ul>
@@ -229,7 +232,8 @@ function sourcesToCheck(
 
 /**
  * Fills in what the manifest lacks from BotFare's public statements: the payment when there is no
- * manifest entry, and the delivery when the publisher attested after the answer was written.
+ * manifest entry, the delivery when the publisher attested after the answer was written, and a
+ * refund if the fare was returned since (so a refunded source no longer counts as paid).
  * Statements are signed, so where they come from does not matter; they are verified either way.
  */
 async function withLatestStatements(
@@ -237,14 +241,19 @@ async function withLatestStatements(
   receiptId: string,
   url: string,
 ): Promise<AnswerSource | null> {
-  if (source?.delivery) return source;
   let latest: Awaited<ReturnType<typeof fetchReceiptStatements>> = null;
   try {
     latest = await fetchReceiptStatements(receiptId);
   } catch {
     latest = null;
   }
-  if (source) return { ...source, delivery: latest?.delivery ?? null };
+  if (source) {
+    return {
+      ...source,
+      delivery: source.delivery ?? latest?.delivery ?? null,
+      refund: latest?.refund ?? source.refund ?? null,
+    };
+  }
   if (!latest?.payment) return null;
   return {
     url,
@@ -253,5 +262,6 @@ async function withLatestStatements(
     payment: latest.payment,
     delivery: latest.delivery,
     readDigest: null,
+    refund: latest.refund,
   };
 }
