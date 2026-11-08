@@ -2,7 +2,7 @@
  * JSON shapes of the publisher dashboard (GET /api/publisher/summary and the page's initial data).
  * Types only, so client components can import them without pulling in server code.
  */
-import type { PricingRule } from "@botfare/contracts";
+import type { DetectionConfig, DetectionSignal, PricingRule } from "@botfare/contracts";
 
 export type PayoutStatusView =
   | "pending"
@@ -39,6 +39,8 @@ export interface SiteView {
   pricing: PricingRule[];
   freePaths: string[];
   chargeKnownBots: boolean;
+  /** Agent detection settings (who gets a 402), defaults filled in. */
+  detection: DetectionConfig;
   version: string;
   createdAt: string;
   paidRequests: number;
@@ -68,6 +70,17 @@ export interface SiteSecretResponse {
   site: SiteView;
   /** Shown once; BotFare keeps only its hash. */
   siteSecret: string;
+}
+
+/** GET /api/publisher/sites/[siteId]/detection. */
+export interface DetectionResponse {
+  detection: DetectionConfig;
+  /** Settled revenue per detection signal on this site, largest first; null = not recorded. */
+  revenueBySignal: {
+    signal: DetectionSignal | null;
+    paidRequests: number;
+    earningsMicros: number;
+  }[];
 }
 
 export interface ApiErrorBody {

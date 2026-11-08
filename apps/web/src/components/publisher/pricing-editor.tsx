@@ -14,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { api, errorText } from "./api";
@@ -407,25 +406,11 @@ export function PricingEditor({
           </p>
         </section>
         <section className="space-y-2">
-          <div className="text-sm font-medium">Known AI crawlers</div>
-          <label
-            htmlFor={`${site.id}-bots`}
-            className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"
-          >
-            <Switch
-              id={`${site.id}-bots`}
-              checked={chargeKnownBots}
-              onCheckedChange={(checked) => setChargeKnownBots(checked)}
-              className="mt-0.5"
-            />
-            <span className="space-y-0.5">
-              <span className="block text-sm">Charge known bots too</span>
-              <span className="block text-xs text-muted-foreground">
-                Crawlers that identify themselves by user agent (GPTBot, ClaudeBot, PerplexityBot
-                and others) get a 402 even without the BotFare agent header.
-              </span>
-            </span>
-          </label>
+          <div className="text-sm font-medium">Who counts as an agent</div>
+          <p className="rounded-lg border p-3 text-xs text-muted-foreground">
+            &ldquo;Agents only&rdquo; rules charge requests BotFare treats as agents. Choose how
+            strict that is, including known AI crawlers such as GPTBot, on the Bot detection tab.
+          </p>
         </section>
       </div>
 

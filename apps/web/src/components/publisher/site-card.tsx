@@ -1,6 +1,15 @@
 "use client";
 
-import { Code2, ExternalLink, KeyRound, Loader2, Lock, RefreshCw, Tags } from "lucide-react";
+import {
+  Code2,
+  ExternalLink,
+  KeyRound,
+  Loader2,
+  Lock,
+  RefreshCw,
+  ShieldCheck,
+  Tags,
+} from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +26,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, errorText } from "./api";
 import { CodeBlock, CopyButton } from "./copy-button";
+import { DetectionPanel } from "./detection-panel";
 import { formatCount, formatMicros } from "./format";
 import { PricingEditor } from "./pricing-editor";
 import { SecretReveal } from "./secret-reveal";
@@ -88,10 +98,17 @@ export function SiteCard({
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="pricing">
-          <TabsList variant="line" className="mb-3 -ml-1.5">
+          <TabsList
+            variant="line"
+            className="mb-3 -ml-1.5 max-w-[calc(100%+0.375rem)] justify-start overflow-x-auto"
+          >
             <TabsTrigger value="pricing">
               <Tags />
               Pricing
+            </TabsTrigger>
+            <TabsTrigger value="detection">
+              <ShieldCheck />
+              Bot detection
             </TabsTrigger>
             <TabsTrigger value="integration">
               <Code2 />
@@ -104,6 +121,9 @@ export function SiteCard({
           </TabsList>
           <TabsContent value="pricing">
             <PricingEditor site={site} onSaved={onChange} />
+          </TabsContent>
+          <TabsContent value="detection">
+            <DetectionPanel site={site} onSaved={onChange} />
           </TabsContent>
           <TabsContent value="integration">
             <Integration site={site} botfareUrl={botfareUrl} />

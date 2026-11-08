@@ -8,6 +8,7 @@ import {
   type Payout,
   publisherSummary,
   type Site,
+  siteDetection,
 } from "@botfare/core";
 import { z } from "zod";
 import type { PayoutView, PublisherDashboard, SiteView } from "../../components/publisher/types";
@@ -45,6 +46,7 @@ export function toSiteView(
     pricing: site.pricing,
     freePaths: site.freePaths,
     chargeKnownBots: site.chargeKnownBots,
+    detection: siteDetection(site),
     version: site.version,
     createdAt: site.createdAt.toISOString(),
     paidRequests: stats.paidRequests,
