@@ -57,6 +57,8 @@ interface TickerRow {
   agent: string;
   amount: string;
   refunded: boolean;
+  /** Why the request was asked to pay, e.g. "Agent header". */
+  signal: string;
 }
 
 /** "Live paid requests": the newest receipts, sliding in as agents pay. */
@@ -74,12 +76,14 @@ export function LiveReceiptsWidget(params: AgWidgetParams<LiveReceiptsWidgetStat
       "agentName",
       "amountUsd",
       "status",
+      "detectionSignal",
     ]);
     if (!fields) {
       widgetApi.setDisplayState("noData");
       return;
     }
-    const [idF, createdF, pathF, agentF, amountF, statusF] = fields as [
+    const [idF, createdF, pathF, agentF, amountF, statusF, signalF] = fields as [
+      AgWidgetField,
       AgWidgetField,
       AgWidgetField,
       AgWidgetField,
@@ -97,6 +101,7 @@ export function LiveReceiptsWidget(params: AgWidgetParams<LiveReceiptsWidgetStat
         agent: String(row[agentF.key] ?? ""),
         amount: widgetApi.formatFieldValue(amountF, row[amountF.key]),
         refunded: row[statusF.key] === "refunded",
+        signal: String(row[signalF.key] ?? ""),
       }));
       setRows(next);
       widgetApi.setDisplayState(next.length > 0 ? "displayed" : "noData");
@@ -146,8 +151,19 @@ export function LiveReceiptsWidget(params: AgWidgetParams<LiveReceiptsWidgetStat
                 <div className={`truncate font-mono text-xs ${text}`} title={row.path}>
                   {row.path}
                 </div>
-                <div className={`truncate text-xs ${subtle}`}>
-                  {row.agent} · {timeAgo(row.createdAt, now)}
+                <div className={`flex min-w-0 items-center gap-1.5 text-xs ${subtle}`}>
+                  <span className="min-w-0 truncate">{row.agent}</span>
+                  <span className="shrink-0 whitespace-nowrap">
+                    · {timeAgo(row.createdAt, now)}
+                  </span>
+                  {row.signal && (
+                    <span
+                      className={`shrink-0 rounded border ${border} px-1 py-px text-[10px] leading-none whitespace-nowrap`}
+                      title="Why BotFare asked this request to pay"
+                    >
+                      {row.signal}
+                    </span>
+                  )}
                 </div>
               </div>
               <span

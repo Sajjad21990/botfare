@@ -46,6 +46,7 @@ import {
 } from "../src/app/api/publisher/sites/[siteId]/detection/route";
 import { GET as summary } from "../src/app/api/publisher/summary/route";
 import { POST as signInAsPersona } from "../src/app/api/session/persona/route";
+import { listPublisherReceiptRows } from "../src/lib/server/analytics-receipts";
 import { closeDb, getDb } from "../src/lib/server/db";
 import { makeAgent, makePublisher, requirementsFor, useTestDatabase } from "./helpers";
 
@@ -190,6 +191,14 @@ describe("PUT /api/publisher/sites/[siteId]/detection", () => {
         { signal: null, paidRequests: 1, earningsMicros: 95_000 },
       ],
     });
+
+    // Analytics rows carry the signal in words; unknown values read "Not recorded".
+    const rows = await listPublisherReceiptRows(getDb(), publisher.owner.id);
+    expect(rows.map((row) => row.detectionSignal).sort()).toEqual([
+      "Automation signals",
+      "Automation signals",
+      "Not recorded",
+    ]);
   });
 
   it("lets the judge-mode publisher change detection, and restores it at the next sign-in", async () => {

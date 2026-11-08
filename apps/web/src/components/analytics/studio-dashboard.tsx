@@ -61,7 +61,7 @@ const widgets = (config: AgWidgetsConfig<AgCoreDefaultRegistry>) =>
         minSize: { width: 240, height: 200 },
         ai: {
           description:
-            "A live ticker of the newest paid requests (page, agent, price), updating as agents pay. Respects page filters and cross filters.",
+            "A live ticker of the newest paid requests (page, agent, detection signal, price), updating as agents pay. Respects page filters and cross filters.",
           usage: "Use to watch AI agent traffic arrive in real time. It needs no fields.",
         },
       },

@@ -4,6 +4,7 @@ import type {
   AgReportState,
   AgWidgetFieldReference,
 } from "ag-studio";
+import { SIGNAL_LABELS, UNRECORDED_SIGNAL_LABEL } from "../publisher/detection-copy";
 import { type BotFareRegistry, EARNINGS_PAYOUT, LIVE_RECEIPTS } from "./registry";
 import type { ReceiptRow } from "./types";
 
@@ -96,6 +97,12 @@ const fields: AgFieldDefinition[] = [
     format: "textFormat",
     description: "settled, or refunded by the publisher.",
   },
+  {
+    id: "detectionSignal",
+    name: "Detection signal",
+    format: "textFormat",
+    description: `Why BotFare asked the request to pay: ${Object.values(SIGNAL_LABELS).join(", ")}, or "${UNRECORDED_SIGNAL_LABEL}" for receipts from before signals were recorded. Revenue by this field is the revenue bot detection recovered.`,
+  },
 ];
 
 /** The receipts as an AG Studio data source that accepts live transactions keyed by receipt ID. */
@@ -127,8 +134,9 @@ const title = (text: string, subtitle?: string) => ({
 });
 
 /**
- * The dashboard a publisher opens to: KPI tiles, revenue over time, by page and by agent, the
- * live ticker, earnings and payout, and every receipt. 24 columns; rows are 16px.
+ * The dashboard a publisher opens to: KPI tiles, revenue over time, by page, by agent and by
+ * detection signal, the live ticker, earnings and payout, and every receipt. 24 columns; rows
+ * are 16px.
  */
 export const initialReport: AgReportState<BotFareRegistry> = {
   selectedPageId: "overview",
@@ -195,6 +203,16 @@ export const initialReport: AgReportState<BotFareRegistry> = {
           sort: [{ field: sum("earningsUsd"), direction: "desc" }],
           format: title("Revenue by agent"),
         },
+        revenueBySignal: {
+          type: "bar-chart-grouped",
+          dataMapping: {
+            categoryKey: [{ id: field("detectionSignal") }],
+            valueKey: [sum("earningsUsd")],
+            tooltipKey: [],
+          },
+          sort: [{ field: sum("earningsUsd"), direction: "desc" }],
+          format: title("Revenue by detection signal", "Why each paid request was asked to pay"),
+        },
         live: { type: LIVE_RECEIPTS, dataMapping: {} },
         receipts: {
           type: "grid",
@@ -207,6 +225,7 @@ export const initialReport: AgReportState<BotFareRegistry> = {
               { id: field("amountUsd") },
               { id: field("feeUsd") },
               { id: field("earningsUsd") },
+              { id: field("detectionSignal") },
               { id: field("status") },
             ],
           },
@@ -223,8 +242,9 @@ export const initialReport: AgReportState<BotFareRegistry> = {
         earnings: { xTrack: 16, yTrack: 7, xSpan: 8, ySpan: 19 },
         revenueByPage: { xTrack: 0, yTrack: 26, xSpan: 8, ySpan: 19 },
         revenueByAgent: { xTrack: 8, yTrack: 26, xSpan: 8, ySpan: 19 },
-        live: { xTrack: 16, yTrack: 26, xSpan: 8, ySpan: 19 },
-        receipts: { xTrack: 0, yTrack: 45, xSpan: 24, ySpan: 24 },
+        revenueBySignal: { xTrack: 16, yTrack: 26, xSpan: 8, ySpan: 19 },
+        receipts: { xTrack: 0, yTrack: 45, xSpan: 16, ySpan: 24 },
+        live: { xTrack: 16, yTrack: 45, xSpan: 8, ySpan: 24 },
       },
       filter: {
         widget: {
@@ -254,6 +274,11 @@ export const PROMPT_STARTERS = [
   {
     label: "Revenue trend",
     prompt: "How is my revenue trending day by day? Call out the best and the worst day.",
+  },
+  {
+    label: "Revenue recovered",
+    prompt:
+      "How much revenue did each detection signal bring in? Which signals beyond agents that identify themselves are recovering the most?",
   },
   {
     label: "Explain the data",

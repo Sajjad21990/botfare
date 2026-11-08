@@ -1,5 +1,7 @@
+import { detectionSignalSchema } from "@botfare/contracts";
 import { type Db, earningsBalanceMicros } from "@botfare/core";
 import type { ReceiptRow, ReceiptsResponse } from "../../components/analytics/types";
+import { signalLabel } from "../../components/publisher/detection-copy";
 
 /** Most rows the dashboard loads at once; the newest ones win. */
 export const MAX_RECEIPT_ROWS = 5000;
@@ -46,6 +48,7 @@ export async function listPublisherReceiptRows(
       amountMicros: true,
       feeMicros: true,
       status: true,
+      detectionSignal: true,
     },
     where: (receipt, { and, eq, inArray }) =>
       and(
@@ -78,6 +81,7 @@ export async function listPublisherReceiptRows(
       feeUsd: receipt.feeMicros / MICROS_PER_USD,
       earningsUsd: refunded ? 0 : (receipt.amountMicros - receipt.feeMicros) / MICROS_PER_USD,
       status: refunded ? "refunded" : "settled",
+      detectionSignal: signalLabel(detectionSignalSchema.safeParse(receipt.detectionSignal).data),
     };
   });
 }
