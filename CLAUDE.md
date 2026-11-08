@@ -56,6 +56,7 @@ scripts/e2e.ts       Phase 1 end-to-end PASS/FAIL checks on real processes
 - Docker only for local infrastructure (Postgres); apps run natively with pnpm.
 - Use fictional site and product names in demo content (no third-party trademarks).
 - Public repo at submission, MIT license. Commit at each milestone.
+- Commit messages and PR descriptions carry **no AI attribution**: no `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" line. This applies to every agent and subagent.
 
 ## Decisions (8 Nov)
 1. x402 plug-in (`prepaid` on `paypal:sandbox`) for the official SDK, not an imitation; own code only as fallback.
