@@ -368,7 +368,10 @@ export const initialReport: AgReportState<BotFareRegistry> = {
           },
           sort: [{ field: { id: field("receiptId"), aggregation: "count" }, direction: "desc" }],
           format: {
-            ...title("Cited vs paid by page", "Paid reads and how many answers cited them"),
+            ...title(
+              "Cited vs paid by page",
+              "Paid reads (receipts) and how often answers cited them",
+            ),
             style: { theme: { common: { legend: { enabled: true, position: "bottom" } } } },
           },
         },
