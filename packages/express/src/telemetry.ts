@@ -27,6 +27,15 @@ export interface OfferTelemetryOptions {
 
 const SEND_TIMEOUT_MS = 5_000;
 
+/** NUL and the other C0 controls, and DEL. */
+function hasControlChar(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
 export class OfferTelemetry {
   private pending: OfferEvent[] = [];
   private dropped = 0;
@@ -48,6 +57,9 @@ export class OfferTelemetry {
     priceCents: number;
     signal: DetectionSignal | null;
   }) {
+    // A decoded path can hold a NUL or other control character (`/articles/%00`): BotFare stores
+    // no such path, so the event is dropped here rather than sent in a batch with good ones.
+    if (hasControlChar(event.path) || hasControlChar(event.method)) return;
     this.pending.push({
       path: (event.path.startsWith("/") ? event.path : `/${event.path}`).slice(0, 500),
       method: event.method.slice(0, 10),

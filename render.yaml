@@ -1,5 +1,5 @@
 # Render Blueprint for BotFare: the BotFare app, the Crema Notes demo publisher, the daily payouts
-# cron job and Postgres 17.
+# cron job, the weekly demo refresh cron job and Postgres 17.
 # Paid plans so nothing sleeps or expires before judging ends. Node comes from .node-version, which
 # pins Node 24 LTS: Node 25+ no longer bundles Corepack, and the build commands run `corepack enable`
 # so pnpm matches package.json's packageManager (scripts/test/render-blueprint.test.ts checks this).
@@ -113,6 +113,24 @@ services:
           type: web
           name: botfare-web
           envVarKey: PAYPAL_CLIENT_SECRET
+
+  # Weekly demo refresh: a new batch of seeded traffic and the Fare Court and Fare Advisor story,
+  # anchored to the run, so the dashboards and the Advisor's 14-day window never run dry while
+  # judging lasts. One run key per ISO week (`seed:traffic --weekly`), so a rerun changes nothing.
+  # Demo money only (`seed` postings); it needs the personas and Crema Notes from `pnpm seed`.
+  - type: cron
+    name: botfare-demo-refresh
+    runtime: node
+    plan: starter
+    region: oregon
+    schedule: "0 6 * * 1" # Mondays, 06:00 UTC
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm seed:traffic --weekly
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: botfare-db
+          property: connectionString
 
 databases:
   - name: botfare-db

@@ -61,7 +61,10 @@ export interface PaidResult {
    * and `response` replays those same bytes, so read either (or both).
    */
   response: Response;
-  /** True when the publisher settled a payment for this response. */
+  /**
+   * True when the publisher settled a payment for this response. A paid redirect is not followed:
+   * `response` is then the 3xx itself (what was paid for and attested), and `paid` is true.
+   */
   paid: boolean;
   /** Decoded PAYMENT-RESPONSE (also present when settlement failed, with `success: false`). */
   receipt: SettleResponse | null;
@@ -145,7 +148,11 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
 
     // Sits under @x402/fetch so the wire inspector sees exactly what was sent and received.
     const observedFetch: typeof fetch = async (input, innerInit) => {
-      const request = await sign(signer, new Request(input, innerInit));
+      let request = await sign(signer, new Request(input, innerInit));
+      // A paid request never follows a redirect. x402 settles any response below 400, a 3xx
+      // included, and the receipt (PAYMENT-RESPONSE) and the attested bytes are that 3xx's: the
+      // caller gets it as paid, with a receipt ID it can dispute, and decides whether to follow.
+      if (isPaidRequest(request)) request = new Request(request, { redirect: "manual" });
       emitPaymentSignature(onWire, request);
       const response = await baseFetch(request);
       if (response.status === 402) {
@@ -265,6 +272,11 @@ function rewrap(original: Response, body: ConstructorParameters<typeof Response>
   Object.defineProperty(replay, "url", { value: original.url });
   Object.defineProperty(replay, "redirected", { value: original.redirected });
   return replay;
+}
+
+/** True when the request carries an x402 payment (V2 PAYMENT-SIGNATURE, or V1 X-PAYMENT). */
+function isPaidRequest(request: Request): boolean {
+  return request.headers.has("PAYMENT-SIGNATURE") || request.headers.has("X-PAYMENT");
 }
 
 /** The request with Signature-Agent, Signature-Input and Signature set (unchanged without a signer). */

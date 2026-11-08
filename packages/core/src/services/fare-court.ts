@@ -37,6 +37,8 @@ import {
 export const DISPUTE_EXCERPT_CHARS = 4_000;
 /** Characters of delivered text handed to the AI judge. */
 export const DISPUTE_JUDGE_TEXT_CHARS = 12_000;
+/** Characters kept from an invalid dispute's bytes (they were not the attested delivery). */
+const INVALID_EXCERPT_CHARS = 500;
 
 const HOUR_MS = 3_600_000;
 const OPEN_STATUSES: DisputeRowStatus[] = ["open", "pending_publisher"];
@@ -69,7 +71,7 @@ export async function attestReceipt(
     .set({
       contentDigest: attestation.contentDigest,
       contentLength: attestation.contentLength,
-      contentType: attestation.contentType,
+      contentType: normalizeMediaType(attestation.contentType),
       deliveredStatus: attestation.status,
       attestedAt: new Date(),
     })
@@ -93,37 +95,121 @@ export async function attestReceipt(
 // ---------------------------------------------------------------------------------------------
 // Delivered text
 
+/** Decoded characters of a delivered body reduced to text: enough for the judge's 12,000. */
+export const MAX_DELIVERED_TEXT_INPUT_CHARS = 200_000;
+
+const MEDIA_TYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/;
+
+/**
+ * The bare media type of a Content-Type value ("text/html; charset=utf-8" → "text/html"), lower
+ * case, or null when it is not a well-formed type/subtype. Parameters are dropped, so text a
+ * publisher puts in them never reaches the judge.
+ */
+export function normalizeMediaType(value: string | null | undefined): string | null {
+  const type = (value ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  return MEDIA_TYPE.test(type) ? type : null;
+}
+
 /**
  * Readable text of a delivered body for the judge and the review UI: HTML is reduced to its text
  * (scripts, styles and tags removed), other text is whitespace-collapsed, and binary types are
- * described rather than decoded.
+ * described rather than decoded. Bounded and linear: only the first
+ * MAX_DELIVERED_TEXT_INPUT_CHARS decoded characters are read, with no backtracking regex.
  */
 export function deliveredTextFromBytes(bytes: Uint8Array, contentType: string | null): string {
-  const type = (contentType ?? "").toLowerCase();
+  const type = normalizeMediaType(contentType) ?? "";
   if (type && !/^text\/|json|xml|javascript|html/.test(type)) {
-    return `[${type.split(";")[0]?.trim() || "binary"} content, ${bytes.length} bytes]`;
+    return `[${type} content, ${bytes.length} bytes]`;
   }
-  const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-  const isHtml = type.includes("html") || (!type && /^\s*</.test(text));
+  // Four bytes per character at most, so this prefix holds every character that is kept.
+  const prefix = bytes.subarray(0, MAX_DELIVERED_TEXT_INPUT_CHARS * 4);
+  const text = new TextDecoder("utf-8", { fatal: false })
+    .decode(prefix)
+    .slice(0, MAX_DELIVERED_TEXT_INPUT_CHARS);
+  const isHtml = type.includes("html") || (!type && /^\s*</.test(text.slice(0, 1_000)));
   return isHtml ? htmlToText(text) : text.replace(/\s+/g, " ").trim();
 }
 
-function htmlToText(html: string): string {
-  return html
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(script|style|noscript|svg|template)\b[\s\S]*?<\/\1\s*>/gi, " ")
-    .replace(
-      /<(br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/section|\/article|\/header|\/footer)\b[^>]*>/gi,
-      "\n",
-    )
-    .replace(/<[^>]*>/g, " ")
+/** Elements whose content is not text a reader sees. */
+const SKIPPED_ELEMENTS = new Set(["script", "style", "noscript", "svg", "template"]);
+/** Tags that end a line of text. */
+const LINE_BREAK_TAGS = new Set([
+  "br",
+  "/p",
+  "/div",
+  "/li",
+  "/h1",
+  "/h2",
+  "/h3",
+  "/h4",
+  "/h5",
+  "/h6",
+  "/tr",
+  "/section",
+  "/article",
+  "/header",
+  "/footer",
+]);
+const TAG_NAME = /^\/?[a-z][a-z0-9]*/;
+
+/** ASCII-only lower case: the same length as the input, so indexes line up with the original. */
+function asciiLower(text: string): string {
+  return text.replace(/[A-Z]+/g, (upper) => upper.toLowerCase());
+}
+
+/**
+ * HTML to text in one forward scan with indexOf (no backtracking regex), so unclosed comments,
+ * tags or script blocks in hostile input cost linear time: an unclosed comment or a "<" with no
+ * ">" after it ends the text, and an element with no closing tag is searched for once.
+ */
+export function htmlToText(input: string): string {
+  const html = input.slice(0, MAX_DELIVERED_TEXT_INPUT_CHARS);
+  const lower = asciiLower(html);
+  const out: string[] = [];
+  const unclosed = new Set<string>();
+  let at = 0;
+  while (at < html.length) {
+    const lt = html.indexOf("<", at);
+    if (lt < 0) {
+      out.push(html.slice(at));
+      break;
+    }
+    out.push(html.slice(at, lt));
+    if (html.startsWith("<!--", lt)) {
+      const close = html.indexOf("-->", lt + 4);
+      if (close < 0) break;
+      out.push(" ");
+      at = close + 3;
+      continue;
+    }
+    const gt = html.indexOf(">", lt + 1);
+    if (gt < 0) break;
+    at = gt + 1;
+    const name = TAG_NAME.exec(lower.slice(lt + 1, Math.min(gt, lt + 40)))?.[0] ?? "";
+    if (SKIPPED_ELEMENTS.has(name) && html[gt - 1] !== "/" && !unclosed.has(name)) {
+      const close = lower.indexOf(`</${name}`, gt + 1);
+      const end = close < 0 ? -1 : lower.indexOf(">", close);
+      if (end >= 0) {
+        out.push(" ");
+        at = end + 1;
+      } else {
+        unclosed.add(name);
+      }
+      continue;
+    }
+    out.push(LINE_BREAK_TAGS.has(name) ? "\n" : " ");
+  }
+  return out
+    .join("")
     .replace(/&nbsp;/gi, " ")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&#(\d+);/g, (_m, code: string) => safeCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_m, code: string) => safeCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d{1,7});/g, (_m, code: string) => safeCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]{1,6});/gi, (_m, code: string) =>
+      safeCodePoint(Number.parseInt(code, 16)),
+    )
     .replace(/&amp;/gi, "&")
     .split("\n")
     .map((line) => line.replace(/[ \t\r\f\v]+/g, " ").trim())
@@ -321,8 +407,8 @@ export async function openDispute(
         note: request.note?.trim() || null,
         createdAt: now,
       };
-      const text = deliveredTextFromBytes(bytes, receipt.contentType);
-      const excerpt = text.slice(0, DISPUTE_EXCERPT_CHARS);
+      // Reduced to text only once the request passed the cheap checks (bounded and linear anyway).
+      const deliveredText = () => deliveredTextFromBytes(bytes, receipt.contentType);
 
       const storeInvalid = async (reason: "window_closed" | "digest_mismatch", message: string) => {
         const [row] = await tx
@@ -331,7 +417,8 @@ export async function openDispute(
             ...base,
             id: newId(IdPrefix.dispute),
             contentDigestOk: receipt.contentDigest === digest,
-            deliveredExcerpt: excerpt,
+            // Not the attested bytes: keep only a short excerpt of what the agent sent.
+            deliveredExcerpt: deliveredText().slice(0, INVALID_EXCERPT_CHARS),
             status: "invalid",
             autoAllowed: false,
             message,
@@ -362,6 +449,8 @@ export async function openDispute(
         );
       }
 
+      const text = deliveredText();
+      const excerpt = text.slice(0, DISPUTE_EXCERPT_CHARS);
       const rate = rateRule ? await disputeRate(tx, input.agentKeyId, now) : null;
       const autoAllowed =
         !rate ||
@@ -407,7 +496,7 @@ export async function openDispute(
           note: base.note,
           delivered: {
             status: receipt.deliveredStatus,
-            contentType: receipt.contentType,
+            contentType: normalizeMediaType(receipt.contentType),
             contentLength: bytes.length,
             text: text.slice(0, DISPUTE_JUDGE_TEXT_CHARS),
             truncated: text.length > DISPUTE_JUDGE_TEXT_CHARS,

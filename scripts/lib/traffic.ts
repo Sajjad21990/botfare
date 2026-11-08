@@ -160,6 +160,16 @@ export async function ensureKey(
 }
 
 /** The `seedWallet` key that funds one run (seedWallet stores it as `seed:<key>`). */
+/** The run key of the weekly refresh: `week-<ISO year>-W<ISO week>` of `date` (UTC). */
+export function weeklyRunKey(date: Date): string {
+  const thursday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  // The Thursday of the (Monday-first) week decides the ISO year.
+  thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));
+  const year = thursday.getUTCFullYear();
+  const week = Math.floor((thursday.getTime() - Date.UTC(year, 0, 1)) / DAY_MS / 7) + 1;
+  return `week-${year}-W${String(week).padStart(2, "0")}`;
+}
+
 export function fundingKey(runKey: string, ownerUserId: string): string {
   return `traffic:${PLAN_VERSION}:${runKey}:${ownerUserId}`;
 }

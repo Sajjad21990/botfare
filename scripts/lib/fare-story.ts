@@ -20,8 +20,12 @@
  * The verdicts are scripted (this is seeded demo data, no model runs); the money still moves only
  * through applyVerdict's policy and refundReceipt, exactly as live. Everything is idempotent per
  * run key: purchase nonces, the wallet funding and the refunds are keyed, decline notes are unique
- * per key, URL and day, citation reports replace each other by answer ID, disputes are refused once
- * a receipt has one, and the telemetry is written once (checked by its first synthetic event).
+ * per key, path and day, citation reports replace each other by answer ID, disputes are refused
+ * once a receipt has one, and the telemetry is written once (checked by its first synthetic event).
+ *
+ * Offers and citations are written only for this run's own purchases (found by their nonces), so
+ * a later run with another key (the weekly refresh, `seed:traffic --weekly`) never counts a
+ * purchase twice, and live purchases keep the offers their middleware really reported.
  */
 import { createHash } from "node:crypto";
 import {
@@ -35,7 +39,6 @@ import {
   attestReceipt,
   type Db,
   listAgentKeys,
-  listReceipts,
   openDispute,
   PostgresPrepaidLedger,
   type Receipt,
@@ -206,10 +209,34 @@ export interface FareStoryRun {
   citations: { answers: number; cited: number };
 }
 
-/** Writes the story; `anchor` is the paid traffic's anchor (planAnchor in scripts/lib/traffic.ts). */
+/** This run's receipts on the site, by purchase nonce (in chunks, so any plan size works). */
+async function receiptsByNonce(db: Db, siteId: string, nonces: string[]): Promise<Receipt[]> {
+  const found: Receipt[] = [];
+  for (let i = 0; i < nonces.length; i += 500) {
+    const chunk = nonces.slice(i, i + 500);
+    found.push(
+      ...(await db.query.receipts.findMany({
+        where: (t, { and, eq, inArray }) => and(eq(t.siteId, siteId), inArray(t.nonce, chunk)),
+      })),
+    );
+  }
+  return found.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+/**
+ * Writes the story; `anchor` is the paid traffic's anchor (planAnchor in scripts/lib/traffic.ts)
+ * and `trafficNonces` the paid traffic's purchase nonces (nonceFor), so offers and citations are
+ * written for this run's purchases only.
+ */
 export async function runFareStory(
   db: Db,
-  input: { runKey: string; ownerUserId: string; site: Site; anchor: Date },
+  input: {
+    runKey: string;
+    ownerUserId: string;
+    site: Site;
+    anchor: Date;
+    trafficNonces: string[];
+  },
 ): Promise<FareStoryRun> {
   const { runKey, ownerUserId, site, anchor } = input;
   const keys = new Map<string, AgentKey>();
@@ -364,8 +391,12 @@ export async function runFareStory(
   }
 
   // 3. Offers shown: browsing agents that left without a word (fixed by the run key), then one
-  // offer before every decline and every paid request on the site in the window.
+  // offer before every decline and every paid request of this run.
   const windowStart = dayStart(anchor, 0);
+  const runReceipts = await receiptsByNonce(db, site.id, [
+    ...input.trafficNonces,
+    ...STUB_DAYS.map((_, index) => stubNonce(runKey, index)),
+  ]);
   const browsing: { path: string; at: Date; priceCents: number }[] = [];
   const browsedPaths = [...loadArticles().map((a) => `/articles/${a.slug}`), "/api/brew-ratio"];
   for (let day = 0; day < DAYS; day++) {
@@ -390,7 +421,7 @@ export async function runFareStory(
   if (alreadyWritten) {
     run.offers.skipped = true;
   } else {
-    const siteReceipts = (await listReceipts(db, { siteId: site.id, limit: 500 })).filter(
+    const siteReceipts = runReceipts.filter(
       (receipt) =>
         receipt.createdAt.getTime() >= windowStart &&
         receipt.createdAt.getTime() <= anchor.getTime(),
@@ -450,10 +481,10 @@ export async function runFareStory(
   for (const [keyIndex, keyName] of CITING_KEYS.entries()) {
     const key = keys.get(keyName);
     if (!key) continue;
-    const paid = (await listReceipts(db, { agentKeyId: key.id, limit: 500 })).filter(
+    const paid = runReceipts.filter(
       (receipt) =>
+        receipt.agentKeyId === key.id &&
         receipt.status === "settled" &&
-        receipt.siteId === site.id &&
         receipt.createdAt.getTime() >= windowStart &&
         receipt.createdAt.getTime() <= anchor.getTime(),
     );

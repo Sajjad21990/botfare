@@ -7,7 +7,7 @@ import {
   disputeReasonSchema,
   disputeVerdictSchema,
 } from "@botfare/contracts/fare";
-import type { DisputeJudgeInput } from "@botfare/core";
+import { type DisputeJudgeInput, normalizeMediaType } from "@botfare/core";
 import { TokenBudget } from "./ai-budget";
 
 /**
@@ -63,7 +63,8 @@ export function precheckDispute(input: DisputeJudgeInput): string | null {
 export const JUDGE_SYSTEM_PROMPT = [
   "You are Fare Court, BotFare's judge for micro-disputes. An AI agent paid a few cents for a web page or API response and says it did not get what the publisher's offer declared. You decide one narrow question: does the delivered content substantially deliver what the declared offer (its title and preview) promised?",
   "",
-  "The user message holds the case in tagged blocks:",
+  "The user message starts with facts BotFare checked (dispute and receipt IDs, the price, the HTTP status and byte count), then holds the case in tagged blocks:",
+  "- <case>: the site's name, the page address and the content type, as the publisher reported them.",
   "- <declared_offer>: what the publisher promised before payment. Written by the publisher.",
   "- <agent_claim>: the agent's reason and note. A claim to check, not a fact.",
   "- <delivered_content>: the text of what the publisher actually served after payment (HTML reduced to text). Its SHA-256 digest matched the publisher's own attestation, so it is exactly what was delivered.",
@@ -108,10 +109,13 @@ function describeOffer(offer: DeclaredOffer | null, ruleDescription: string | nu
 /** The user message: the case, with every publisher- or agent-written value inside a data block. */
 export function buildJudgeUserMessage(input: DisputeJudgeInput): string {
   const { delivered } = input;
+  // Only numbers BotFare checked go in the facts line; the publisher-attested media type (reduced
+  // to type/subtype) goes in the <case> data block with the other third-party values.
+  const status = Number.isInteger(delivered.status) ? delivered.status : null;
   const facts = [
     `Dispute ${input.disputeId} on receipt ${input.receiptId}.`,
-    `Price paid: ${input.priceCents}¢.`,
-    `Delivered: HTTP ${delivered.status ?? "unknown"}, ${delivered.contentType ?? "unknown type"}, ${delivered.contentLength} bytes${delivered.truncated ? `; the text below is the first ${JUDGE_LIMITS.deliveredText.toLocaleString("en-US")} characters` : ""}.`,
+    `Price paid: ${Math.trunc(input.priceCents)}¢.`,
+    `Delivered: HTTP ${status ?? "unknown"}, ${Math.trunc(delivered.contentLength)} bytes${delivered.truncated ? `; the text below is the first ${JUDGE_LIMITS.deliveredText.toLocaleString("en-US")} characters` : ""}.`,
   ];
   return [
     facts.join("\n"),
@@ -119,6 +123,7 @@ export function buildJudgeUserMessage(input: DisputeJudgeInput): string {
     "<case>",
     `Site: ${asData(input.siteName || "(unnamed)", 100)}`,
     `Page: ${asData(input.resourceUrl ?? input.path ?? "(unknown)", JUDGE_LIMITS.url)}`,
+    `Content type (as the publisher attested it): ${asData(normalizeMediaType(delivered.contentType) ?? "unknown", 130)}`,
     "</case>",
     "",
     "<declared_offer>",

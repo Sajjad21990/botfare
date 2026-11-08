@@ -137,6 +137,20 @@ function PathRows({ paths }: { paths: PathFunnel[] }) {
   );
 }
 
+/** After a price change: the counts are for the new price only, and say so. */
+function EarlierPrices({ rule }: { rule: RuleFunnel }) {
+  const earlier = rule.earlier;
+  if (!earlier) return null;
+  const prices = earlier.priceCents.map(formatPrice).join(", ");
+  return (
+    <span className="block text-xs text-muted-foreground">
+      {rule.awaitingSignals
+        ? `Price changed from ${prices}. Waiting for agents to see ${formatPrice(rule.priceCents)}.`
+        : `Counts at ${formatPrice(rule.priceCents)} only; ${formatCount(earlier.offers)} offers and ${formatCount(earlier.paid)} purchases at ${prices} not shown.`}
+    </span>
+  );
+}
+
 function RuleRow({ rule }: { rule: RuleFunnel }) {
   const [open, setOpen] = useState(false);
   const id = `advisor-rule-${rule.method}-${rule.pattern}`.replace(/[^a-zA-Z0-9-]/g, "_");
@@ -168,6 +182,7 @@ function RuleRow({ rule }: { rule: RuleFunnel }) {
                 </Badge>
               </span>
               <FunnelBar counts={rule} />
+              {rule.earlier && <EarlierPrices rule={rule} />}
             </span>
           </button>
         </td>
@@ -468,8 +483,8 @@ export function FareAdvisorCard({
                 label="Disputed"
                 value={formatCount(totals.disputed)}
                 hint={
-                  totals.refundedCents > 0
-                    ? `${formatPrice(totals.refundedCents)} refunded`
+                  totals.disputeRefundedCents > 0
+                    ? `${formatPrice(totals.disputeRefundedCents)} refunded`
                     : undefined
                 }
               />

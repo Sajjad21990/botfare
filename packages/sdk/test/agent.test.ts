@@ -68,6 +68,22 @@ describe("createBotFareAgent", () => {
     expect(stack.ledger.totalMicros()).toBe(0);
   });
 
+  it("does not follow a paid redirect: the settled 3xx comes back as paid, with its receipt", async () => {
+    const agent = createBotFareAgent({ agentKey: stack.agentKey });
+    const before = stack.wallet();
+
+    const result = await agent.fetch(`${stack.siteUrl}/articles/moved`);
+
+    expect(result.response.status).toBe(302);
+    expect(result.response.headers.get("location")).toBe("/free");
+    expect(result.paid).toBe(true);
+    expect(result.receiptId).toMatch(/^rcpt_/);
+    expect(new TextDecoder().decode(result.body ?? new Uint8Array())).toContain("Redirecting");
+    expect(before - stack.wallet()).toBe(30_000);
+    // The redirect target was never requested by the paid fetch.
+    expect(stack.seen.at(-1)?.path).toBe("/articles/moved");
+  });
+
   it("fetch of a free page returns paid=false and no receipt", async () => {
     const agent = createBotFareAgent({ agentKey: stack.agentKey });
     const result = await agent.fetch(`${stack.siteUrl}/free`);

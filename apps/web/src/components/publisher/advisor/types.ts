@@ -20,7 +20,10 @@ export interface FunnelCounts {
   disputed: number;
   /** Settled revenue, gross cents. */
   revenueCents: number;
+  /** Refunded purchases, gross cents, whatever refunded them. */
   refundedCents: number;
+  /** Refunds through Fare Court disputes only (what the Disputes page totals). */
+  disputeRefundedCents: number;
 }
 
 export interface FunnelReason {
@@ -46,6 +49,13 @@ export interface RuleFunnel extends FunnelDetail {
   description: string | null;
   /** Busiest paths first (at most 8). */
   paths: PathFunnel[];
+  /**
+   * Signals from before the rule's last price change, left out of its counts (which are for
+   * `priceCents` only); null when every signal was at the current price.
+   */
+  earlier: { priceCents: number[]; offers: number; paid: number; declined: number } | null;
+  /** True when the price changed and no agent has seen the new price yet: no AI advice for it. */
+  awaitingSignals: boolean;
 }
 
 export interface AdvisorSummary {

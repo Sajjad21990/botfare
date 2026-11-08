@@ -155,6 +155,27 @@ describe("Fare Advisor: offer telemetry", () => {
       await botfare.close();
     }
   });
+
+  it("never queues a path with a control character, so it cannot spoil a batch", async () => {
+    const botfare = await startFakeBotFare();
+    const site = await startPublisher({
+      botfareUrl: botfare.url,
+      offerTelemetry: { flushMs: 50, batchSize: 2 },
+    });
+    const agent = await createAgent(botfare.ledger);
+    try {
+      const poisoned = await agent.fetch(`${site.url}/articles/%00`);
+      expect(poisoned.status).toBe(402);
+      await agent.fetch(`${site.url}/articles/%0Abad`);
+      await agent.fetch(`${site.url}/articles/a`);
+      await agent.fetch(`${site.url}/articles/b`);
+      const first = await waitFor(() => botfare.telemetry[0]);
+      expect(first.events.map((event) => event.path)).toEqual(["/articles/a", "/articles/b"]);
+    } finally {
+      await site.close();
+      await botfare.close();
+    }
+  });
 });
 
 describe("declaredOffer()", () => {

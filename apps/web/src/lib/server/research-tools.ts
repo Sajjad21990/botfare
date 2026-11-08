@@ -962,7 +962,7 @@ async function buy(
       `The payment was refused${result.failureReason ? `: ${result.failureReason}` : ""}; nothing was charged`,
     );
   }
-  if (!result.response.ok) {
+  if (!result.response.ok && !result.paid) {
     await result.response.body?.cancel().catch(() => {});
     return toolError(`${url} answered HTTP ${result.response.status}; nothing was charged`);
   }
@@ -1019,6 +1019,7 @@ async function buy(
     spentCents: state.spentCents,
     remainingCents: remainingCents(state),
   });
+  const status = result.response.status;
   return {
     content: json({
       url,
@@ -1026,6 +1027,11 @@ async function buy(
       receiptId: page.receiptId,
       paidCents: amountCents,
       budget: budgetLine(state),
+      ...(status >= 300 && status < 400
+        ? {
+            note: `Paid, but the publisher answered HTTP ${status} (a redirect, not followed) instead of the page. If the offer promised content, this purchase can be disputed.`,
+          }
+        : {}),
       text: content,
     }),
   };

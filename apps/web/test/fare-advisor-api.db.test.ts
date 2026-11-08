@@ -64,18 +64,19 @@ async function makeAdvisedSite() {
       at,
     })),
   });
-  const agentOwner = await createUser(db, { email: `${name}-agent@example.test`, name });
-  const key = await createAgentKey(db, {
-    ownerUserId: agentOwner.id,
-    name: "advisor agent",
-    publicJwk: (await generateAgentKeyPair()).publicJwk,
-  });
+  // Fourteen agents (one note per owner and page here; core caps each owner per page and day).
   for (let i = 0; i < 14; i++) {
     const thin = i < 9;
+    const agentOwner = await createUser(db, { email: `${name}-agent${i}@example.test`, name });
+    const key = await createAgentKey(db, {
+      ownerUserId: agentOwner.id,
+      name: "advisor agent",
+      publicJwk: (await generateAgentKeyPair()).publicJwk,
+    });
     await recordDecline(db, {
       agentKeyId: key.id,
       note: {
-        url: `${origin}/articles/premium-roundup?v=${i}`,
+        url: `${origin}/articles/premium-roundup`,
         priceCents: 50,
         category: thin ? "low_quality_preview" : "too_expensive",
         reason: thin ? "Thin listicle, no specifics" : "Too much for a roundup",
@@ -302,9 +303,35 @@ describe("POST /api/publisher/advisor/apply", () => {
     expect(stored?.pricing[0]?.priceCents).toBe(8);
     expect(stored?.version).toBe(body.site.version);
 
-    // The cached recommendations were for the old price: the next look asks again.
+    // Right after the change no agent has seen 8¢: the 50¢ funnel is kept apart, not shown as 8¢,
+    // and the model is not asked about it.
     const after = await getAdvisor(getDb(), { user: owner, siteId: site.id, model: fake.model });
-    expect(after?.aiStatus).toBe("pending");
+    expect(after?.aiStatus).toBe("insufficient_data");
+    expect(after?.aiMessage).toMatch(/Prices changed recently/);
+    expect(after?.inputsSummary.rules[0]).toMatchObject({
+      priceCents: 8,
+      offers: 0,
+      declined: 0,
+      topReasons: [],
+      earlier: { priceCents: [50], offers: 23, paid: 0, declined: 14 },
+      awaitingSignals: true,
+    });
+
+    // Once agents see 8¢, the cached recommendations (for the old price) are not reused.
+    await recordOfferTelemetry(getDb(), site.id, {
+      events: [
+        {
+          path: "/articles/premium-roundup",
+          method: "GET",
+          priceCents: 8,
+          signal: "agent-header",
+          at: new Date().toISOString(),
+        },
+      ],
+    });
+    const seen = await getAdvisor(getDb(), { user: owner, siteId: site.id, model: fake.model });
+    expect(seen?.aiStatus).toBe("pending");
+    expect(seen?.inputsSummary.rules[0]).toMatchObject({ offers: 1, awaitingSignals: false });
 
     const again = await applyRoute(
       applyRequest({ siteId: site.id, pattern: "/articles/premium-*", priceCents: 8 }),

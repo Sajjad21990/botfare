@@ -15,6 +15,11 @@ const hits: string[] = [];
 beforeAll(async () => {
   server = createServer((req, res) => {
     hits.push(req.url ?? "");
+    if (req.url === "/paid-bounce") {
+      res.writeHead(302, { location: `${origin}/internal-secret`, "payment-response": "receipt" });
+      res.end("Found. Redirecting");
+      return;
+    }
     if (req.url === "/bounce") {
       res.writeHead(302, { location: `${origin}/internal-secret` });
       res.end();
@@ -104,6 +109,16 @@ describe("guarded fetch", () => {
     await expect(guarded(`${origin}/bounce`)).rejects.toThrow(/redirect/);
     expect(hits).toEqual(["/bounce"]);
     expect(await (await guarded(`${origin}/page`)).text()).toBe("ok");
+  });
+
+  it("returns a redirect the publisher settled a payment for, without following it", async () => {
+    hits.length = 0;
+    const guarded = createGuardedFetch(globalThis.fetch, { checkAddresses: false });
+    const response = await guarded(`${origin}/paid-bounce`);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("payment-response")).toBe("receipt");
+    expect(await response.text()).toBe("Found. Redirecting");
+    expect(hits).toEqual(["/paid-bounce"]);
   });
 
   it("in production, refuses private hosts unless the origin is trusted", async () => {

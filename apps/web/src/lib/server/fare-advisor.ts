@@ -70,6 +70,7 @@ function counts(stats: AdvisorCounters): FunnelCounts {
     disputed: stats.disputed,
     revenueCents: stats.revenueCents,
     refundedCents: stats.refundedCents,
+    disputeRefundedCents: stats.disputeRefundedCents,
   };
 }
 
@@ -93,7 +94,27 @@ function ruleFunnel(stats: AdvisorRuleStats): RuleFunnel {
     declinedByCategory: stats.declinedByCategory,
     topReasons: stats.topReasons,
     paths: stats.paths.slice(0, MAX_PATHS_PER_RULE).map(pathFunnel),
+    earlier: stats.earlier,
+    awaitingSignals: awaitingSignals(stats),
   };
+}
+
+/** Signals a rule has at its current price. */
+function currentSignals(stats: AdvisorCounters): number {
+  return stats.offers + stats.paid + stats.declined + stats.cited + stats.disputed;
+}
+
+/**
+ * The rule's price changed and nothing has happened at the new price yet. Its counts are empty,
+ * and the old price's funnel says nothing about the new one, so the model is not asked about it.
+ */
+export function awaitingSignals(stats: AdvisorRuleStats): boolean {
+  return stats.earlier !== null && currentSignals(stats) === 0;
+}
+
+/** The rules the model may advise on: those with signals at their current price, or none at all. */
+function rulesForModel(inputs: AdvisorInputs): AdvisorRuleStats[] {
+  return inputs.rules.filter((rule) => !awaitingSignals(rule));
 }
 
 /** Sums reasons case-insensitively across rules (each rule lists at most 5). */
@@ -135,9 +156,9 @@ export function summarizeInputs(inputs: AdvisorInputs): AdvisorSummary {
   };
 }
 
+/** Any signal at a current price (a rule's, or a path no rule prices). */
 function hasSignals(inputs: AdvisorInputs): boolean {
-  const t = inputs.totals;
-  return t.offers + t.paid + t.declined + t.cited + t.disputed > 0;
+  return [...inputs.rules, ...inputs.unpriced].some((stats) => currentSignals(stats) > 0);
 }
 
 // --- Prompt ---------------------------------------------------------------------------------------
@@ -145,7 +166,7 @@ function hasSignals(inputs: AdvisorInputs): boolean {
 export const ADVISOR_SYSTEM_PROMPT = [
   "You are Fare Advisor inside BotFare, where AI agents pay publishers per request (x402, settled on PayPal). You help one publisher price their pages for AI agents, using what agents did over the window given.",
   "",
-  "Signals per pricing rule: offers (price offers shown to agents), paid (purchases), declined (agents' optional notes on why they did not buy, with a category and a short reason), cited (paid reads that an agent's answer actually used: citations are the new clicks), disputed (claims the page was not what its offer promised).",
+  "Signals per pricing rule: offers (price offers shown to agents), paid (purchases), declined (agents' optional notes on why they did not buy, with a category and a short reason), cited (paid reads that an agent's answer actually used: citations are the new clicks), disputed (claims the page was not what its offer promised). Every count is at the rule's current priceCents only; signals from before a price change are left out.",
   "",
   `Return at most ${MAX_RECOMMENDATIONS} recommendations, the most valuable first, for rules where the evidence supports a change. Return an empty list if nothing is supported.`,
   "- pattern: exactly one of the rule patterns in the input. currentPriceCents: that rule's priceCents.",
@@ -181,7 +202,7 @@ export function advisorUserPrompt(inputs: AdvisorInputs): string {
   const data = {
     site: inputs.site.name,
     days: inputs.days,
-    rules: inputs.rules.map((rule) => ({
+    rules: rulesForModel(inputs).map((rule) => ({
       pattern: rule.pattern,
       method: rule.method,
       priceCents: rule.priceCents,
@@ -460,7 +481,7 @@ function checkOne(item: unknown, inputs: AdvisorInputs): AdvisorRecommendationVi
   const parsed = advisorRecommendationSchema.safeParse(item);
   if (!parsed.success) return null;
   const rec = parsed.data;
-  const rule = inputs.rules.find(
+  const rule = rulesForModel(inputs).find(
     (candidate) => candidate.pattern === rec.pattern && sameCounts(rec.evidence, candidate),
   );
   if (!rule || rec.currentPriceCents !== rule.priceCents) return null;
@@ -754,14 +775,17 @@ export async function getAdvisor(
       aiMessage: "AI recommendations need an Anthropic key (ANTHROPIC_API_KEY on the server).",
     };
   }
-  if (!hasSignals(inputs) || inputs.rules.length === 0) {
+  if (!hasSignals(inputs) || rulesForModel(inputs).length === 0) {
+    const repriced = inputs.rules.some(awaitingSignals);
     return {
       ...base,
       aiStatus: "insufficient_data",
       aiMessage:
         inputs.rules.length === 0
           ? "Add a pricing rule first; Fare Advisor recommends changes to your rules."
-          : "No agent has seen an offer on this site yet. Recommendations appear once agents visit.",
+          : repriced
+            ? "Prices changed recently. Recommendations return once agents have seen the new prices."
+            : "No agent has seen an offer on this site yet. Recommendations appear once agents visit.",
     };
   }
 

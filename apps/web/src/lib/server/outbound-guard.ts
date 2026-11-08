@@ -146,7 +146,10 @@ export interface GuardedFetchOptions {
   resolve?: Resolver;
 }
 
-/** A fetch for the research agent: no redirects, and no private addresses in production. */
+/**
+ * A fetch for the research agent: redirects are never followed (a paid 3xx is returned as it is,
+ * anything else is an error), and no private addresses in production.
+ */
 export function createGuardedFetch(base: typeof fetch, options: GuardedFetchOptions): typeof fetch {
   const trusted = new Set(
     (options.trustedOrigins ?? []).flatMap((value) => {
@@ -167,7 +170,14 @@ export function createGuardedFetch(base: typeof fetch, options: GuardedFetchOpti
       await assertPublicHost(url.hostname, options.resolve);
     }
     const response = await base(new Request(request, { redirect: "manual" }));
-    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+    // A redirect the publisher settled a payment for is returned as it is (never followed): it
+    // carries the receipt, so the agent can see it paid and dispute it.
+    const paidRedirect =
+      response.status >= 300 && response.status < 400 && response.headers.has("payment-response");
+    if (
+      !paidRedirect &&
+      (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400))
+    ) {
       await response.body?.cancel().catch(() => {});
       throw new OutboundRequestError(
         `${url.origin}${url.pathname} answered with a redirect (HTTP ${response.status}); redirects are not followed`,

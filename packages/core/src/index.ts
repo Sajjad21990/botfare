@@ -73,13 +73,16 @@ export {
 export {
   DEMO_EARNINGS_FLOOR_CENTS,
   DEMO_WALLET_FLOOR_CENTS,
+  type DemoPendingDisputeResult,
   type DemoPublisherReset,
+  ensureDemoPendingDispute,
   ensureDemoWalletFloor,
   resetDemoPublisher,
 } from "./services/demo";
 export {
   ADVISOR_LIMITS,
   type AdvisorCounters,
+  type AdvisorEarlierSignals,
   type AdvisorInputs,
   type AdvisorPathStats,
   type AdvisorReason,
@@ -109,6 +112,7 @@ export {
   getDispute,
   listDisputesForOwner,
   listDisputesForPublisher,
+  normalizeMediaType,
   type OpenDisputeRefusal,
   type OpenDisputeResult,
   openDispute,

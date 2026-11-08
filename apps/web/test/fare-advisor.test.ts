@@ -1,16 +1,24 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import type { AdvisorInputs, AdvisorRuleStats } from "@botfare/core";
+import type { AdvisorInputs, AdvisorRuleStats, Db } from "@botfare/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+const advisorInputsMock = vi.hoisted(() => vi.fn());
+vi.mock("@botfare/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@botfare/core")>()),
+  advisorInputs: advisorInputsMock,
+}));
 
 import {
+  ADVISOR_SYSTEM_PROMPT,
   type AdvisorModelClient,
   type AdvisorModelParams,
   advisorUserPrompt,
+  awaitingSignals,
   buildAdvisorParams,
   checkRecommendations,
   generateRecommendations,
+  getAdvisor,
   numbersAreGrounded,
   projectWeeklyRevenue,
   resetAdvisorState,
@@ -31,10 +39,12 @@ function rule(overrides: Partial<AdvisorRuleStats>): AdvisorRuleStats {
     disputed: 0,
     revenueCents: 0,
     refundedCents: 0,
+    disputeRefundedCents: 0,
     declinedByCategory: {},
     topReasons: [],
     disputesByStatus: {},
     paths: [],
+    earlier: null,
     ...overrides,
   };
 }
@@ -77,6 +87,7 @@ const inputs: AdvisorInputs = {
     disputed: 0,
     revenueCents: 15,
     refundedCents: 0,
+    disputeRefundedCents: 0,
   },
 };
 
@@ -384,5 +395,71 @@ describe("summarizeInputs", () => {
     });
     expect(summary.topReasons[0]).toEqual({ reason: "Thin listicle, no specifics", count: 9 });
     expect(summary.rules.map((r) => r.pattern)).toEqual(["/articles/premium-*", "/articles/*"]);
+  });
+});
+
+/** getAdvisor over fixed inputs (core's advisorInputs is mocked) with a fake model client. */
+async function getAdvisorFromInputs(
+  fixed: AdvisorInputs,
+  create: AdvisorModelClient["beta"]["messages"]["create"],
+) {
+  advisorInputsMock.mockResolvedValueOnce(fixed);
+  return getAdvisor({} as Db, {
+    user: { id: "usr_test" },
+    siteId: fixed.site.id,
+    ai: true,
+    model: { client: { beta: { messages: { create } } }, model: "claude-sonnet-5-5" },
+  });
+}
+
+describe("after a price change", () => {
+  // Apply 50¢ → 8¢: core counts only signals at 8¢, so the rule starts empty with its 50¢ history
+  // in `earlier`.
+  const repriced = rule({
+    pattern: "/articles/premium-*",
+    priceCents: 8,
+    earlier: { priceCents: [50], offers: 23, paid: 0, declined: 14 },
+  });
+  const after: AdvisorInputs = { ...inputs, rules: [repriced, articles] };
+
+  it("leaves a rule with no signals at its new price out of the prompt and the checks", () => {
+    expect(awaitingSignals(repriced)).toBe(true);
+    expect(awaitingSignals(premium)).toBe(false);
+    const prompt = advisorUserPrompt(after);
+    expect(prompt).not.toContain("/articles/premium-*");
+    expect(prompt).toContain('"pattern": "/articles/*"');
+    expect(ADVISOR_SYSTEM_PROMPT).toMatch(/at the rule's current priceCents only/);
+
+    const cut = {
+      ...honest,
+      currentPriceCents: 8,
+      suggestedPriceCents: 5,
+      headline: "0 of 0 agents bought at 8¢",
+      rationale: "Cut it.",
+      evidence: evidenceOf(repriced),
+    };
+    expect(checkRecommendations({ recommendations: [cut] }, after)).toMatchObject({
+      recommendations: [],
+      dropped: 1,
+    });
+  });
+
+  it("shows the dashboard that the counts are for the new price", () => {
+    const summary = summarizeInputs(after);
+    expect(summary.rules[0]).toMatchObject({
+      priceCents: 8,
+      offers: 0,
+      earlier: { priceCents: [50], offers: 23 },
+      awaitingSignals: true,
+    });
+    expect(summary.rules[1]).toMatchObject({ earlier: null, awaitingSignals: false });
+  });
+
+  it("does not ask the model when every rule with signals is waiting for its new price", async () => {
+    const create = vi.fn<AdvisorModelClient["beta"]["messages"]["create"]>();
+    const response = await getAdvisorFromInputs({ ...inputs, rules: [repriced] }, create);
+    expect(create).not.toHaveBeenCalled();
+    expect(response?.aiStatus).toBe("insufficient_data");
+    expect(response?.aiMessage).toMatch(/Prices changed recently/);
   });
 });

@@ -1076,7 +1076,8 @@ async function fareChecks(ctx: FareContext): Promise<void> {
 
   await check("A decline note and a citation report are recorded", async () => {
     // Decline notes find their site by its registered origin (the demo runs here on DEMO_PORT),
-    // and one note per key, URL and day is kept: the query string makes this run's note its own.
+    // and one note per key, path and day is kept (the query string is dropped), so a second run
+    // on the same day finds the first run's note.
     const reason = "Thin listicle, not worth 50¢";
     const declineUrl = `${site.origin}/articles/premium-grinder-roundup?ref=e2e-${runStarted.getTime().toString(36)}`;
     const declined = await agent.decline(
@@ -1087,7 +1088,12 @@ async function fareChecks(ctx: FareContext): Promise<void> {
     const day = new Date().toISOString().slice(0, 10);
     const note = await db.query.offerDeclines.findFirst({
       where: (t, { and, eq }) =>
-        and(eq(t.agentKeyId, keyId), eq(t.url, declineUrl), eq(t.day, day)),
+        and(
+          eq(t.agentKeyId, keyId),
+          eq(t.siteId, site.id),
+          eq(t.path, "/articles/premium-grinder-roundup"),
+          eq(t.day, day),
+        ),
     });
     expect(
       note?.siteId === site.id && note.reason === reason,

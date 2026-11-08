@@ -53,7 +53,10 @@ async function makeSite() {
     ownerUserId: owner.id,
     name: "Crema Notes (signals test)",
     origin,
-    pricing: [{ pattern: "/articles/*", priceCents: 3 }],
+    pricing: [
+      { pattern: "/articles/premium-*", priceCents: 50 },
+      { pattern: "/articles/*", priceCents: 3 },
+    ],
   });
   return { owner, site, origin, auth: siteAuthHeader(site.id, siteSecret) };
 }
@@ -188,7 +191,7 @@ describe("POST /api/x402/telemetry", () => {
 });
 
 describe("POST /api/offers/decline", () => {
-  it("stores a signed note once per key, URL and day", async () => {
+  it("stores a signed note once per key, path and day", async () => {
     const publisher = await makeSite();
     const agent = await makeKey();
     const note = {
@@ -206,6 +209,18 @@ describe("POST /api/offers/decline", () => {
     });
     const repeat = await declineRoute(await signedPost(agent, "/api/offers/decline", note));
     expect(await repeat.json()).toMatchObject({ ok: true, recorded: false });
+    // Another query string is the same page; a price the site does not charge is refused.
+    const variant = await declineRoute(
+      await signedPost(agent, "/api/offers/decline", {
+        ...note,
+        url: `${publisher.origin}/articles/premium-roundup?x=2`,
+      }),
+    );
+    expect(await variant.json()).toMatchObject({ ok: true, recorded: false });
+    const wrongPrice = await declineRoute(
+      await signedPost(agent, "/api/offers/decline", { ...note, priceCents: 1 }),
+    );
+    expect(wrongPrice.status).toBe(400);
 
     const inputs = await advisorInputs(getDb(), {
       publisherUserId: publisher.owner.id,

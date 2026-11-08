@@ -31,7 +31,7 @@ describe("render.yaml", () => {
     const builds = [...read("render.yaml").matchAll(/^\s*buildCommand:\s*(.+)$/gm)].map((m) =>
       (m[1] as string).trim(),
     );
-    expect(builds.length).toBe(3); // botfare-web, botfare-demo, botfare-payouts
+    expect(builds.length).toBe(4); // botfare-web, botfare-demo, botfare-payouts, botfare-demo-refresh
     for (const build of builds) {
       const corepack = build.indexOf("corepack enable");
       expect(corepack).toBeGreaterThanOrEqual(0);
@@ -64,5 +64,17 @@ describe("render.yaml", () => {
       expect(cron).toContain(`key: ${key}`);
     }
     expect(JSON.parse(read("package.json")).scripts["payouts:run"]).toBe("tsx scripts/payouts.ts");
+  });
+
+  it("refreshes the demo story weekly, so the Fare Advisor's 14-day window never runs dry", () => {
+    const yaml = read("render.yaml");
+    const cron = /name: botfare-demo-refresh\n([\s\S]*?)(?=\n {2}- type:|\ndatabases:)/.exec(
+      yaml,
+    )?.[1];
+    expect(cron).toBeDefined();
+    expect(cron).toMatch(/schedule: "\d+ \d+ \* \* \d"/); // once a week, inside the 14 days
+    expect(cron).toMatch(/startCommand: pnpm seed:traffic --weekly/);
+    expect(cron).toContain("key: DATABASE_URL");
+    expect(JSON.parse(read("package.json")).scripts["seed:traffic"]).toBe("tsx scripts/traffic.ts");
   });
 });

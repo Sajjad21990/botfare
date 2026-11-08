@@ -122,6 +122,11 @@ export async function startStack() {
             body: { preview: ARTICLE_PREVIEW },
           }),
         },
+        "GET /articles/moved": {
+          accepts: accepts("$0.03"),
+          description: "An article that redirects paying agents",
+          mimeType: "text/html",
+        },
         "GET /reports/deep-dive": {
           accepts: accepts("$0.25"),
           description: "A long report",
@@ -133,6 +138,9 @@ export async function startStack() {
   );
   site.get("/articles/burr-basics", (_req, res) => {
     res.type("html").send("<h1>Burr grinders, explained</h1><p>The full article.</p>");
+  });
+  site.get("/articles/moved", (_req, res) => {
+    res.redirect(302, "/free");
   });
   site.get("/reports/deep-dive", (_req, res) => {
     res.type("html").send("<h1>Deep dive</h1>");

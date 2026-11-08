@@ -11,7 +11,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { freePaths, pricing } from "../../apps/demo/src/pricing";
 import { makeUser, openTestDb } from "../../packages/core/test/helpers";
 import { runFareStory } from "../lib/fare-story";
-import { nonceFor, planTraffic, runTraffic } from "../lib/traffic";
+import { nonceFor, planTraffic, runTraffic, weeklyRunKey } from "../lib/traffic";
 
 const { db, close } = openTestDb();
 afterAll(() => close());
@@ -42,6 +42,14 @@ describe("seed:traffic", () => {
       (request, i) => b[i]?.key.name !== request.key.name || b[i]?.path !== request.path,
     );
     expect(differs || a.length !== b.length).toBe(true);
+  });
+
+  it("names the weekly refresh by ISO week", () => {
+    expect(weeklyRunKey(new Date("2026-11-08T23:59:00Z"))).toBe("week-2026-W45"); // a Sunday
+    expect(weeklyRunKey(new Date("2026-11-09T00:00:00Z"))).toBe("week-2026-W46"); // Monday
+    expect(weeklyRunKey(new Date("2027-01-01T12:00:00Z"))).toBe("week-2026-W53");
+    expect(weeklyRunKey(new Date("2026-01-01T12:00:00Z"))).toBe("week-2026-W01");
+    expect(weeklyRunKey(new Date("2024-12-30T12:00:00Z"))).toBe("week-2025-W01");
   });
 
   it("moves no money when rerun with the same run key on a later day", async () => {
@@ -83,6 +91,7 @@ describe("seed:traffic", () => {
       ownerUserId: owner.id,
       site,
       anchor: traffic.anchor,
+      trafficNonces: traffic.plan.map((r) => nonceFor("story", r.index)),
     });
     expect(story.stub.purchased).toBe(4);
     expect(story.stub.attested).toBe(4);
@@ -131,6 +140,7 @@ describe("seed:traffic", () => {
       ownerUserId: owner.id,
       site,
       anchor: rerunTraffic.anchor,
+      trafficNonces: rerunTraffic.plan.map((r) => nonceFor("story", r.index)),
     });
     expect(rerun.stub).toMatchObject({ purchased: 0, alreadyPurchased: 4, attested: 0 });
     expect(rerun.stub.disputes.alreadyFiled).toBe(4);
@@ -144,6 +154,46 @@ describe("seed:traffic", () => {
       now: traffic.anchor,
     });
     expect(again?.totals).toEqual(inputs?.totals);
+    expect((await checkLedgerInvariants(db)).ok).toBe(true);
+  });
+
+  it("a weekly refresh adds a fresh story without counting earlier purchases again", async () => {
+    const { owner, publisher, site } = await demoSetup();
+    const first = new Date("2026-11-08T15:00:00Z");
+    const runs = [
+      { runKey: "week-2026-W45", now: first },
+      { runKey: "week-2026-W46", now: new Date(first.getTime() + 7 * DAY_MS) },
+    ];
+    for (const { runKey, now } of runs) {
+      const traffic = await runTraffic(db, { runKey, ownerUserId: owner.id, site, now });
+      await runFareStory(db, {
+        runKey,
+        ownerUserId: owner.id,
+        site,
+        anchor: traffic.anchor,
+        trafficNonces: traffic.plan.map((r) => nonceFor(runKey, r.index)),
+      });
+    }
+    // One "offer shown" per purchase, never two, though the runs' windows overlap by a week.
+    const purchases = await db.query.receipts.findMany({
+      where: (t, { eq }) => eq(t.siteId, site.id),
+    });
+    const purchaseOffers = await db.query.offerEvents.findMany({
+      where: (t, { and, eq }) => and(eq(t.siteId, site.id), eq(t.signal, "agent-header")),
+    });
+    expect(purchaseOffers.length).toBe(purchases.length);
+
+    // Two weeks after the first run its story has left the 14-day window; the second run's
+    // last eight days are what the Advisor shows (the next weekly run tops it up again).
+    const inputs = await advisorInputs(db, {
+      publisherUserId: publisher.id,
+      siteId: site.id,
+      now: new Date(first.getTime() + 14 * DAY_MS),
+    });
+    const premium = inputs?.rules.find((r) => r.pattern === "/articles/premium-*");
+    expect(premium?.declined).toBeGreaterThan(4);
+    expect(premium?.topReasons.map((r) => r.reason)).toContain("Thin listicle, not worth 50¢");
+    for (const r of inputs?.rules ?? []) expect(r.offers).toBeGreaterThanOrEqual(r.paid);
     expect((await checkLedgerInvariants(db)).ok).toBe(true);
   });
 });

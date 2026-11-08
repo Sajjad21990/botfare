@@ -19,7 +19,9 @@
  * Idempotent per run key: nonces, the wallet top-up and the refunds are all keyed by it, and the
  * plan's dates are anchored to the first run (stored with the funding), so a second run with the
  * same key moves no money, on the same day or any later one. `--run-key <key>` (default "demo")
- * makes a new batch of traffic. The plan itself lives in scripts/lib/traffic.ts.
+ * makes a new batch of traffic; `--weekly` uses this ISO week's key (`week-2026-W46`), which is
+ * what the weekly Render cron runs so the dashboards and the Fare Advisor's 14-day window never
+ * run dry. The plan itself lives in scripts/lib/traffic.ts.
  */
 import { parseArgs } from "node:util";
 import { DEMO_PERSONAS } from "@botfare/contracts";
@@ -33,15 +35,20 @@ import {
 import { SITE_NAME } from "../apps/demo/src/pricing";
 import { loadRootEnv, requireEnv } from "./lib/env-file";
 import { runFareStory } from "./lib/fare-story";
-import { runTraffic } from "./lib/traffic";
+import { nonceFor, runTraffic, weeklyRunKey } from "./lib/traffic";
 
 const usd = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
 
 async function main(): Promise<void> {
   const { values: flags } = parseArgs({
-    options: { "run-key": { type: "string", default: "demo" } },
+    options: {
+      "run-key": { type: "string", default: "demo" },
+      // The weekly refresh (Render cron): a new batch once per ISO week, so the Fare Advisor's
+      // 14-day window always holds a story; reruns in the same week change nothing.
+      weekly: { type: "boolean", default: false },
+    },
   });
-  const runKey = flags["run-key"].trim();
+  const runKey = flags.weekly ? weeklyRunKey(new Date()) : flags["run-key"].trim();
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(runKey)) {
     throw new Error("--run-key may use letters, digits, - and _ (at most 40)");
   }
@@ -82,6 +89,7 @@ async function main(): Promise<void> {
       ownerUserId: owner.id,
       site,
       anchor: run.anchor,
+      trafficNonces: run.plan.map((request) => nonceFor(runKey, request.index)),
     });
     const { stub, declines, offers, citations } = story;
     console.log(

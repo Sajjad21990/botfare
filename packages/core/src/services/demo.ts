@@ -1,22 +1,28 @@
 /**
  * Judge mode keeps the shared demo working. Every judge who picks "Publisher" is the same user, so
  * each persona sign-in puts back what one judge could have changed for the next: Crema Notes'
- * prices, free paths and bot detection, the payout email, and enough earnings to try "Withdraw
- * now" again.
+ * prices, free paths and bot detection, the payout email, enough earnings to try "Withdraw now"
+ * again, and a Fare Court dispute waiting for review.
  */
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import {
   CREMA_NOTES_DETECTION,
   DEMO_SITE_FREE_PATHS,
   DEMO_SITE_NAME,
   DEMO_SITE_PRICING,
+  isDemoPersonaEmail,
   type PricingRule,
 } from "@botfare/contracts";
-import { centsToMicros } from "@botfare/x402-paypal";
-import { count, desc, eq } from "drizzle-orm";
+import { contentDigestSha256, DISPUTE_POLICY, type DisputeVerdict } from "@botfare/contracts/fare";
+import { centsToMicros, PAYPAL_SANDBOX } from "@botfare/x402-paypal";
+import { and, count, desc, eq, isNotNull } from "drizzle-orm";
 import { Accounts } from "../accounts";
 import type { Db } from "../db";
 import { earningsBalanceMicros, postTransaction, walletBalanceMicros } from "../ledger";
-import { ledgerEntries, payouts, users } from "../schema";
+import { PostgresPrepaidLedger } from "../postgres-ledger";
+import { disputes, ledgerEntries, payouts, receipts, users } from "../schema";
+import { applyVerdict, attestReceipt, openDispute } from "./fare-court";
 import { setPayoutEmail } from "./payouts";
 import { listSites, siteDetection, updateSiteDetection, updateSitePricing } from "./sites";
 
@@ -33,6 +39,8 @@ export interface DemoPublisherReset {
   payoutEmailReset: boolean;
   /** Demo earnings added this time (0 when the balance already reached the floor). */
   earningsAddedCents: number;
+  /** Fare Court disputes put back in the publisher's review queue (one per Crema Notes site at most). */
+  pendingDisputesAdded: number;
 }
 
 /**
@@ -46,8 +54,10 @@ export async function resetDemoPublisher(
 ): Promise<DemoPublisherReset> {
   let pricingReset = 0;
   let detectionReset = 0;
+  const demoSites: string[] = [];
   for (const site of await listSites(db, input.userId)) {
     if (site.name !== DEMO_SITE_NAME) continue;
+    demoSites.push(site.id);
     if (
       !samePricing(site.pricing, DEMO_SITE_PRICING) ||
       JSON.stringify(site.freePaths) !== JSON.stringify(DEMO_SITE_FREE_PATHS) ||
@@ -109,7 +119,135 @@ export async function resetDemoPublisher(
     if (posted.created) earningsAddedCents = cents;
   }
 
-  return { pricingReset, detectionReset, payoutEmailReset, earningsAddedCents };
+  // Last, so a problem here never keeps the other resets from happening.
+  let pendingDisputesAdded = 0;
+  for (const siteId of demoSites) {
+    try {
+      if ((await ensureDemoPendingDispute(db, { siteId })).added) pendingDisputesAdded += 1;
+    } catch (err) {
+      console.error(`demo: could not put a dispute back in review for ${siteId}`, err);
+    }
+  }
+
+  return {
+    pricingReset,
+    detectionReset,
+    payoutEmailReset,
+    earningsAddedCents,
+    pendingDisputesAdded,
+  };
+}
+
+export type DemoPendingDisputeResult =
+  | { added: true; disputeId: string; receiptId: string }
+  | { added: false; reason: string };
+
+/**
+ * Keeps one Fare Court dispute waiting for the publisher on the demo site, so every judge can try
+ * Accept and Decline, not only the first. When none is pending, the latest dispute the publisher
+ * decided (one a demo persona's key filed, with its delivered excerpt) is played again through the
+ * live path: the same key buys the same page (a ledger charge), the site attests the excerpt's
+ * bytes, the key disputes them, and that dispute's own verdict is applied with publisher review
+ * required, so it waits in the queue. The purchase nonce is derived from that decided dispute, so
+ * each decision brings back at most one case. Only demo personas' wallets are ever charged.
+ */
+export async function ensureDemoPendingDispute(
+  db: Db,
+  input: { siteId: string; now?: Date },
+): Promise<DemoPendingDisputeResult> {
+  const now = input.now ?? new Date();
+  const [pending] = await db
+    .select({ id: disputes.id })
+    .from(disputes)
+    .where(and(eq(disputes.siteId, input.siteId), eq(disputes.status, "pending_publisher")))
+    .limit(1);
+  if (pending) return { added: false, reason: "a dispute is already waiting for review" };
+
+  const decided = await db
+    .select({ dispute: disputes, receipt: receipts, ownerEmail: users.email })
+    .from(disputes)
+    .innerJoin(receipts, eq(receipts.id, disputes.receiptId))
+    .innerJoin(users, eq(users.id, disputes.ownerUserId))
+    .where(
+      and(
+        eq(disputes.siteId, input.siteId),
+        eq(disputes.decidedBy, "publisher"),
+        eq(disputes.contentDigestOk, true),
+        isNotNull(disputes.deliveredExcerpt),
+      ),
+    )
+    .orderBy(desc(disputes.decidedAt), desc(disputes.id))
+    .limit(20);
+  const template = decided.find(
+    (row) => isDemoPersonaEmail(row.ownerEmail) && row.dispute.deliveredExcerpt?.trim(),
+  );
+  if (!template) return { added: false, reason: "no decided demo dispute to play again" };
+  const { dispute, receipt } = template;
+
+  const nonce = createHash("sha256")
+    .update(`demo-pending-dispute:${dispute.id}`)
+    .digest("hex")
+    .slice(0, 32);
+  const charged = await new PostgresPrepaidLedger(db, { now: () => now }).charge({
+    keyId: receipt.agentKeyId,
+    nonce,
+    amountCents: receipt.amountCents,
+    payTo: input.siteId,
+    network: PAYPAL_SANDBOX,
+    resourceUrl: receipt.resourceUrl ?? undefined,
+    expiresAt: Math.floor(now.getTime() / 1000) + 60,
+    ...(receipt.declaredOffer ? { extra: { botfareOffer: receipt.declaredOffer } } : {}),
+  });
+  let receiptId: string;
+  if (charged.ok) receiptId = charged.transaction;
+  else if (charged.originalTransaction) receiptId = charged.originalTransaction;
+  else return { added: false, reason: `the demo purchase was refused (${charged.reason})` };
+
+  const bytes = new TextEncoder().encode(dispute.deliveredExcerpt ?? "");
+  const attested = await attestReceipt(db, {
+    siteId: input.siteId,
+    receiptId,
+    attestation: {
+      contentDigest: await contentDigestSha256(bytes),
+      contentLength: bytes.length,
+      contentType: receipt.contentType ?? "text/html",
+      status: receipt.deliveredStatus ?? 200,
+    },
+  });
+  if (!attested.ok) return { added: false, reason: attested.message };
+
+  const opened = await openDispute(db, {
+    agentKeyId: receipt.agentKeyId,
+    request: {
+      receiptId,
+      reason: dispute.reason,
+      ...(dispute.note ? { note: dispute.note } : {}),
+      contentBase64: Buffer.from(bytes).toString("base64"),
+    },
+    contentBytes: bytes,
+    limits: { maxDisputesPerDay: 200, autoRefundRateRule: false },
+    now,
+  });
+  if (!opened.ok) return { added: false, reason: opened.message };
+  // A confident deny would close the case without review; anything else goes to the publisher.
+  const verdict = reviewable(dispute.verdict);
+  const applied = await applyVerdict(db, {
+    disputeId: opened.dispute.id,
+    verdict,
+    autoAllowed: false,
+    now,
+  });
+  if (!applied.ok || applied.outcome.status !== "pending_publisher") {
+    return { added: false, reason: "the replayed dispute did not go to review" };
+  }
+  return { added: true, disputeId: opened.dispute.id, receiptId };
+}
+
+function reviewable(verdict: DisputeVerdict | null): DisputeVerdict | null {
+  if (!verdict) return null;
+  return verdict.decision === "deny" && verdict.confidence >= DISPUTE_POLICY.autoDenyConfidence
+    ? null
+    : verdict;
 }
 
 /** JSON with object keys sorted and undefined values dropped, for order-independent comparison. */

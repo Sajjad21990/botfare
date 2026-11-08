@@ -1,7 +1,7 @@
 import { DEMO_SITE_NAME, DEMO_SITE_PRICING } from "@botfare/contracts";
 import { contentDigestSha256 } from "@botfare/contracts/fare";
 import { generateAgentKeyPair } from "@botfare/x402-paypal";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
   ADVISOR_LIMITS,
@@ -92,6 +92,62 @@ describe("recordOfferTelemetry", () => {
     expect(rows[0]).toMatchObject({ method: "GET", priceCents: 50, signal: "signed-agent" });
   });
 
+  it("drops an event with a control character on its own, never the whole batch", async () => {
+    const { site } = await makeSite();
+    const now = new Date();
+    const result = await recordOfferTelemetry(db, site.id, {
+      events: [
+        event("/articles/\u0000", now),
+        event("/articles/premium-roundup", now),
+        { ...event("/articles/b", now), method: "GE\nT" },
+        event("/articles/burr-basics", now, 3),
+      ],
+    });
+    expect(result).toEqual({ ok: true, accepted: 2, dropped: 2 });
+    const rows = await db
+      .select()
+      .from(schema.offerEvents)
+      .where(eq(schema.offerEvents.siteId, site.id));
+    expect(rows.map((r) => r.path).sort()).toEqual([
+      "/articles/burr-basics",
+      "/articles/premium-roundup",
+    ]);
+  });
+
+  it("stores at most the daily limit per publisher, across all of their sites", async () => {
+    const { owner, site } = await makeSite();
+    const { site: second } = await createSite(db, {
+      ownerUserId: owner.id,
+      name: "Second site",
+      origin: `https://${crypto.randomUUID().slice(0, 8)}.second.example`,
+      pricing: DEMO_SITE_PRICING,
+    });
+    const now = new Date();
+    const limit = ADVISOR_LIMITS.maxOfferEventsPerOwnerPerDay;
+    await db.execute(
+      sql`insert into offer_events (site_id, path, method, price_cents, at, received_at)
+          select ${site.id}, '/articles/a', 'GET', 3, ${now.toISOString()}::timestamptz, ${now.toISOString()}::timestamptz
+          from generate_series(1, ${limit - 2})`,
+    );
+    const result = await recordOfferTelemetry(db, second.id, {
+      events: Array.from({ length: 5 }, () => event("/articles/premium-roundup", now)),
+    });
+    expect(result).toEqual({ ok: true, accepted: 2, dropped: 3 });
+    expect(
+      await recordOfferTelemetry(db, site.id, { events: [event("/articles/a", now, 3)] }),
+    ).toEqual({ ok: true, accepted: 0, dropped: 1 });
+    // A new UTC day has room again.
+    const tomorrow = new Date(now.getTime() + DAY);
+    expect(
+      await recordOfferTelemetry(
+        db,
+        site.id,
+        { events: [event("/articles/a", tomorrow, 3)] },
+        { now: tomorrow },
+      ),
+    ).toEqual({ ok: true, accepted: 1, dropped: 0 });
+  });
+
   it("refuses invalid batches, oversized batches and unknown sites", async () => {
     const { site } = await makeSite();
     const now = new Date();
@@ -119,7 +175,7 @@ describe("recordOfferTelemetry", () => {
 });
 
 describe("recordDecline", () => {
-  it("maps the URL to a registered site and path, once per key, URL and UTC day", async () => {
+  it("maps the URL to a registered site and path, once per key, path and UTC day", async () => {
     const { site, origin } = await makeSite();
     const agent = await makeAgent(db);
     const note = {
@@ -145,7 +201,7 @@ describe("recordDecline", () => {
     expect(
       await recordDecline(db, {
         agentKeyId: agent.key.id,
-        note: { ...note, url: `${origin}/articles/other` },
+        note: { ...note, url: `${origin}/articles/premium-other` },
       }),
     ).toMatchObject({ ok: true, recorded: true });
 
@@ -155,7 +211,7 @@ describe("recordDecline", () => {
       .where(eq(schema.offerDeclines.siteId, site.id))
       .limit(1);
     expect(row).toMatchObject({
-      url: `${origin}/articles/premium-roundup?ref=feed`,
+      url: `${origin}/articles/premium-roundup`,
       category: "low_quality_preview",
       reason: "Thin listicle",
       priceCents: 50,
@@ -198,6 +254,79 @@ describe("recordDecline", () => {
       ok: false,
       reason: "rate_limited",
     });
+  });
+});
+
+describe("recordDecline limits", () => {
+  it("treats query-string variants as one page, and refuses prices no rule charges", async () => {
+    const { origin } = await makeSite();
+    const agent = await makeAgent(db);
+    const note = (url: string, priceCents = 50) => ({
+      url,
+      priceCents,
+      category: "too_expensive" as const,
+      reason: "Way overpriced",
+    });
+    expect(
+      await recordDecline(db, {
+        agentKeyId: agent.key.id,
+        note: note(`${origin}/articles/premium-x?x=1`),
+      }),
+    ).toMatchObject({ ok: true, recorded: true });
+    for (let i = 2; i < 6; i++) {
+      expect(
+        await recordDecline(db, {
+          agentKeyId: agent.key.id,
+          note: note(`${origin}/articles/premium-x?x=${i}`),
+        }),
+      ).toMatchObject({ ok: true, recorded: false });
+    }
+    // The premium rule charges 50¢, not 1¢; /free has no rule at all.
+    for (const bad of [note(`${origin}/articles/premium-y`, 1), note(`${origin}/free`, 0)]) {
+      expect(await recordDecline(db, { agentKeyId: agent.key.id, note: bad })).toMatchObject({
+        ok: false,
+        reason: "invalid",
+      });
+    }
+  });
+
+  it("stores at most three notes per owner, path and day, however many keys the owner makes", async () => {
+    const { site, origin } = await makeSite();
+    const agent = await makeAgent(db);
+    const keys = [agent.key.id];
+    for (let i = 0; i < 5; i++) {
+      keys.push(
+        (
+          await createAgentKey(db, {
+            ownerUserId: agent.owner.id,
+            name: `sock ${i}`,
+            publicJwk: (await generateAgentKeyPair()).publicJwk,
+          })
+        ).id,
+      );
+    }
+    const recorded = [];
+    for (const keyId of keys) {
+      const result = await recordDecline(db, {
+        agentKeyId: keyId,
+        note: { url: `${origin}/articles/premium-z`, priceCents: 50, reason: "Too pricey" },
+      });
+      recorded.push(result.ok && result.recorded);
+    }
+    expect(recorded).toEqual([true, true, true, false, false, false]);
+    // Another owner still has its own say.
+    const other = await makeAgent(db);
+    expect(
+      await recordDecline(db, {
+        agentKeyId: other.key.id,
+        note: { url: `${origin}/articles/premium-z`, priceCents: 50, reason: "Too pricey" },
+      }),
+    ).toMatchObject({ ok: true, recorded: true });
+    const rows = await db
+      .select()
+      .from(schema.offerDeclines)
+      .where(eq(schema.offerDeclines.siteId, site.id));
+    expect(rows).toHaveLength(ADVISOR_LIMITS.maxDeclinesPerOwnerPathPerDay + 1);
   });
 });
 
@@ -302,7 +431,8 @@ describe("advisorInputs", () => {
     }
     let declines = 0;
     for (let day = 0; declines < 14; day++) {
-      for (const keyId of keys) {
+      // At most three notes per owner, path and day (ADVISOR_LIMITS.maxDeclinesPerOwnerPathPerDay).
+      for (const keyId of keys.slice(day % 2, (day % 2) + 3)) {
         if (declines === 14) break;
         await recordDecline(db, {
           agentKeyId: keyId,
@@ -427,7 +557,11 @@ describe("advisorInputs", () => {
       declined: 16,
       cited: 1,
       disputed: 1,
+      // The publisher's own refund is not a dispute refund.
+      refundedCents: 3,
+      disputeRefundedCents: 0,
     });
+    expect(inputs.rules.every((r) => r.earlier === null)).toBe(true);
 
     expect(
       await advisorInputs(db, { publisherUserId: owner2.owner.id, siteId: site.id }),
@@ -438,6 +572,103 @@ describe("advisorInputs", () => {
       days: 1,
     });
     expect(shortWindow?.rules[0]?.declined).toBeLessThan(16);
+  });
+});
+
+describe("advisorInputs after a price change", () => {
+  it("counts only signals at the rule's current price and keeps the rest as earlier", async () => {
+    const { owner, site, origin } = await makeSite();
+    const agent = await makeAgent(db, { balanceCents: 500 });
+    const premium = "/articles/premium-roundup";
+    const now = new Date();
+    await recordOfferTelemetry(db, site.id, {
+      events: Array.from({ length: 6 }, () => event(premium, now, 50)),
+    });
+    await recordDecline(db, {
+      agentKeyId: agent.key.id,
+      note: { url: `${origin}${premium}`, priceCents: 50, reason: "Thin listicle, not worth 50¢" },
+    });
+    await buy(agent.key.id, site.id, `${origin}${premium}`, 50);
+
+    const changed = await applyPriceChange(db, {
+      siteId: site.id,
+      ownerUserId: owner.id,
+      pattern: "/articles/premium-*",
+      priceCents: 8,
+    });
+    expect(changed).toMatchObject({ ok: true, changed: true });
+
+    const after = await advisorInputs(db, { publisherUserId: owner.id, siteId: site.id });
+    expect(after?.rules[0]).toMatchObject({
+      priceCents: 8,
+      offers: 0,
+      paid: 0,
+      declined: 0,
+      topReasons: [],
+      paths: [],
+      earlier: { priceCents: [50], offers: 6, paid: 1, declined: 1 },
+    });
+    // The site's totals still hold every signal.
+    expect(after?.totals).toMatchObject({ offers: 6, paid: 1, declined: 1, revenueCents: 50 });
+
+    await recordOfferTelemetry(db, site.id, { events: [event(premium, new Date(), 8)] });
+    await buy(agent.key.id, site.id, `${origin}${premium}`, 8);
+    const fresh = await advisorInputs(db, { publisherUserId: owner.id, siteId: site.id });
+    expect(fresh?.rules[0]).toMatchObject({
+      priceCents: 8,
+      offers: 1,
+      paid: 1,
+      revenueCents: 8,
+      earlier: { priceCents: [50], offers: 6 },
+    });
+  });
+
+  it("totals dispute refunds from the disputes, not from every refunded receipt", async () => {
+    const { owner, site, origin } = await makeSite();
+    const agent = await makeAgent(db, { balanceCents: 100 });
+    const body = "<p>Subscribe to keep reading</p>";
+    const [disputed, refundedByPublisher] = [
+      await buy(agent.key.id, site.id, `${origin}/articles/stub`),
+      await buy(agent.key.id, site.id, `${origin}/articles/dupe`),
+    ] as string[];
+    await attestReceipt(db, {
+      siteId: site.id,
+      receiptId: disputed as string,
+      attestation: {
+        contentDigest: await contentDigestSha256(body),
+        contentLength: body.length,
+        contentType: "text/html",
+        status: 200,
+      },
+    });
+    const opened = await openDispute(db, {
+      agentKeyId: agent.key.id,
+      request: {
+        receiptId: disputed as string,
+        reason: "stub_or_paywall",
+        contentBase64: Buffer.from(body).toString("base64"),
+      },
+    });
+    if (!opened.ok) throw new Error(opened.reason);
+    await applyVerdict(db, {
+      disputeId: opened.dispute.id,
+      verdict: {
+        decision: "refund",
+        confidence: 0.95,
+        category: "stub_or_paywall",
+        rationale: "A subscribe wall.",
+        evidence: [],
+      },
+    });
+    await refundReceipt(db, { receiptId: refundedByPublisher as string, siteId: site.id });
+
+    const inputs = await advisorInputs(db, { publisherUserId: owner.id, siteId: site.id });
+    expect(inputs?.totals).toMatchObject({
+      paid: 2,
+      disputed: 1,
+      refundedCents: 6,
+      disputeRefundedCents: 3,
+    });
   });
 });
 
