@@ -4,9 +4,12 @@ export {
   ErrorReason,
   isPayPalNetwork,
   MAX_AUTHORIZATION_SECONDS,
+  MAX_RESOURCE_URL_LENGTH,
   PAYPAL_FAMILY,
   PAYPAL_SANDBOX,
   PREPAID_SCHEME,
+  RESOURCE_EXTRA_KEY,
+  serverResourceUrl,
   USD,
 } from "./constants";
 export { type PrepaidFacilitatorOptions, PrepaidPayPalFacilitator } from "./facilitator";

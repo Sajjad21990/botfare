@@ -104,7 +104,7 @@ async function makeSigningAgent(label: string): Promise<SigningAgent> {
 async function buy(publisher: Publisher, agent: SigningAgent): Promise<string> {
   const requirements = {
     ...requirementsFor(publisher.site.id, 3),
-    extra: { botfareOffer: OFFER },
+    extra: { ...requirementsFor(publisher.site.id, 3).extra, botfareOffer: OFFER },
   };
   const body = facilitatorBody(await signPayment(agent.client, requirements), requirements);
   const settled = await (

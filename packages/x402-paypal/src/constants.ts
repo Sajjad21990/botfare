@@ -25,6 +25,32 @@ export function authorizationLifetime(maxTimeoutSeconds: unknown): number {
     : MAX_AUTHORIZATION_SECONDS;
 }
 
+/**
+ * Requirement `extra` key where the resource server puts the URL it is serving (server-authored,
+ * declared as a dynamic extra field). The facilitator records this URL on the receipt, never the
+ * agent's `PaymentPayload.resource.url`, which the agent's signature does not cover.
+ */
+export const RESOURCE_EXTRA_KEY = "botfareResource";
+
+/** Longest resource URL the facilitator records. */
+export const MAX_RESOURCE_URL_LENGTH = 2048;
+
+/**
+ * The resource URL the server declared in the requirements' `extra`, if it is an http(s) URL of
+ * sane length; undefined otherwise (the receipt then records no URL).
+ */
+export function serverResourceUrl(extra: unknown): string | undefined {
+  if (!extra || typeof extra !== "object") return undefined;
+  const value = (extra as Record<string, unknown>)[RESOURCE_EXTRA_KEY];
+  if (typeof value !== "string" || value.length > MAX_RESOURCE_URL_LENGTH) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Clock skew tolerated between agent and facilitator. */
 export const CLOCK_SKEW_SECONDS = 5;
 

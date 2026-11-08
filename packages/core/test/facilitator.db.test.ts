@@ -29,12 +29,13 @@ describe("x402 plug-in on the Postgres ledger", () => {
       amount: "3",
       payTo: publisher.site.id,
       maxTimeoutSeconds: 60,
-      extra: {},
+      // The publisher's server names the URL it serves; the agent's resource.url is ignored.
+      extra: { botfareResource: "https://brewlab.example/articles/grinders" },
     };
     const created = await client.createPaymentPayload(2, requirements);
     const payload: PaymentPayload = {
       x402Version: 2,
-      resource: { url: "https://brewlab.example/articles/grinders" },
+      resource: { url: "https://elsewhere.example/premium-report" },
       accepted: requirements,
       payload: created.payload,
     };

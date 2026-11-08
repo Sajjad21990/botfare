@@ -56,7 +56,8 @@ export function requirementsFor(payTo: string, amountCents = 3): PaymentRequirem
     amount: String(amountCents),
     payTo,
     maxTimeoutSeconds: 60,
-    extra: {},
+    // The URL the publisher's middleware serves; the facilitator records this one.
+    extra: { botfareResource: "https://crema.example/articles/grinders" },
   };
 }
 

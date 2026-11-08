@@ -45,8 +45,16 @@ export const BOTFARE_SIGNAL_EXTRA = REQUIREMENT_EXTRA_KEYS.signal;
  */
 export const BOTFARE_OFFER_EXTRA = REQUIREMENT_EXTRA_KEYS.offer;
 
+/**
+ * Signed receipts: requirements also carry the URL this server is serving as
+ * `extra.botfareResource` (the same value as the 402's `resource.url`). Server-authored and
+ * dynamic like the others, so the facilitator records the publisher's URL on the receipt, never
+ * the `resource.url` the agent echoes back (its signature does not cover that field).
+ */
+export const BOTFARE_RESOURCE_EXTRA = REQUIREMENT_EXTRA_KEYS.resource;
+
 class SignalRecordingPrepaidServer extends PrepaidPayPalServer {
-  readonly dynamicExtraFields = [BOTFARE_SIGNAL_EXTRA, BOTFARE_OFFER_EXTRA];
+  readonly dynamicExtraFields = [BOTFARE_SIGNAL_EXTRA, BOTFARE_OFFER_EXTRA, BOTFARE_RESOURCE_EXTRA];
 }
 
 /** Per-call timeout for /supported, /verify and /settle. */
@@ -140,7 +148,7 @@ export class PaymentGate {
     charge: { signal: DetectionSignal; browserPaywall?: PaywallProvider; hooks?: ChargeHooks },
   ): Promise<void> {
     const preview = await this.previewFor(req);
-    const route = this.routeFor(rule, charge.signal, preview);
+    const route = this.routeFor(rule, charge.signal, preview, resourceUrl(req));
     const onOfferShown = charge.hooks?.onOfferShown;
     if (onOfferShown) {
       res.once("finish", () => {
@@ -163,8 +171,11 @@ export class PaymentGate {
     rule: PricingRule,
     signal: DetectionSignal,
     preview: OfferPreview | undefined,
+    resource: string,
   ): RouteConfig {
     return {
+      // The 402's resource.url and extra.botfareResource are the same server-built URL.
+      resource,
       accepts: {
         scheme: PREPAID_SCHEME,
         network: PAYPAL_SANDBOX,
@@ -175,6 +186,7 @@ export class PaymentGate {
         extra: {
           [BOTFARE_SIGNAL_EXTRA]: signal,
           [BOTFARE_OFFER_EXTRA]: declaredOffer(rule, preview),
+          [BOTFARE_RESOURCE_EXTRA]: resource,
         },
       },
       description: rule.description ?? `${rule.method} ${rule.pattern}`,
@@ -203,6 +215,14 @@ export class PaymentGate {
     }
     return undefined;
   }
+}
+
+/**
+ * The URL being served, built exactly as `@x402/express` builds a 402's `resource.url`
+ * (`req.protocol`, the Host header, `req.originalUrl`), so honest agents cite the same string.
+ */
+export function resourceUrl(req: Request): string {
+  return `${req.protocol}://${req.headers.host}${req.originalUrl}`;
 }
 
 /**

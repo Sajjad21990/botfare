@@ -74,6 +74,11 @@ export type DeclaredOffer = z.infer<typeof declaredOfferSchema>;
 export const REQUIREMENT_EXTRA_KEYS = {
   signal: "botfareSignal",
   offer: "botfareOffer",
+  /**
+   * The URL the publisher's server is serving. The facilitator records it on the receipt (and
+   * BotFare signs it as a payment statement's `resource`); the agent's `resource.url` is ignored.
+   */
+  resource: "botfareResource",
 } as const;
 
 // ---------------------------------------------------------------------------------------------

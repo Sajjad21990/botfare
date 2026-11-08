@@ -91,6 +91,8 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
   const calls: string[] = [];
   /** Requirements the facilitator was asked to settle (to check extra.botfareSignal). */
   const settled: Array<{ extra?: Record<string, unknown> }> = [];
+  /** Payloads the facilitator was asked to settle (to check what the agent claimed). */
+  const settledPayloads: Array<{ resource?: { url?: string } }> = [];
   /** Public JWKs served at the signature directory. */
   let directoryKeys: object[] = [];
   /** When true, /supported answers 500 (the facilitator is unreachable for the gate). */
@@ -164,6 +166,7 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
       res.json(await facilitator.verify(paymentPayload, paymentRequirements));
     } else if (req.params.op === "settle") {
       settled.push(paymentRequirements);
+      settledPayloads.push(paymentPayload);
       res.json(await facilitator.settle(paymentPayload, paymentRequirements));
     } else {
       res.status(404).end();
@@ -176,6 +179,7 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
     ledger,
     calls,
     settled,
+    settledPayloads,
     attestations,
     telemetry,
     failNextAttestations(count: number) {

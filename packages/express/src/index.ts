@@ -34,7 +34,12 @@ import {
   turnstileSecretFor,
 } from "./human-check";
 import { normalizeConfig, ruleFor } from "./matching";
-import { BOTFARE_OFFER_EXTRA, BOTFARE_SIGNAL_EXTRA, PaymentGate } from "./payment-gate";
+import {
+  BOTFARE_OFFER_EXTRA,
+  BOTFARE_RESOURCE_EXTRA,
+  BOTFARE_SIGNAL_EXTRA,
+  PaymentGate,
+} from "./payment-gate";
 import { OfferTelemetry } from "./telemetry";
 
 export { type DeliveredBody, paidReceiptId } from "./delivery-proof";
@@ -49,7 +54,7 @@ export {
 } from "./human-check";
 export { isAgentRequest, normalizePath } from "./matching";
 export { declaredOffer } from "./payment-gate";
-export { BOTFARE_OFFER_EXTRA, BOTFARE_SIGNAL_EXTRA };
+export { BOTFARE_OFFER_EXTRA, BOTFARE_RESOURCE_EXTRA, BOTFARE_SIGNAL_EXTRA };
 
 export interface BotFareOptions {
   siteId: string;

@@ -13,6 +13,7 @@ import {
   isPayPalNetwork,
   PAYPAL_FAMILY,
   PREPAID_SCHEME,
+  serverResourceUrl,
   USD,
 } from "./constants";
 import { readKeyId, verifyAuthorization } from "./jws";
@@ -186,7 +187,10 @@ export class PrepaidPayPalFacilitator implements SchemeNetworkFacilitator {
         amountCents,
         payTo: requirements.payTo,
         network: requirements.network,
-        resourceUrl: payload.resource?.url,
+        // The URL the publisher's server says it is serving (requirements are sent to the
+        // facilitator by the site-authenticated resource server). Never `payload.resource.url`:
+        // the agent writes that field and its signature does not cover it.
+        resourceUrl: serverResourceUrl(requirements.extra),
         expiresAt: claims.exp,
         ...(requirements.extra ? { extra: requirements.extra } : {}),
       },

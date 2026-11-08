@@ -1,5 +1,12 @@
+import type { PaymentPayload } from "@x402/core/types";
 import { describe, expect, it } from "vitest";
-import { generateAgentKeyPair, PrepaidPayPalClient, signAuthorization } from "../src";
+import {
+  generateAgentKeyPair,
+  PrepaidPayPalClient,
+  RESOURCE_EXTRA_KEY,
+  serverResourceUrl,
+  signAuthorization,
+} from "../src";
 import { requirements, setup } from "./helpers";
 
 describe("PrepaidPayPalFacilitator", () => {
@@ -34,6 +41,42 @@ describe("PrepaidPayPalFacilitator", () => {
     const result = await facilitator.settle(await pay(), withSignal);
     expect(result.success).toBe(true);
     expect(seen).toEqual([{ botfareSignal: "signed-agent" }]);
+  });
+
+  it("records the server's resource URL from extra, never the agent's payload.resource", async () => {
+    const { facilitator, pay, ledger } = await setup();
+    const seen: Array<string | undefined> = [];
+    const charge = ledger.charge.bind(ledger);
+    ledger.charge = (request) => {
+      seen.push(request.resourceUrl);
+      return charge(request);
+    };
+    const served = "https://demo.example/api/brew-ratio";
+    const withResource = { ...requirements, extra: { [RESOURCE_EXTRA_KEY]: served } };
+    // The agent pays the cheap endpoint but claims a premium page (and, next, omits the field).
+    const forged = {
+      ...(await pay(withResource)),
+      resource: { url: "https://demo.example/premium" },
+    };
+    expect((await facilitator.settle(forged, withResource)).success).toBe(true);
+    const { resource: _omitted, ...bare } = await pay(withResource);
+    expect((await facilitator.settle(bare as PaymentPayload, withResource)).success).toBe(true);
+    // Without a server-declared URL nothing is recorded, whatever the agent sent.
+    expect((await facilitator.settle(await pay(), requirements)).success).toBe(true);
+    expect(seen).toEqual([served, served, undefined]);
+  });
+
+  it("accepts only http(s) resource URLs of sane length", () => {
+    expect(serverResourceUrl({ [RESOURCE_EXTRA_KEY]: "https://a.example/x?y=1" })).toBe(
+      "https://a.example/x?y=1",
+    );
+    expect(serverResourceUrl({ [RESOURCE_EXTRA_KEY]: "javascript:alert(1)" })).toBeUndefined();
+    expect(serverResourceUrl({ [RESOURCE_EXTRA_KEY]: "/relative" })).toBeUndefined();
+    expect(serverResourceUrl({ [RESOURCE_EXTRA_KEY]: 42 })).toBeUndefined();
+    expect(
+      serverResourceUrl({ [RESOURCE_EXTRA_KEY]: `https://a.example/${"x".repeat(2100)}` }),
+    ).toBeUndefined();
+    expect(serverResourceUrl(undefined)).toBeUndefined();
   });
 
   it("rejects a replayed payment but points at the original receipt", async () => {

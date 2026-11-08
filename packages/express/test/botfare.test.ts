@@ -98,6 +98,32 @@ describe("botfare() with BotFare up", () => {
         preview: "Burr grinders crush beans between two abrasive surfaces...",
         wordCount: 1200,
       },
+      botfareResource: `${site.url}/articles/burr-basics`,
+    });
+  });
+
+  it("settles with the URL it served, whatever resource the agent claims", async () => {
+    // A modified agent pays for the cheap endpoint but claims a premium page in its payload.
+    const forging: typeof fetch = async (input, init) => {
+      const res = await agent.fetch(input, init);
+      const header = res.headers.get("payment-required");
+      if (!header) return res;
+      const required = decodePaymentRequiredHeader(header);
+      required.resource = { ...required.resource, url: `${site.url}/articles/premium-report` };
+      for (const accept of required.accepts) {
+        accept.extra = { ...accept.extra, botfareResource: `${site.url}/articles/premium-report` };
+      }
+      const headers = new Headers(res.headers);
+      headers.set("payment-required", encodePaymentRequiredHeader(required));
+      return new Response(await res.arrayBuffer(), { status: res.status, headers });
+    };
+    const res = await agent.payingFetchWith(forging)(`${site.url}/api/brew-ratio?cups=2`);
+    expect(res.status).toBe(200);
+    expect(botfare.settledPayloads.at(-1)?.resource?.url).toBe(
+      `${site.url}/articles/premium-report`,
+    );
+    expect(botfare.settled.at(-1)?.extra).toMatchObject({
+      botfareResource: `${site.url}/api/brew-ratio?cups=2`,
     });
   });
 

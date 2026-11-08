@@ -112,7 +112,8 @@ function requirementsFor(payTo: string, extra: Record<string, unknown> = {}): Pa
     amount: "3",
     payTo,
     maxTimeoutSeconds: 60,
-    extra,
+    // The URL the publisher's server serves (what BotFare signs as `resource`).
+    extra: { botfareResource: "https://brewlab.example/articles/grinders", ...extra },
   };
 }
 
@@ -134,7 +135,8 @@ async function pay(
   const created = await client.createPaymentPayload(2, requirements);
   const payload: PaymentPayload = {
     x402Version: 2,
-    resource: { url: "https://brewlab.example/articles/grinders" },
+    // A forged claim: the agent's resource.url never reaches the receipt or the statement.
+    resource: { url: "https://elsewhere.example/premium-report" },
     accepted: requirements,
     payload: created.payload,
   };
