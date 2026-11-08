@@ -13,7 +13,7 @@ import {
   type OfferTelemetryBatch,
   offerTelemetryBatchSchema,
 } from "@botfare/contracts/fare";
-import { and, asc, count, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { Db, DbOrTx } from "../db";
 import {
   agentKeys,
@@ -353,7 +353,9 @@ export async function advisorInputs(
       })
       .from(offerDeclines)
       .where(and(eq(offerDeclines.siteId, site.id), gte(offerDeclines.createdAt, from)))
-      .groupBy(offerDeclines.path, offerDeclines.category, offerDeclines.reason),
+      .groupBy(offerDeclines.path, offerDeclines.category, offerDeclines.reason)
+      // Most frequent spelling first: it names the case-insensitive group.
+      .orderBy(desc(count()), asc(offerDeclines.reason)),
     db
       .select({ url: receipts.resourceUrl, n: count() })
       .from(citations)
