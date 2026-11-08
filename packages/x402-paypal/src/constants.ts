@@ -13,6 +13,18 @@ export const USD: DefaultAsset = { asset: "USD", decimals: 2, symbol: "USD" };
 /** Upper bound for how long a signed authorization stays valid. */
 export const MAX_AUTHORIZATION_SECONDS = 60;
 
+/**
+ * Lifetime for an authorization under the given requirements: the server's
+ * `maxTimeoutSeconds` capped at 60 s, and 60 s if the server sent no usable value.
+ */
+export function authorizationLifetime(maxTimeoutSeconds: unknown): number {
+  return typeof maxTimeoutSeconds === "number" &&
+    Number.isInteger(maxTimeoutSeconds) &&
+    maxTimeoutSeconds > 0
+    ? Math.min(maxTimeoutSeconds, MAX_AUTHORIZATION_SECONDS)
+    : MAX_AUTHORIZATION_SECONDS;
+}
+
 /** Clock skew tolerated between agent and facilitator. */
 export const CLOCK_SKEW_SECONDS = 5;
 

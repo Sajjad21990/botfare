@@ -21,16 +21,28 @@ export interface ChargeRequest {
   expiresAt: number;
 }
 
-export type LedgerDecision = { ok: true } | { ok: false; reason: ErrorReason; message?: string };
+/** A refusal. For a reused nonce, `originalTransaction` names the receipt it was charged under. */
+export interface LedgerRefusal {
+  ok: false;
+  reason: ErrorReason;
+  message?: string;
+  originalTransaction?: string;
+}
 
-export type ChargeResult =
-  | { ok: true; transaction: string }
-  | { ok: false; reason: ErrorReason; message?: string };
+export type LedgerDecision = { ok: true } | LedgerRefusal;
+
+export type ChargeResult = { ok: true; transaction: string } | LedgerRefusal;
 
 /**
  * Where balances, budgets and nonces live. BotFare implements this on Postgres; tests and the
- * spike use the in-memory version. `charge` must be atomic: consume the nonce, enforce caps and
- * balance, and move the money in one step.
+ * spike use the in-memory version.
+ *
+ * `charge` must be atomic: consume the nonce, enforce caps and balance, move the money and write
+ * the receipt in one database transaction, serialized per agent key and wallet (e.g. `SELECT ...
+ * FOR UPDATE` on both rows) so concurrent charges cannot both pass the balance or daily-cap check.
+ * Nonces are single-use per key and must be kept at least until `expiresAt` plus clock skew.
+ * A reused nonce is refused with `invalid_prepaid_nonce_used` and the original receipt's ID, so
+ * replays never deliver content twice but a lost settle response can still be reconciled.
  */
 export interface PrepaidLedgerPort {
   getAgentKey(keyId: string): Promise<AgentKeyRecord | null>;

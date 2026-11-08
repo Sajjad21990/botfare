@@ -34,7 +34,8 @@ export class InMemoryLedger implements PrepaidLedgerPort {
   readonly balances = new Map<string, number>();
   readonly receipts: MemoryReceipt[] = [];
   private readonly keys = new Map<string, MemoryAgentKey>();
-  private readonly usedNonces = new Set<string>();
+  /** nonce key -> receipt it was charged under */
+  private readonly usedNonces = new Map<string, string>();
   private readonly now: () => Date;
 
   constructor(now: () => Date = () => new Date()) {
@@ -61,8 +62,14 @@ export class InMemoryLedger implements PrepaidLedgerPort {
   async check(request: ChargeRequest): Promise<LedgerDecision> {
     const key = this.keys.get(request.keyId);
     if (!key) return { ok: false, reason: ErrorReason.UnknownKey };
-    if (this.usedNonces.has(nonceKey(request))) {
-      return { ok: false, reason: ErrorReason.NonceUsed, message: "Payment already used" };
+    const originalTransaction = this.usedNonces.get(nonceKey(request));
+    if (originalTransaction) {
+      return {
+        ok: false,
+        reason: ErrorReason.NonceUsed,
+        message: "Payment already used",
+        originalTransaction,
+      };
     }
     if (key.allowedPayTo && !key.allowedPayTo.includes(request.payTo)) {
       return {
@@ -97,12 +104,12 @@ export class InMemoryLedger implements PrepaidLedgerPort {
     const amountMicros = centsToMicros(request.amountCents);
     const feeMicros = Math.floor((amountMicros * PLATFORM_FEE_BPS) / 10_000);
 
-    this.usedNonces.add(nonceKey(request));
+    const transaction = `rcpt_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
+    this.usedNonces.set(nonceKey(request), transaction);
     this.move(`wallet:${key.walletId}`, -amountMicros);
     this.move(`earnings:${request.payTo}`, amountMicros - feeMicros);
     this.move("platform:fees", feeMicros);
 
-    const transaction = `rcpt_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
     this.receipts.push({ ...request, transaction, amountMicros, feeMicros, createdAt: this.now() });
     return { ok: true, transaction };
   }

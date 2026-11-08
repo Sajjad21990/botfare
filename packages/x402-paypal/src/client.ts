@@ -7,7 +7,7 @@ import type {
   SchemeNetworkClient,
 } from "@x402/core/types";
 import type { JWK } from "jose";
-import { isPayPalNetwork, MAX_AUTHORIZATION_SECONDS, PREPAID_SCHEME, USD } from "./constants";
+import { authorizationLifetime, isPayPalNetwork, PREPAID_SCHEME, USD } from "./constants";
 import { signAuthorization } from "./jws";
 
 export interface PrepaidClientOptions {
@@ -43,7 +43,7 @@ export class PrepaidPayPalClient implements SchemeNetworkClient {
       throw new Error(`Unsupported asset ${requirements.asset}`);
     }
     const iat = Math.floor((this.options.now?.() ?? new Date()).getTime() / 1000);
-    const lifetime = Math.min(requirements.maxTimeoutSeconds, MAX_AUTHORIZATION_SECONDS);
+    const lifetime = authorizationLifetime(requirements.maxTimeoutSeconds);
     const authorization = await signAuthorization(
       {
         scheme: requirements.scheme,

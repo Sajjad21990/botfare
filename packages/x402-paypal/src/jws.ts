@@ -9,7 +9,7 @@ import {
   SignJWT,
 } from "jose";
 import { z } from "zod";
-import { AUTHORIZATION_TYPE, CLOCK_SKEW_SECONDS } from "./constants";
+import { AUTHORIZATION_TYPE, CLOCK_SKEW_SECONDS, MAX_AUTHORIZATION_SECONDS } from "./constants";
 
 export const ALG = "EdDSA";
 
@@ -64,7 +64,7 @@ export function readKeyId(token: string): string | undefined {
 
 export type VerifyAuthorizationResult =
   | { ok: true; claims: AuthorizationClaims }
-  | { ok: false; error: "expired" | "bad_signature" | "malformed" };
+  | { ok: false; error: "expired" | "bad_time" | "bad_signature" | "malformed" };
 
 export async function verifyAuthorization(
   token: string,
@@ -77,6 +77,9 @@ export async function verifyAuthorization(
       algorithms: [ALG],
       typ: AUTHORIZATION_TYPE,
       clockTolerance: CLOCK_SKEW_SECONDS,
+      // Rejects an iat in the future or older than 60 s, so a fast agent clock or a
+      // forward-dated token cannot stretch the authorization window.
+      maxTokenAge: MAX_AUTHORIZATION_SECONDS,
       currentDate: now,
       requiredClaims: ["iat", "exp"],
     });
@@ -85,6 +88,9 @@ export async function verifyAuthorization(
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === "ERR_JWT_EXPIRED") return { ok: false, error: "expired" };
+    if (code === "ERR_JWT_CLAIM_VALIDATION_FAILED" && (err as { claim?: string }).claim === "iat") {
+      return { ok: false, error: "bad_time" };
+    }
     if (code === "ERR_JWS_SIGNATURE_VERIFICATION_FAILED")
       return { ok: false, error: "bad_signature" };
     return { ok: false, error: "malformed" };

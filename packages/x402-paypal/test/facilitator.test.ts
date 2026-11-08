@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateAgentKeyPair, PrepaidPayPalClient } from "../src";
+import { generateAgentKeyPair, PrepaidPayPalClient, signAuthorization } from "../src";
 import { requirements, setup } from "./helpers";
 
 describe("PrepaidPayPalFacilitator", () => {
@@ -22,13 +22,58 @@ describe("PrepaidPayPalFacilitator", () => {
     expect(ledger.totalMicros()).toBe(0);
   });
 
-  it("rejects a replayed payment", async () => {
-    const { facilitator, pay } = await setup();
+  it("rejects a replayed payment but points at the original receipt", async () => {
+    const { facilitator, pay, ledger } = await setup();
     const payload = await pay();
-    expect((await facilitator.settle(payload, requirements)).success).toBe(true);
+    const first = await facilitator.settle(payload, requirements);
+    expect(first.success).toBe(true);
     const replay = await facilitator.settle(payload, requirements);
     expect(replay.success).toBe(false);
     expect(replay.errorReason).toBe("invalid_prepaid_nonce_used");
+    expect(replay.extra).toEqual({ originalTransaction: first.transaction });
+    expect(ledger.balanceMicros("wallet:owner")).toBe(970_000);
+  });
+
+  it("rejects an authorization dated in the future (fast agent clock)", async () => {
+    const { facilitator, keys, ledger } = await setup();
+    const fast = new PrepaidPayPalClient({
+      keyId: "ak_test",
+      privateJwk: keys.privateJwk,
+      now: () => new Date(Date.now() + 10 * 60_000),
+    });
+    const result = await fast.createPaymentPayload(2, requirements);
+    const payload = { x402Version: 2, accepted: requirements, payload: result.payload };
+    expect((await facilitator.verify(payload, requirements)).invalidReason).toBe(
+      "invalid_prepaid_authorization_expired",
+    );
+    expect((await facilitator.settle(payload, requirements)).success).toBe(false);
+    expect(ledger.balanceMicros("wallet:owner")).toBe(1_000_000);
+  });
+
+  it("caps the lifetime at 60 s even when maxTimeoutSeconds is missing", async () => {
+    const { facilitator, keys } = await setup();
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signAuthorization(
+      {
+        scheme: "prepaid",
+        network: "paypal:sandbox",
+        asset: "USD",
+        amount: "3",
+        payTo: "site_demo",
+        nonce: crypto.randomUUID(),
+        iat: now,
+        exp: now + 365 * 24 * 3600,
+      },
+      "ak_test",
+      keys.privateJwk,
+    );
+    const loose = { ...requirements, maxTimeoutSeconds: undefined as unknown as number };
+    const verdict = await facilitator.verify(
+      { x402Version: 2, accepted: loose, payload: { authorization: token } },
+      loose,
+    );
+    expect(verdict.isValid).toBe(false);
+    expect(verdict.invalidReason).toBe("invalid_prepaid_authorization_mismatch");
   });
 
   it("rejects a payment signed for a different amount", async () => {

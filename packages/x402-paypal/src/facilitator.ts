@@ -8,9 +8,9 @@ import type {
 } from "@x402/core/types";
 import { z } from "zod";
 import {
+  authorizationLifetime,
   ErrorReason,
   isPayPalNetwork,
-  MAX_AUTHORIZATION_SECONDS,
   PAYPAL_FAMILY,
   PREPAID_SCHEME,
   USD,
@@ -55,7 +55,12 @@ export class PrepaidPayPalFacilitator implements SchemeNetworkFacilitator {
     const checked = await this.checkAuthorization(payload, requirements);
     if (!checked.ok) return checked.response;
     const decision = await this.ledger.check(checked.request);
-    if (!decision.ok) return invalid(decision.reason, decision.message, checked.request.keyId);
+    if (!decision.ok) {
+      const response = invalid(decision.reason, decision.message, checked.request.keyId);
+      return decision.originalTransaction
+        ? { ...response, extra: { originalTransaction: decision.originalTransaction } }
+        : response;
+    }
     return { isValid: true, payer: checked.request.keyId };
   }
 
@@ -63,13 +68,21 @@ export class PrepaidPayPalFacilitator implements SchemeNetworkFacilitator {
     payload: PaymentPayload,
     requirements: PaymentRequirements,
   ): Promise<SettleResponse> {
-    const failed = (reason: string, message?: string, payer?: string): SettleResponse => ({
+    const failed = (
+      reason: string,
+      message?: string,
+      payer?: string,
+      originalTransaction?: string,
+    ): SettleResponse => ({
       success: false,
       errorReason: reason,
       errorMessage: message,
       payer,
       transaction: "",
       network: requirements.network,
+      // A reused nonce points at the receipt it was first charged under, so a settle whose
+      // response was lost can be reconciled instead of looking like a charge with no record.
+      ...(originalTransaction ? { extra: { originalTransaction } } : {}),
     });
 
     const checked = await this.checkAuthorization(payload, requirements);
@@ -80,7 +93,9 @@ export class PrepaidPayPalFacilitator implements SchemeNetworkFacilitator {
     const { request } = checked;
     try {
       const result = await this.ledger.charge(request);
-      if (!result.ok) return failed(result.reason, result.message, request.keyId);
+      if (!result.ok) {
+        return failed(result.reason, result.message, request.keyId, result.originalTransaction);
+      }
       return {
         success: true,
         payer: request.keyId,
@@ -142,6 +157,9 @@ export class PrepaidPayPalFacilitator implements SchemeNetworkFacilitator {
       if (verified.error === "expired") {
         return fail(ErrorReason.Expired, "Authorization has expired", keyId);
       }
+      if (verified.error === "bad_time") {
+        return fail(ErrorReason.Expired, "Authorization is dated in the future or too old", keyId);
+      }
       return fail(ErrorReason.InvalidSignature, "Signature does not verify", keyId);
     }
     const { claims } = verified;
@@ -154,7 +172,7 @@ export class PrepaidPayPalFacilitator implements SchemeNetworkFacilitator {
         return fail(ErrorReason.Mismatch, `Signed ${field} does not match the requirements`, keyId);
       }
     }
-    const lifetime = Math.min(requirements.maxTimeoutSeconds, MAX_AUTHORIZATION_SECONDS);
+    const lifetime = authorizationLifetime(requirements.maxTimeoutSeconds);
     if (claims.exp - claims.iat > lifetime) {
       return fail(ErrorReason.Mismatch, `Authorization lives longer than ${lifetime}s`, keyId);
     }
