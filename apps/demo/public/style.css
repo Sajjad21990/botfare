@@ -1,0 +1,152 @@
+:root {
+  --bg: #faf6f0;
+  --surface: #ffffff;
+  --text: #2a211b;
+  --muted: #6f6258;
+  --accent: #8a4b2a;
+  --line: #e6dccf;
+  --fare-bg: #f3e7d9;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1714;
+    --surface: #24201c;
+    --text: #efe6dc;
+    --muted: #b3a597;
+    --accent: #e0a07a;
+    --line: #3a322b;
+    --fare-bg: #3a2b20;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    18px / 1.65 "Iowan Old Style",
+    "Palatino Linotype",
+    Palatino,
+    Georgia,
+    serif;
+}
+
+a {
+  color: var(--accent);
+}
+
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 1rem max(16px, calc((100% - 44rem) / 2));
+  border-bottom: 1px solid var(--line);
+  font-family: system-ui, sans-serif;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.15rem;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+
+.tag {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+main,
+footer {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 2.1rem;
+  margin: 2rem 0 0.75rem;
+}
+
+article h2 {
+  margin-top: 2rem;
+}
+
+.intro p {
+  font-size: 1.1rem;
+}
+
+.articles {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.card a {
+  text-decoration: none;
+}
+
+.card h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.3rem;
+}
+
+.card p {
+  margin: 0.25rem 0;
+}
+
+.meta {
+  color: var(--muted);
+  font:
+    0.85rem / 1.4 system-ui,
+    sans-serif;
+}
+
+.fare {
+  background: var(--fare-bg);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+code {
+  font-size: 0.9em;
+  background: var(--fare-bg);
+  padding: 0 0.25em;
+  border-radius: 4px;
+}
+
+.back {
+  margin: 2rem 0;
+  font-family: system-ui, sans-serif;
+}
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  padding-bottom: 2rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font:
+    0.85rem / 1.5 system-ui,
+    sans-serif;
+}
