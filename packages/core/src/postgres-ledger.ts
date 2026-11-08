@@ -1,5 +1,10 @@
 import { type DetectionSignal, detectionSignalSchema, IdPrefix, newId } from "@botfare/contracts";
 import {
+  type DeclaredOffer,
+  declaredOfferSchema,
+  REQUIREMENT_EXTRA_KEYS,
+} from "@botfare/contracts/fare";
+import {
   type AgentKeyRecord,
   type ChargeRequest,
   type ChargeResult,
@@ -43,7 +48,21 @@ export type ChargeRequestWithExtra = ChargeRequest & { extra?: Record<string, un
 /** The detection signal in payment requirements' `extra`, or null when absent or unknown. */
 export function detectionSignalFromExtra(extra: unknown): DetectionSignal | null {
   if (!extra || typeof extra !== "object") return null;
-  const parsed = detectionSignalSchema.safeParse((extra as Record<string, unknown>).botfareSignal);
+  const parsed = detectionSignalSchema.safeParse(
+    (extra as Record<string, unknown>)[REQUIREMENT_EXTRA_KEYS.signal],
+  );
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * The offer the publisher declared in payment requirements' `extra.botfareOffer` (title, preview,
+ * word count), or null when absent or invalid. Stored on the receipt for Fare Court.
+ */
+export function declaredOfferFromExtra(extra: unknown): DeclaredOffer | null {
+  if (!extra || typeof extra !== "object") return null;
+  const parsed = declaredOfferSchema.safeParse(
+    (extra as Record<string, unknown>)[REQUIREMENT_EXTRA_KEYS.offer],
+  );
   return parsed.success ? parsed.data : null;
 }
 
@@ -114,6 +133,7 @@ export class PostgresPrepaidLedger implements PrepaidLedgerPort {
           status: "settled",
           transactionId: posted.transactionId,
           detectionSignal: detectionSignalFromExtra(request.extra),
+          declaredOffer: declaredOfferFromExtra(request.extra),
           createdAt: this.now(),
         });
         return { ok: true, transaction: receiptId };
@@ -229,10 +249,11 @@ export type RefundResult =
 /**
  * Reverses a settled receipt of `siteId` exactly once: the wallet gets the full amount back,
  * taken from the publisher's earnings and BotFare's fee. A second call returns the first refund.
- * Fails with `insufficient_earnings` if the publisher was already paid out.
+ * Fails with `insufficient_earnings` if the publisher was already paid out. Inside an open
+ * transaction it runs as a savepoint, so a failed refund leaves the caller's transaction usable.
  */
 export async function refundReceipt(
-  db: Db,
+  db: DbOrTx,
   input: { receiptId: string; siteId: string; memo?: string },
 ): Promise<RefundResult> {
   try {
