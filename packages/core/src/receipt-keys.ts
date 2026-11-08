@@ -73,7 +73,9 @@ type Env = Record<string, string | undefined>;
  * `active: null` and a `problem` (settlement goes on; statements are then null).
  */
 export async function receiptKeyringFromEnv(env: Env = process.env): Promise<ReceiptKeyring> {
-  const production = env.NODE_ENV === "production";
+  // Render sets RENDER=true on every service, cron jobs included, which do not set NODE_ENV: a
+  // deployed host never signs with the public development seed (its statements are kept forever).
+  const production = env.NODE_ENV === "production" || env.RENDER === "true";
   const problems: string[] = [];
 
   let issuer: string | null = null;

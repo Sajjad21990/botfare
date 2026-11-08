@@ -16,7 +16,7 @@ import {
   jwtVerify,
 } from "jose";
 import { z } from "zod";
-import { isContentDigest } from "./fare";
+import { contentDigestSha256, type DeclaredOffer, isContentDigest } from "./fare";
 import { detectionSignalSchema, IdPrefix } from "./index";
 
 /** JWS `typ` of every BotFare statement. */
@@ -299,4 +299,31 @@ export async function checkAnswerSource(
         : { ok: false, message: "The bytes read differ from what was attested" };
   }
   return check;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Offer digest (a payment statement's `offerDigest`)
+
+/**
+ * JSON with object keys sorted at every level and no whitespace. For the declared offer (strings and
+ * numbers only) this is the RFC 8785 (JCS) serialization.
+ */
+export function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * A payment statement's `offerDigest`: the sha-256 Content-Digest of the declared offer's canonical
+ * JSON (the offer as declared in the 402's `extra.botfareOffer`). Lets anyone holding the 402 check
+ * which title and preview the agent paid for.
+ */
+export function declaredOfferDigest(offer: DeclaredOffer): Promise<string> {
+  return contentDigestSha256(canonicalJson(offer));
 }

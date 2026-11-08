@@ -11,10 +11,11 @@
  * logged and the statement is issued lazily when someone reads it (getReceiptStatements).
  */
 import { type DetectionSignal, detectionSignalSchema } from "@botfare/contracts";
-import { contentDigestSha256, type DeclaredOffer } from "@botfare/contracts/fare";
 import {
   type BotFareStatement,
   botFareStatementSchema,
+  canonicalJson,
+  declaredOfferDigest,
   RECEIPT_JWT_TYPE,
   type ReceiptStatements,
   type StatementKind,
@@ -44,26 +45,8 @@ export interface IssueStatementOptions {
   now?: () => Date;
 }
 
-/**
- * JSON with object keys sorted at every level (no whitespace): the canonical form whose sha-256
- * Content-Digest is a payment statement's `offerDigest`. For the declared offer (strings and
- * numbers only) this is the RFC 8785 (JCS) serialization.
- */
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-/** `offerDigest`: sha-256 Content-Digest of the declared offer's canonical JSON. */
-export function declaredOfferDigest(offer: DeclaredOffer): Promise<string> {
-  return contentDigestSha256(canonicalJson(offer));
-}
+/** The offer-digest rule lives in the contract; re-exported here for existing callers. */
+export { canonicalJson, declaredOfferDigest };
 
 const urlSchema = z.string().url();
 

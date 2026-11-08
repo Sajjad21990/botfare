@@ -9,7 +9,9 @@ import {
 import { describe, expect, it } from "vitest";
 import { contentDigestSha256 } from "../src/fare";
 import {
+  canonicalJson,
   checkAnswerSource,
+  declaredOfferDigest,
   decodeStatement,
   publicJwk,
   RECEIPT_JWT_TYPE,
@@ -133,5 +135,21 @@ describe("signed receipts", () => {
 
     const swapped = await checkAnswerSource({ ...source, receiptId: "rcpt_2" }, jwks);
     expect([swapped.paid.ok, swapped.delivered.ok]).toEqual([false, false]);
+  });
+});
+
+describe("offerDigest", () => {
+  it("hashes the declared offer's JSON with keys sorted at every level", async () => {
+    expect(canonicalJson({ b: 1, a: { d: "x", c: [2, { f: 1, e: 0 }] }, z: undefined })).toBe(
+      '{"a":{"c":[2,{"e":0,"f":1}],"d":"x"},"b":1}',
+    );
+    const offer = { title: "Burr basics", preview: "Grind size first.", wordCount: 900 };
+    const reordered = { wordCount: 900, preview: "Grind size first.", title: "Burr basics" };
+    expect(await declaredOfferDigest(offer)).toBe(await declaredOfferDigest(reordered));
+    expect(await declaredOfferDigest(offer)).toBe(
+      await contentDigestSha256(
+        '{"preview":"Grind size first.","title":"Burr basics","wordCount":900}',
+      ),
+    );
   });
 });
