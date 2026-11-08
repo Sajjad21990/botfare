@@ -31,7 +31,10 @@ const bodySchema = z.object({
     .default(DEFAULT_BUDGET_CENTS),
 });
 
-/** Runs per visitor (user and IP) per 10 minutes, one at a time, and a token budget for everyone. */
+/**
+ * Runs per visitor (user and IP) per 10 minutes, one at a time per visitor, and a token budget for
+ * everyone. Judges share the persona users, so the one-at-a-time lock is per visitor, not per user.
+ */
 const RUNS_PER_WINDOW = 8;
 const RUN_WINDOW_MS = 10 * 60 * 1000;
 /** Reserved per run before it starts (weighted tokens), settled with what it really used. */
@@ -79,11 +82,11 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = await readLimitedJson(request, bodySchema, 8_192);
   if (!parsed.ok) return parsed.response;
 
-  const userKey = auth.user.id;
-  if (limits.active.has(userKey)) {
+  const visitorKey = `${auth.user.id}:${clientIp(request)}`;
+  if (limits.active.has(visitorKey)) {
     return jsonError(409, "run_in_progress", "A research run is already in progress.");
   }
-  if (!limits.runs.allow(`${userKey}:${clientIp(request)}`)) {
+  if (!limits.runs.allow(visitorKey)) {
     return jsonError(429, "rate_limited", "Too many research runs. Wait a few minutes.");
   }
   const spend = limits.budget.reserve(RUN_TOKEN_RESERVATION);
@@ -100,7 +103,7 @@ export async function POST(request: Request): Promise<Response> {
   const onAbort = () => abort.abort();
   request.signal.addEventListener("abort", onAbort, { once: true });
   const encoder = new TextEncoder();
-  limits.active.add(userKey);
+  limits.active.add(visitorKey);
 
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -119,7 +122,7 @@ export async function POST(request: Request): Promise<Response> {
         const summary = await runResearch(deps, parsed.data, emit, { signal: abort.signal });
         limits.budget.settle(spend, summary.weightedTokens);
       } finally {
-        limits.active.delete(userKey);
+        limits.active.delete(visitorKey);
         request.signal.removeEventListener("abort", onAbort);
         if (open) {
           open = false;

@@ -38,10 +38,10 @@ import { runResearch } from "../src/lib/server/research-agent";
 
 const AGENT_KEY = "bfk_test_agent_key_never_shown_to_the_model";
 
-function post(body: unknown): Request {
+function post(body: unknown, ip?: string): Request {
   return new Request("http://botfare.test/api/research", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(ip ? { "x-forwarded-for": ip } : {}) },
     body: JSON.stringify(body),
   });
 }
@@ -224,6 +224,35 @@ describe("POST /api/research", () => {
     });
     expect(agents.calls.fetch.map((f) => f.url)).toEqual([URLS.grinders]);
     expect(events.at(-1)).toMatchObject({ status: "finished", spentCents: 3 });
+  });
+
+  it("runs one at a time per visitor, so judges sharing a persona do not block each other", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let n = 0;
+    const waiting: ScriptedTurn = () => [toolUse(`w${++n}`, "list_sources", {})];
+    const model = scriptedClient([waiting, waiting, () => [text("x")], () => [text("y")]]);
+    const listSites = fakeDeps(model.client).loadSites;
+    deps.current = {
+      ...fakeDeps(model.client),
+      loadSites: async () => {
+        await gate;
+        return listSites();
+      },
+    };
+    const question = { question: "Which grinder?" };
+    const first = await POST(post(question, "198.51.100.1"));
+    const second = await POST(post(question, "198.51.100.2"));
+    const again = await POST(post(question, "198.51.100.1"));
+    expect([first.status, second.status, again.status]).toEqual([200, 200, 409]);
+    expect(await again.json()).toMatchObject({ error: "run_in_progress" });
+    release();
+    await Promise.all([first.text(), second.text()]);
+    const after = await POST(post(question, "198.51.100.1"));
+    expect(after.status).toBe(200);
+    await after.text();
   });
 
   it("validates the request body", async () => {
