@@ -157,6 +157,7 @@ export function ResearchView() {
               <AnswerCard
                 answer={view.answer.answer}
                 citations={view.answer.citations}
+                manifest={view.answer.manifest}
                 spentCents={view.spentCents}
                 budgetCents={view.budgetCents}
                 onShowReceipt={showReceipt}

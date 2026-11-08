@@ -1,3 +1,4 @@
+import type { AnswerManifest } from "@botfare/contracts/receipts";
 import type {
   ResearchCitation,
   ResearchEvent,
@@ -46,7 +47,8 @@ export interface RunView {
   entries: TimelineEntry[];
   /** x402 handshake per tool call. */
   wire: Record<string, WireTrace>;
-  answer: { answer: string; citations: ResearchCitation[] } | null;
+  /** `manifest`: the signed sources manifest ("Verify sources"); null when nothing is cited. */
+  answer: { answer: string; citations: ResearchCitation[]; manifest: AnswerManifest | null } | null;
   error: { code: string; message: string } | null;
   /** True while the last timeline entry is a note still receiving deltas. */
   noteOpen: boolean;
@@ -186,7 +188,11 @@ function applyEvent(view: RunView, event: ResearchEvent): RunView {
     case "answer":
       return {
         ...view,
-        answer: { answer: event.answer, citations: event.citations },
+        answer: {
+          answer: event.answer,
+          citations: event.citations,
+          manifest: event.manifest ?? null,
+        },
         spentCents: event.spentCents,
       };
     case "error":
