@@ -279,7 +279,8 @@ const ENTITIES: Record<string, string> = {
 };
 
 function decodeEntities(text: string): string {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity: string) => {
+  // Bounded entity lengths keep this linear on long runs of "&" and letters.
+  return text.replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{1,10});/gi, (match, entity: string) => {
     if (entity[0] === "#") {
       const code =
         entity[1]?.toLowerCase() === "x"
@@ -293,30 +294,139 @@ function decodeEntities(text: string): string {
   });
 }
 
+/** Elements dropped with everything inside them. */
+const SKIPPED_ELEMENTS = new Set([
+  "script",
+  "style",
+  "noscript",
+  "template",
+  "svg",
+  "head",
+  "nav",
+  "footer",
+  "form",
+]);
+/** Closing tags that end a line. */
+const BLOCK_ELEMENTS = new Set([
+  "p",
+  "div",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "ul",
+  "ol",
+  "tr",
+  "table",
+  "blockquote",
+  "pre",
+  "section",
+  "article",
+  "header",
+  "figure",
+  "dl",
+  "dd",
+  "dt",
+]);
+/** Raw text gathered from a page before whitespace is collapsed (the model gets 8,000 chars). */
+const MAX_RAW_TEXT_CHARS = 200_000;
+const TAG_NAME = /^(\/?)([a-z][a-z0-9]*)/i;
+
+/** ASCII-only lower case: the same length as the input, so indexes line up with the original. */
+function asciiLower(text: string): string {
+  return text.replace(/[A-Z]+/g, (upper) => upper.toLowerCase());
+}
+
+/** Index of the first `<name` opening tag (followed by a non-name character), or -1. */
+function openTagIndex(lower: string, name: string, from = 0): number {
+  for (let at = lower.indexOf(`<${name}`, from); at >= 0; at = lower.indexOf(`<${name}`, at + 1)) {
+    const next = lower.charCodeAt(at + name.length + 1);
+    // Not a letter, digit or underscore (or the end of the string): a whole tag name.
+    if (!(next >= 97 && next <= 122) && !(next >= 48 && next <= 57) && next !== 95) return at;
+  }
+  return -1;
+}
+
 /**
  * Readable text from an HTML page: the <article> (or <main>, or <body>) without scripts, styles
  * and navigation, with headings, paragraphs and list items on their own lines.
+ *
+ * Page bodies are untrusted (up to MAX_FETCH_BYTES) and this runs on the server's event loop, so it
+ * is one forward scan with indexOf, never a backtracking regex: linear in the input, whatever the
+ * markup (unclosed tags, comments or elements included).
  */
 export function htmlToText(html: string): string {
-  const region =
-    /<article\b[\s\S]*?<\/article>/i.exec(html)?.[0] ??
-    /<main\b[\s\S]*?<\/main>/i.exec(html)?.[0] ??
-    /<body\b[\s\S]*?<\/body>/i.exec(html)?.[0] ??
-    html;
-  const text = region
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(script|style|noscript|template|svg|head|nav|footer|form)\b[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<h([1-6])\b[^>]*>/gi, (_m, level: string) => `\n\n${"#".repeat(Number(level))} `)
-    .replace(/<li\b[^>]*>/gi, "\n- ")
-    .replace(/<(br|hr)\b[^>]*\/?>/gi, "\n")
-    .replace(
-      /<\/(p|div|h[1-6]|ul|ol|tr|table|blockquote|pre|section|article|header|figure|dl|dd|dt)>/gi,
-      "\n",
-    )
-    .replace(/<[^>]+>/g, "");
-  return decodeEntities(text)
+  const lowerHtml = asciiLower(html);
+  let start = 0;
+  let end = html.length;
+  for (const name of ["article", "main", "body"]) {
+    const open = openTagIndex(lowerHtml, name);
+    if (open < 0) continue;
+    const close = lowerHtml.indexOf(`</${name}>`, open);
+    if (close < 0) continue;
+    start = open;
+    end = close + name.length + 3;
+    break;
+  }
+  const source = html.slice(start, end);
+  const lower = lowerHtml.slice(start, end);
+
+  const out: string[] = [];
+  let length = 0;
+  const push = (piece: string) => {
+    out.push(piece);
+    length += piece.length;
+  };
+  // Elements known to have no closing tag past some point: never searched for again.
+  const unclosed = new Set<string>();
+  let at = 0;
+  while (at < source.length && length < MAX_RAW_TEXT_CHARS) {
+    const lt = source.indexOf("<", at);
+    if (lt < 0) {
+      push(source.slice(at));
+      break;
+    }
+    push(source.slice(at, lt));
+    if (source.startsWith("<!--", lt)) {
+      const close = source.indexOf("-->", lt + 4);
+      if (close < 0) break;
+      push(" ");
+      at = close + 3;
+      continue;
+    }
+    const gt = source.indexOf(">", lt + 1);
+    // No ">" anywhere after this: there are no more tags, and a stray "<..." is not text.
+    if (gt < 0) break;
+    at = gt + 1;
+    const tag = TAG_NAME.exec(source.slice(lt + 1, Math.min(gt, lt + 40)));
+    if (!tag) continue;
+    const closing = tag[1] === "/";
+    const name = (tag[2] ?? "").toLowerCase();
+    if (closing) {
+      if (BLOCK_ELEMENTS.has(name)) push("\n");
+      continue;
+    }
+    if (SKIPPED_ELEMENTS.has(name) && source[gt - 1] !== "/" && !unclosed.has(name)) {
+      const close = lower.indexOf(`</${name}>`, gt + 1);
+      if (close >= 0) {
+        push(" ");
+        at = close + name.length + 3;
+      } else {
+        unclosed.add(name);
+      }
+      continue;
+    }
+    const heading = /^h([1-6])$/.exec(name);
+    if (heading) push(`\n\n${"#".repeat(Number(heading[1]))} `);
+    else if (name === "li") push("\n- ");
+    else if (name === "br" || name === "hr") push("\n");
+  }
+
+  return decodeEntities(out.join(""))
     .split("\n")
-    .map((line) => line.replace(/[ \t\f\v ]+/g, " ").trim())
+    .map((line) => line.replace(/[ \t\f\v\u00a0]+/g, " ").trim())
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

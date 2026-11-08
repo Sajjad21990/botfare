@@ -227,5 +227,35 @@ describe("research tools", () => {
       "<html><body><nav>Menu</nav><main><h2>Title</h2><p>One &amp; two&nbsp;three &#8212; four</p><ul><li>a</li><li>b</li></ul></main></body></html>",
     );
     expect(text).toBe("## Title\nOne & two three — four\n\n- a\n- b");
+    expect(
+      htmlToText(
+        "<BODY><Article class=x><H1>Hi</H1><!-- c --><SCRIPT>x()</SCRIPT><p>A<br/>B</p><svg/><p>C</p></Article></BODY>",
+      ),
+    ).toBe("# Hi\nA\nB\nC");
+    // An element with no closing tag keeps its text, as before; a stray "<" ends the markup.
+    expect(htmlToText("<body><style>p{}<p>kept</p></body>")).toBe("p{}kept");
+    expect(htmlToText("<p>a &amp b &#x41; &#999999999;</p>")).toBe("a &amp b A &#999999999;");
+  });
+
+  it("extracts text in linear time from hostile markup (1 MB pages on the event loop)", () => {
+    const size = 1_000_000;
+    const fill = (unit: string, prefix = "<body>") =>
+      prefix + unit.repeat(Math.ceil((size - prefix.length) / unit.length));
+    const hostile = [
+      fill("<script "),
+      fill("<script>"),
+      fill("<article "),
+      fill("<h1 "),
+      fill("<"),
+      fill("<!--"),
+      fill("&aaaaaaaa"),
+      fill("<li><p>x</p>", "<html><body><article>"),
+      fill("<main><body><article>", ""),
+    ];
+    for (const html of hostile) {
+      const started = performance.now();
+      htmlToText(html);
+      expect(performance.now() - started, html.slice(0, 30)).toBeLessThan(250);
+    }
   });
 });
