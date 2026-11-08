@@ -180,6 +180,11 @@ export interface RunState {
   titles: Map<string, string>;
   /** Purchases by receipt ID. */
   receipts: Map<string, PurchasedPage>;
+  /**
+   * Pages served after a payment was signed but without a receipt (PAYMENT-RESPONSE missing):
+   * the amount may have been settled, so it counts against the budget and is never bought again.
+   */
+  unconfirmed: Map<string, number>;
   sources: CatalogSource[] | null;
 }
 
@@ -191,6 +196,7 @@ export function createRunState(budgetCents: number): RunState {
     offers: new Map(),
     titles: new Map(),
     receipts: new Map(),
+    unconfirmed: new Map(),
     sources: null,
   };
 }
@@ -805,6 +811,9 @@ async function buy(
   if (already) {
     return toolError(`Already bought in this run (receipt ${already.receiptId}); use that text.`);
   }
+  if (state.unconfirmed.has(url)) {
+    return toolError("Already paid for in this run (without a receipt); it is not bought again.");
+  }
 
   // The price, read free of charge if get_offer has not been called for this URL.
   let offer = state.offers.get(url);
@@ -842,6 +851,9 @@ async function buy(
   };
 
   const remaining = remainingCents(state);
+  if (remaining < 1) {
+    return refuse("budget", "The research budget is used up; nothing was paid");
+  }
   // Over the per-request cap: let the SDK's spend controls refuse it, before anything is signed.
   const overCap = priceCents > ctx.agent.maxPerRequestCents;
   if (!overCap && priceCents > remaining) {
@@ -850,16 +862,11 @@ async function buy(
       `${url} costs ${priceCents}¢ but only ${remaining}¢ of the ${state.budgetCents}¢ budget is left; nothing was paid`,
     );
   }
-  if (!overCap && remaining < 1) {
-    return refuse("budget", "The research budget is used up; nothing was paid");
-  }
-  // Within the cap, the SDK's per-request limit is also the remaining budget, so a price that
-  // changed since the offer can never take the run over budget.
-  const agent = overCap
-    ? ctx.agent
-    : remaining < ctx.agent.maxPerRequestCents
-      ? ctx.agentWithCap(remaining)
-      : ctx.agent;
+  // The SDK pays whatever the paid request's own 402 asks, not the price get_offer saw, so its
+  // per-request limit is always the smaller of the cap and the remaining budget: a price that
+  // changed since the offer (or a publisher quoting differently) can never take the run over.
+  const cap = Math.min(remaining, ctx.agent.maxPerRequestCents);
+  const agent = cap < ctx.agent.maxPerRequestCents ? ctx.agentWithCap(cap) : ctx.agent;
 
   let result: Awaited<ReturnType<ResearchAgent["fetch"]>>;
   try {
@@ -882,6 +889,19 @@ async function buy(
   if (!result.response.ok) {
     await result.response.body?.cancel().catch(() => {});
     return toolError(`${url} answered HTTP ${result.response.status}; nothing was charged`);
+  }
+
+  // A 402 was answered with a signed payment, but the publisher sent no PAYMENT-RESPONSE: the
+  // payment may still have settled, so it counts against the budget (and the page is not bought
+  // again), but there is no receipt to cite.
+  if (result.offer && !result.receipt) {
+    await result.response.body?.cancel().catch(() => {});
+    const amount = result.offer.priceCents;
+    state.spentCents += amount;
+    state.unconfirmed.set(url, amount);
+    return toolError(
+      `${url} was served after a ${amount}¢ payment was signed, but the publisher sent no receipt. The ${amount}¢ counts against the budget (${remainingCents(state)}¢ left); the page cannot be cited.`,
+    );
   }
 
   const content = await readableContent(result.response);

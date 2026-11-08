@@ -22,6 +22,10 @@ export interface FakePage {
   html?: string;
   /** The facilitator refuses the payment (e.g. the key's daily cap). */
   refuse?: string;
+  /** The price the free (unpaid) probe quotes, when the publisher quotes differently there. */
+  offerPriceCents?: number;
+  /** The publisher settles but leaves PAYMENT-RESPONSE out. */
+  noReceipt?: boolean;
 }
 
 export const PAGES: Record<string, FakePage> = {
@@ -112,9 +116,10 @@ export function fakeAgents(pages: Record<string, FakePage> = PAGES) {
         calls.getOffer.push(url);
         const page = pages[url];
         if (!page) throw new Error(`no such page ${url}`);
-        if (page.priceCents === 0) return null;
-        required(url, page);
-        return fakeOffer(url, page);
+        const quoted = { ...page, priceCents: page.offerPriceCents ?? page.priceCents };
+        if (quoted.priceCents === 0) return null;
+        required(url, quoted);
+        return fakeOffer(url, quoted);
       },
       async fetch(url) {
         calls.fetch.push({ url, cap: maxPerRequestCents });
@@ -153,6 +158,7 @@ export function fakeAgents(pages: Record<string, FakePage> = PAGES) {
             exp: 1_700_000_060,
           },
         } as never);
+        if (page.noReceipt) return { response, paid: false, receipt: null, offer };
         receipts += 1;
         const receipt = {
           success: true,

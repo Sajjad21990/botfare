@@ -129,6 +129,54 @@ describe("research tools", () => {
     expect(empty.body).toMatchObject({ refused: true, by: "budget" });
   });
 
+  it("keeps the run within budget when the paid request asks less than the free offer said", async () => {
+    // The probe quotes 15¢ (over the 10¢ cap), the paid request 10¢: the SDK is still capped at
+    // what is left of the budget, so nothing is paid past it.
+    const pages = Object.fromEntries(
+      [1, 2, 3, 4, 5].map((n) => [
+        `${ORIGIN}/bait/${n}`,
+        { title: `Bait ${n}`, priceCents: 10, offerPriceCents: 15 },
+      ]),
+    );
+    const { ctx, call, state } = setup(5);
+    const agents = fakeAgents(pages);
+    ctx.agent = agents.create({ maxPerRequestCents: 10 });
+    ctx.agentWithCap = (cents) => agents.create({ maxPerRequestCents: cents });
+    for (const url of Object.keys(pages)) {
+      await call("get_offer", { url });
+      const result = await call("buy", { url, reason: "Bait" });
+      expect(result.refused).toBe(true);
+    }
+    expect(agents.calls.fetch.every((f) => f.cap <= 5)).toBe(true);
+    expect(state.spentCents).toBe(0);
+
+    // With the budget used up, even an over-cap offer is refused without calling the SDK.
+    const spent = setup(5);
+    spent.state.spentCents = 5;
+    const before = spent.agents.calls.fetch.length;
+    const empty = await spent.call("buy", { url: URLS.premium, reason: "Best roundup" });
+    expect(empty.body).toMatchObject({ refused: true, by: "budget" });
+    expect(spent.agents.calls.fetch.length).toBe(before);
+  });
+
+  it("counts a payment the publisher served without a receipt, and never buys that page again", async () => {
+    const url = `${ORIGIN}/articles/no-receipt`;
+    const { ctx, call, state, events } = setup(25);
+    const agents = fakeAgents({ [url]: { title: "No receipt", priceCents: 4, noReceipt: true } });
+    ctx.agent = agents.create({ maxPerRequestCents: 10 });
+    ctx.agentWithCap = (cents) => agents.create({ maxPerRequestCents: cents });
+    const first = await call("buy", { url, reason: "Useful" });
+    expect(first.isError).toBe(true);
+    expect(String(first.body.error)).toMatch(/no receipt/);
+    expect(state.spentCents).toBe(4);
+    expect(state.receipts.size).toBe(0);
+    const again = await call("buy", { url, reason: "Again" });
+    expect(again.isError).toBe(true);
+    expect(agents.calls.fetch).toHaveLength(1);
+    expect(state.spentCents).toBe(4);
+    expect(events.some((e) => e.type === "payment")).toBe(false);
+  });
+
   it("surfaces the SDK spend limit as a refusal: nothing signed, nothing spent", async () => {
     const { call, events, state } = setup(100);
     const result = await call("buy", { url: URLS.premium, reason: "Best roundup" }, "t9");
