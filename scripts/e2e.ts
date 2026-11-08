@@ -606,6 +606,35 @@ async function main(): Promise<void> {
       },
     );
 
+    await check(
+      "A non-browser user agent (research-bot/1.0) gets 402; a chat link preview reads free",
+      async () => {
+        const before = await snapshot();
+        const bot = await fetch(detectUrl, {
+          headers: { "User-Agent": "research-bot/1.0", Accept: "text/html" },
+        });
+        const body = await bot.text();
+        expect(bot.status === 402, `research-bot got ${bot.status}`);
+        expect(signalOf(bot) === "automation", `signal ${String(signalOf(bot))}`);
+        // Not a browser, so no human check: the plain x402 offer.
+        expect(!body.includes("Continue free"), "research-bot was shown the human check");
+        const preview = await fetch(detectUrl, {
+          headers: {
+            "User-Agent": "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)",
+            Accept: "*/*",
+          },
+        });
+        await preview.body?.cancel();
+        expect(preview.status === 200, `Slackbot link preview got ${preview.status}`);
+        expectDelta(
+          delta(before, await snapshot()),
+          { wallet: 0, earnings: 0, fees: 0, receipts: 0 },
+          "non-browser 402",
+        );
+        return "research-bot 402 automation (no human check), Slackbot preview 200";
+      },
+    );
+
     await check("GPTBot user agent from 127.0.0.1 is flagged bot-impostor", async () => {
       const response = await fetch(detectUrl, {
         headers: { "User-Agent": GPTBOT_UA, Accept: "*/*" },

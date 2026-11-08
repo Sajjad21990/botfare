@@ -303,6 +303,71 @@ describe("detectAgent: automation heuristics", () => {
   });
 });
 
+describe("detectAgent: user agents that are not browsers", () => {
+  const nonBrowsers = [
+    "research-bot/1.0",
+    "MyScraper",
+    "CremaReader/2.3 CFNetwork/1410.0.3 Darwin/22.6.0",
+    "Googlebot-Image/1.0",
+  ];
+  for (const ua of nonBrowsers) {
+    it(`charges ${JSON.stringify(ua)} at standard and strict, not below`, async () => {
+      const headers = { "user-agent": ua, accept: "text/html" };
+      for (const level of ["off", "known-bots"] as const) {
+        expect((await detectAgent(fakeReq(headers), config({ level }))).charge, level).toBe(false);
+      }
+      for (const level of ["standard", "strict"] as const) {
+        const result = await detectAgent(fakeReq(headers), config({ level }));
+        expect(result, level).toMatchObject({ charge: true, signal: "automation", score: 70 });
+        expect(result.reasons.join()).toContain("not a browser");
+      }
+    });
+  }
+
+  it("leaves chat and social link-preview fetchers free", async () => {
+    const previews = [
+      "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)",
+      "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)",
+      "TelegramBot (like TwitterBot)",
+      "WhatsApp/2.23.20.0 A",
+      "facebookexternalhit/1.1 Facebot Twitterbot/1.0",
+      "Twitterbot/1.0",
+      "LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)",
+      "http.rb/5.1.1 (Mastodon/4.2.1; +https://mastodon.example/)",
+    ];
+    for (const ua of previews) {
+      const result = await detectAgent(fakeReq({ "user-agent": ua }), config({ level: "strict" }));
+      expect(result.charge, ua).toBe(false);
+    }
+  });
+
+  it("does not count real browsers, crawlers or HTTP clients twice", async () => {
+    for (const ua of [
+      CHROME["user-agent"] as string,
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
+    ]) {
+      const result = await detectAgent(
+        fakeReq({ ...CHROME, "user-agent": ua }),
+        config({ level: "strict" }),
+      );
+      expect(result.charge, ua).toBe(false);
+      expect(result.reasons.join(), ua).not.toContain("not a browser");
+    }
+    const crawler = await detectAgent(
+      fakeReq({ "user-agent": BYTESPIDER_UA }),
+      config({ level: "standard" }),
+    );
+    expect(crawler.signal).toBe("known-bot");
+    expect(crawler.reasons.join()).not.toContain("not a browser");
+    const curl = await detectAgent(
+      fakeReq({ "user-agent": "curl/8.7.1" }),
+      config({ level: "standard" }),
+    );
+    expect(curl.score).toBe(80);
+    expect(curl.reasons.join()).not.toContain("not a browser");
+  });
+});
+
 describe("detectAgent: human pass and 'everyone' paths", () => {
   const pass = new HumanPass(SITE_ID, SITE_SECRET);
   const now = Math.floor(Date.now() / 1000);
