@@ -2,7 +2,10 @@
  * `pnpm seed`: prepares a database for the demo. Safe to run again.
  *
  * - applies migrations;
- * - creates (or reuses, by email) the Crema Notes publisher and an agent owner;
+ * - creates (or reuses, by email) the two judge personas from DEMO_PERSONAS: the Crema Notes
+ *   publisher and the agent owner;
+ * - sets the publisher's payout email (and the site's) to PUBLISHER_PAYPAL_EMAIL, the sandbox
+ *   personal account that receives test Payouts;
  * - registers the Crema Notes site with apps/demo's pricing and free paths at DEMO_ORIGIN
  *   (default http://localhost:4000), keeping the site secret in the environment while it still
  *   works and issuing a new one otherwise;
@@ -19,7 +22,12 @@
  */
 
 import { parseArgs } from "node:util";
-import { agentKeyPayloadSchema, decodeAgentKey, encodeAgentKey } from "@botfare/contracts";
+import {
+  agentKeyPayloadSchema,
+  DEMO_PERSONAS,
+  decodeAgentKey,
+  encodeAgentKey,
+} from "@botfare/contracts";
 import {
   type AgentKey,
   createAgentKey,
@@ -31,6 +39,7 @@ import {
   migrate,
   revokeAgentKey,
   seedWallet,
+  setPayoutEmail,
   type User,
   walletBalanceMicros,
 } from "@botfare/core";
@@ -39,14 +48,17 @@ import { freePaths, pricing } from "../apps/demo/src/pricing";
 import { demoSiteOrigin, ensureDemoSite } from "./lib/demo-site";
 import { lastFour, loadRootEnv, requireEnv, updateEnvFile } from "./lib/env-file";
 
-const PUBLISHER = { email: "publisher@crema-notes.example", name: "Crema Notes publisher" };
-const AGENT_OWNER = { email: "agent-owner@botfare.example", name: "Demo agent owner" };
+const PUBLISHER = DEMO_PERSONAS.publisher;
+const AGENT_OWNER = DEMO_PERSONAS.agentOwner;
 const DEFAULT_BOTFARE_URL = "http://localhost:3000";
 const WALLET_CENTS = 500;
 const AGENT_KEY = { name: "Demo research agent", perRequestMaxCents: 10, dailyCapCents: 100 };
 
 async function findOrCreateUser(db: Db, input: { email: string; name: string }): Promise<User> {
-  return (await getUserByEmail(db, input.email)) ?? createUser(db, input);
+  return (
+    (await getUserByEmail(db, input.email)) ??
+    createUser(db, { email: input.email, name: input.name })
+  );
 }
 
 /** The key in .env, if it is this owner's active key with the demo limits and its public key matches. */
@@ -93,6 +105,8 @@ async function main(): Promise<void> {
   try {
     const publisher = await findOrCreateUser(db, PUBLISHER);
     const agentOwner = await findOrCreateUser(db, AGENT_OWNER);
+    // The payout email lives on the publisher's profile; leave it alone when the env has none.
+    if (payoutEmail) await setPayoutEmail(db, { userId: publisher.id, email: payoutEmail });
     console.log(`Publisher    ${publisher.id} (${publisher.email})`);
     console.log(`Agent owner  ${agentOwner.id} (${agentOwner.email})`);
 
@@ -114,7 +128,9 @@ async function main(): Promise<void> {
     };
     console.log(`Site         ${siteId} ${what[action]} (${lastFour(siteSecret)}) at ${origin}`);
     console.log(`             ${pricing.length} pricing rules, ${freePaths.length} free paths`);
-    console.log(`             payout email ${payoutEmail ? "set" : "not set"}`);
+    console.log(
+      `             payout email ${payoutEmail ? "set on the publisher and the site" : "not set (PUBLISHER_PAYPAL_EMAIL is empty)"}`,
+    );
 
     // Wallet: a one-time demo balance (idempotent by key, so reruns add nothing).
     const seeded = await seedWallet(db, {

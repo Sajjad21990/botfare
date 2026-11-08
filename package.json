@@ -17,6 +17,7 @@
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @botfare/core db:migrate",
     "seed": "tsx scripts/seed.ts",
+    "seed:traffic": "tsx scripts/traffic.ts",
     "e2e": "tsx scripts/e2e.ts",
     "payouts:run": "tsx scripts/payouts.ts",
     "dev:web": "pnpm --filter @botfare/web dev",
