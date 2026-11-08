@@ -1,42 +1,46 @@
 /**
- * `pnpm seed`: prepares the local database for the demo. Safe to run again.
+ * `pnpm seed`: prepares a database for the demo. Safe to run again.
  *
  * - applies migrations;
  * - creates (or reuses, by email) the Crema Notes publisher and an agent owner;
- * - registers the Crema Notes site with apps/demo's pricing and free paths, and rotates its secret;
+ * - registers the Crema Notes site with apps/demo's pricing and free paths at DEMO_ORIGIN
+ *   (default http://localhost:4000), keeping the site secret in the environment while it still
+ *   works and issuing a new one otherwise;
  * - gives the agent owner a one-time $5.00 demo balance;
  * - issues a demo agent key (10¢ per request, $1.00 a day), reusing the one in .env if it matches;
  * - writes BOTFARE_URL, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET and BOTFARE_AGENT_KEY to .env.
  *
- * Secrets are never printed: only IDs and the last four characters.
+ * Flags:
+ *   --rotate-site-secret  issue a new site secret even if the current one works
+ *   --print-secrets       also print the full site secret and agent key, for copying into
+ *                         botfare-demo's Render environment (README "Deploy")
+ *
+ * Without --print-secrets, secrets are never printed: only IDs and the last four characters.
  */
+
+import { parseArgs } from "node:util";
 import { agentKeyPayloadSchema, decodeAgentKey, encodeAgentKey } from "@botfare/contracts";
 import {
   type AgentKey,
   createAgentKey,
   createDb,
-  createSite,
   createUser,
   type Db,
   getAgentKeyById,
   getUserByEmail,
-  listSites,
   migrate,
   revokeAgentKey,
-  rotateSiteSecret,
   seedWallet,
   type User,
-  updateSitePricing,
-  updateSiteProfile,
   walletBalanceMicros,
 } from "@botfare/core";
 import { generateAgentKeyPair } from "@botfare/x402-paypal";
-import { freePaths, pricing, SITE_NAME } from "../apps/demo/src/pricing";
+import { freePaths, pricing } from "../apps/demo/src/pricing";
+import { demoSiteOrigin, ensureDemoSite } from "./lib/demo-site";
 import { lastFour, loadRootEnv, requireEnv, updateEnvFile } from "./lib/env-file";
 
 const PUBLISHER = { email: "publisher@crema-notes.example", name: "Crema Notes publisher" };
 const AGENT_OWNER = { email: "agent-owner@botfare.example", name: "Demo agent owner" };
-const DEMO_ORIGIN = "http://localhost:4000";
 const DEFAULT_BOTFARE_URL = "http://localhost:3000";
 const WALLET_CENTS = 500;
 const AGENT_KEY = { name: "Demo research agent", perRequestMaxCents: 10, dailyCapCents: 100 };
@@ -70,10 +74,17 @@ async function reusableAgentKey(db: Db, owner: User): Promise<AgentKey | null> {
 }
 
 async function main(): Promise<void> {
+  const { values: flags } = parseArgs({
+    options: {
+      "rotate-site-secret": { type: "boolean", default: false },
+      "print-secrets": { type: "boolean", default: false },
+    },
+  });
   loadRootEnv();
   const databaseUrl = requireEnv("DATABASE_URL");
   const botfareUrl = process.env.BOTFARE_URL?.trim() || DEFAULT_BOTFARE_URL;
   const payoutEmail = process.env.PUBLISHER_PAYPAL_EMAIL?.trim() || null;
+  const origin = demoSiteOrigin();
 
   await migrate(databaseUrl);
   console.log("Migrations applied");
@@ -85,31 +96,23 @@ async function main(): Promise<void> {
     console.log(`Publisher    ${publisher.id} (${publisher.email})`);
     console.log(`Agent owner  ${agentOwner.id} (${agentOwner.email})`);
 
-    // Site: same rules and free paths as apps/demo/src/pricing.ts, fresh secret every run.
-    const existingSite = (await listSites(db, publisher.id)).find((s) => s.name === SITE_NAME);
-    let siteId: string;
-    let siteSecret: string;
-    if (existingSite) {
-      await updateSitePricing(db, { siteId: existingSite.id, pricing, freePaths });
-      await updateSiteProfile(db, { siteId: existingSite.id, origin: DEMO_ORIGIN, payoutEmail });
-      const rotated = await rotateSiteSecret(db, { siteId: existingSite.id });
-      if (!rotated) throw new Error(`Site ${existingSite.id} vanished`);
-      siteId = rotated.site.id;
-      siteSecret = rotated.siteSecret;
-      console.log(`Site         ${siteId} updated, secret rotated (${lastFour(siteSecret)})`);
-    } else {
-      const created = await createSite(db, {
-        ownerUserId: publisher.id,
-        name: SITE_NAME,
-        origin: DEMO_ORIGIN,
-        pricing,
-        freePaths,
-        payoutEmail,
-      });
-      siteId = created.site.id;
-      siteSecret = created.siteSecret;
-      console.log(`Site         ${siteId} created (${lastFour(siteSecret)})`);
-    }
+    // Site: same rules and free paths as apps/demo/src/pricing.ts; the secret survives reruns.
+    const { siteId, siteSecret, action } = await ensureDemoSite(db, {
+      publisherId: publisher.id,
+      origin,
+      payoutEmail,
+      current: {
+        siteId: process.env.BOTFARE_SITE_ID?.trim(),
+        siteSecret: process.env.BOTFARE_SITE_SECRET?.trim(),
+      },
+      rotate: flags["rotate-site-secret"],
+    });
+    const what = {
+      created: "created",
+      kept: "updated, secret kept",
+      rotated: "updated, new secret",
+    };
+    console.log(`Site         ${siteId} ${what[action]} (${lastFour(siteSecret)}) at ${origin}`);
     console.log(`             ${pricing.length} pricing rules, ${freePaths.length} free paths`);
     console.log(`             payout email ${payoutEmail ? "set" : "not set"}`);
 
@@ -151,7 +154,16 @@ async function main(): Promise<void> {
     console.log(
       "\nWrote BOTFARE_URL, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET and BOTFARE_AGENT_KEY to .env",
     );
-    console.log("Restart the demo (pnpm dev:demo) so it picks up the new site secret.");
+    if (action !== "kept") {
+      console.log("Restart the demo (pnpm dev:demo) so it picks up the new site secret.");
+    }
+    if (flags["print-secrets"]) {
+      console.log("\nFor botfare-demo's environment on Render (Environment > Edit):");
+      console.log(`BOTFARE_SITE_ID=${siteId}`);
+      console.log(`BOTFARE_SITE_SECRET=${siteSecret}`);
+      console.log("For the agent's .env on your machine:");
+      console.log(`BOTFARE_AGENT_KEY=${agentKey}`);
+    }
   } finally {
     await close();
   }

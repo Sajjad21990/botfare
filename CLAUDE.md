@@ -36,7 +36,7 @@ scripts/e2e.ts       Phase 1 end-to-end PASS/FAIL checks on real processes
 - `pnpm install` · `pnpm typecheck` · `pnpm lint` (Biome) · `pnpm format` · `pnpm test` (vitest; `*.db.test.ts` run against `botfare_test` in the "db" project)
 - `pnpm db:up` / `pnpm db:down`: Postgres 17 in Docker (`botfare` and `botfare_test` databases)
 - `pnpm db:migrate`: apply `packages/core/drizzle` to `DATABASE_URL` (regenerate with `pnpm --filter @botfare/core db:generate`)
-- `pnpm seed`: demo publisher, Crema Notes site (secret rotated each run), $5 wallet, agent key; writes `BOTFARE_URL`, `BOTFARE_SITE_ID`, `BOTFARE_SITE_SECRET`, `BOTFARE_AGENT_KEY` to `.env`
+- `pnpm seed`: demo publisher, Crema Notes site at `DEMO_ORIGIN` (secret kept while it works; `--rotate-site-secret` forces a new one), $5 wallet, agent key; writes `BOTFARE_URL`, `BOTFARE_SITE_ID`, `BOTFARE_SITE_SECRET`, `BOTFARE_AGENT_KEY` to `.env`. On Render: `pnpm seed --print-secrets` in botfare-web's Shell (README "Deploy")
 - `pnpm e2e`: starts the web app (:3000, reused if up) and the demo (:4000), runs the Phase 1 PASS/FAIL checks, stops both; `E2E_VERBOSE=1` streams their logs
 - `pnpm dev:web` / `pnpm dev:demo`: run the app or the demo (both read the root `.env`)
 - `pnpm --filter @botfare/web build`: production build of the app

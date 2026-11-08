@@ -189,7 +189,7 @@ Then open http://localhost:4000 in a browser, where humans read free. Agents get
 curl -i -H 'x-botfare-agent: 1' http://localhost:4000/articles/burr-basics
 ```
 
-Run `pnpm seed` again whenever you like. It rotates the site secret, so restart `dev:demo` after it.
+Run `pnpm seed` again whenever you like. It keeps the site secret in `.env` while it still works, so a running demo keeps charging; `pnpm seed --rotate-site-secret` issues a new one (restart `dev:demo` after it).
 
 Checks:
 
@@ -215,7 +215,21 @@ pnpm spike:03           # $0.25 Payouts batch to PUBLISHER_PAYPAL_EMAIL
 - `botfare-demo`: reaches the app over Render's private network;
 - `botfare-db`: Postgres 17.
 
-Secrets are `sync: false`, so Render asks for them when the Blueprint is first applied.
+Node comes from `.node-version` (24 LTS, which still bundles the Corepack the build commands enable).
+
+Secrets are `sync: false`, so Render asks for them when the Blueprint is first applied. Leave `BOTFARE_SITE_ID` and `BOTFARE_SITE_SECRET` empty at that point: the database does not exist yet, and until they are set the demo runs in free mode (`/health` reports `payments: off`) and charges nothing.
+
+Once the first deploy is live, provision the demo site once. `botfare-db` is reachable only on Render's private network, so run the seed from `botfare-web`'s Shell, where `DATABASE_URL` is already set:
+
+```bash
+DEMO_ORIGIN=https://<botfare-demo>.onrender.com pnpm seed --print-secrets
+```
+
+1. Copy the printed `BOTFARE_SITE_ID` and `BOTFARE_SITE_SECRET` into `botfare-demo` > Environment and save; Render redeploys the demo with payments on.
+2. Copy `BOTFARE_AGENT_KEY` into the `.env` of the machine that runs the agent.
+3. Check `https://<botfare-demo>.onrender.com/health` reports payments on, then `curl -i -H 'x-botfare-agent: 1' https://<botfare-demo>.onrender.com/articles/burr-basics` returns a 402.
+
+Running the seed again keeps the site secret only if it can see the current one, which the Shell's `.env` holds until the next deploy of `botfare-web`. After a redeploy, pass the values back in (`BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed`), or let it issue a new secret and repeat step 1.
 
 ## Built with
 

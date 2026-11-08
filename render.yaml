@@ -47,6 +47,8 @@ services:
           type: web
           name: botfare-web
           property: hostport
+      # Leave both empty on the first apply (the demo runs free), then fill them from
+      # `pnpm seed --print-secrets` in botfare-web's Shell: see README "Deploy".
       - key: BOTFARE_SITE_ID
         sync: false
       - key: BOTFARE_SITE_SECRET
