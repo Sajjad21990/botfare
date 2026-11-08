@@ -153,6 +153,7 @@ describe("POST /api/research", () => {
       "get_offer",
       "buy",
       "skip",
+      "dispute",
       "finish",
     ]);
     expect(first?.thinking).toEqual({ type: "adaptive", display: "summarized" });

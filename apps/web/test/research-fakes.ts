@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import type { DeclineInput, DisputeInput, DisputeOutcome } from "@botfare/sdk";
 import { BotFareSpendLimitError, type Offer, type WireListener } from "@botfare/sdk";
 import type { ResearchDeps, ResearchModelClient } from "../src/lib/server/research-agent";
 import type { ResearchAgent, ResearchSite } from "../src/lib/server/research-tools";
@@ -14,7 +15,12 @@ export const URLS = {
   latte: `${ORIGIN}/articles/latte-art-hearts`,
   burrs: `${ORIGIN}/articles/burr-basics`,
   refused: `${ORIGIN}/articles/over-daily-cap`,
+  stub: `${ORIGIN}/articles/grinder-maintenance`,
 };
+
+/** What the Fare Court demo page serves once paid: a subscribe stub, not the promised article. */
+export const STUB_HTML =
+  "<article><h1>Keep your grinder in shape</h1><p>This article is for subscribers. Subscribe to keep reading.</p></article>";
 
 export interface FakePage {
   title: string;
@@ -47,6 +53,7 @@ export const PAGES: Record<string, FakePage> = {
     html: "<article><p>Flat vs conical.</p></article>",
   },
   [URLS.refused]: { title: "Over the daily cap", priceCents: 2, refuse: "daily_cap_exceeded" },
+  [URLS.stub]: { title: "Grinder maintenance, step by step", priceCents: 3, html: STUB_HTML },
 };
 
 export const CATALOG = {
@@ -77,12 +84,24 @@ const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("bas
 const JWS = `${b64({ alg: "EdDSA", typ: "x402-prepaid+jwt", kid: "key_demo" })}.${b64({ amount: "3" })}.sig`;
 
 /** A fake BotFare agent per cap that behaves like the SDK: over-cap prices throw before signing. */
-export function fakeAgents(pages: Record<string, FakePage> = PAGES) {
+export function fakeAgents(
+  pages: Record<string, FakePage> = PAGES,
+  fare: {
+    /** BotFare's answer to a dispute (default: a confident refund of the whole fare). */
+    dispute?: (input: DisputeInput) => Promise<DisputeOutcome>;
+    /** Whether BotFare takes decline notes and citation reports (default true). */
+    notesAccepted?: boolean;
+  } = {},
+) {
   const calls = {
     created: [] as number[],
     getOffer: [] as string[],
     fetch: [] as { url: string; cap: number }[],
+    disputes: [] as DisputeInput[],
+    declines: [] as { url: string; priceCents: number; input: DeclineInput }[],
+    citations: [] as { answerId: string; citations: { receiptId: string; claim?: string }[] }[],
   };
+  const paidCents = new Map<string, number>();
   let receipts = 0;
   const create = (options: {
     maxPerRequestCents: number;
@@ -135,13 +154,16 @@ export function fakeAgents(pages: Record<string, FakePage> = PAGES) {
             response: new Response("{}", { status: 402 }),
             paid: false,
             receipt: null,
+            receiptId: null,
+            body: null,
             offer,
             failureReason: page.refuse,
           };
         }
         const html = page.html ?? `<article><p>${page.title} full text.</p></article>`;
         const response = new Response(html, { headers: { "content-type": "text/html" } });
-        if (page.priceCents === 0) return { response, paid: false, receipt: null, offer: null };
+        const none = { paid: false, receipt: null, receiptId: null, body: null } as const;
+        if (page.priceCents === 0) return { response, ...none, offer: null };
         onWire?.({
           stage: "payment-signature",
           url,
@@ -158,7 +180,7 @@ export function fakeAgents(pages: Record<string, FakePage> = PAGES) {
             exp: 1_700_000_060,
           },
         } as never);
-        if (page.noReceipt) return { response, paid: false, receipt: null, offer };
+        if (page.noReceipt) return { response, ...none, offer };
         receipts += 1;
         const receipt = {
           success: true,
@@ -172,7 +194,43 @@ export function fakeAgents(pages: Record<string, FakePage> = PAGES) {
           header: "eyJzdWNjZXNzIjp0cnVlfQ",
           decoded: receipt,
         } as never);
-        return { response, paid: true, receipt, offer };
+        paidCents.set(receipt.transaction, page.priceCents);
+        return {
+          response,
+          paid: true,
+          receipt,
+          receiptId: receipt.transaction,
+          body: new TextEncoder().encode(html),
+          offer,
+        };
+      },
+      async dispute(input) {
+        calls.disputes.push(input);
+        if (fare.dispute) return fare.dispute(input);
+        const refundedCents = paidCents.get(input.receiptId) ?? 0;
+        return {
+          disputeId: `dsp_${calls.disputes.length}`,
+          receiptId: input.receiptId,
+          status: "refunded",
+          refundedCents,
+          verdict: {
+            decision: "refund",
+            confidence: 0.94,
+            category: "stub_or_paywall",
+            rationale:
+              "The offer promised a step-by-step maintenance guide; a subscribe prompt arrived.",
+            evidence: [],
+          },
+          message: `Refunded $${(refundedCents / 100).toFixed(2)} to the wallet.`,
+        };
+      },
+      async decline(offer, input) {
+        calls.declines.push({ url: offer.url, priceCents: offer.priceCents, input });
+        return fare.notesAccepted ?? true;
+      },
+      async reportCitations(report) {
+        calls.citations.push(report);
+        return fare.notesAccepted ?? true;
       },
     };
   };

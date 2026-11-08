@@ -16,6 +16,11 @@ import { normalizeUrl, type ResearchSite, readTextLimited } from "./research-too
  * browser) and the BotFare sites it may read (the demo publisher, plus a real user's own sites).
  * Requests for the demo's public origin go to DEMO_INTERNAL_URL when it is set
  * (lib/server/demo-origin: the judge Docker stack); every request goes through the outbound guard.
+ *
+ * Fare Court disputes, decline notes and citation reports go to this app's own agent API
+ * (BOTFARE_URL, else RENDER_EXTERNAL_URL), signed with the same key, through the plain fetch: that
+ * URL comes from configuration, never from the model or a publisher. Without it they are skipped
+ * (disputes fail with a message; notes are best effort).
  */
 
 const MAX_SITES = 10;
@@ -147,6 +152,8 @@ export function createResearchDeps(
   // Server-side only: the model and the browser keep seeing the public URLs. Every request is
   // checked against the registered origin (no redirects, no private addresses in production)
   // before the demo's public origin is mapped to DEMO_INTERNAL_URL.
+  const ownUrl =
+    process.env.BOTFARE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim() || undefined;
   const serverFetch = createGuardedFetch(createRewritingFetch(demoOriginRewrite()), {
     checkAddresses: process.env.NODE_ENV === "production",
     trustedOrigins: researchTrustedOrigins(),
@@ -160,6 +167,8 @@ export function createResearchDeps(
         maxPerRequestUsd: maxPerRequestCents / 100,
         onWire,
         fetch: serverFetch,
+        ...(ownUrl ? { botfareUrl: ownUrl } : {}),
+        botfareFetch: globalThis.fetch,
       }),
     loadSites: () => loadSites(viewer),
     prepare: () => refillDemoAgentWallet(config.agentKey),

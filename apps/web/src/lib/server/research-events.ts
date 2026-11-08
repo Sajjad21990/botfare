@@ -2,6 +2,7 @@
  * The research agent's Server-Sent Events, shared by POST /api/research and the /agent page.
  * Types only (plus a few limits), so the browser can import them without pulling in server code.
  */
+import type { DisputeReason, DisputeStatus, DisputeVerdict } from "@botfare/contracts/fare";
 
 /** Default and highest budget for one run, in US cents. */
 export const DEFAULT_BUDGET_CENTS = 25;
@@ -12,6 +13,8 @@ export const MAX_PER_REQUEST_CENTS = 10;
 /** Hard limit on tool calls in one run, `finish` included. */
 export const MAX_TOOL_CALLS = 12;
 export const MAX_QUESTION_CHARS = 500;
+/** Fare Court disputes one run may file (each also costs a tool call; disputes cost no budget). */
+export const MAX_DISPUTES_PER_RUN = 2;
 
 export type DecisionAction = "buy" | "skip";
 /** Who stopped a purchase: the SDK's per-request cap, the run's budget, or the publisher/facilitator. */
@@ -118,6 +121,32 @@ export type ResearchEvent =
       amountCents: number;
       siteId: string;
       siteName: string;
+      spentCents: number;
+      remainingCents: number;
+    }
+  | {
+      /** Fare Court: the agent disputed a purchase whose content did not match its offer. */
+      type: "dispute-filed";
+      toolCallId: string;
+      receiptId: string;
+      url: string;
+      title: string | null;
+      amountCents: number;
+      reason: DisputeReason;
+      note: string | null;
+    }
+  | {
+      type: "dispute-outcome";
+      toolCallId: string;
+      receiptId: string;
+      url: string;
+      /** BotFare's dispute status, or "failed" when BotFare could not take the dispute. */
+      status: DisputeStatus | "failed";
+      refundedCents: number;
+      message: string;
+      verdict: Pick<DisputeVerdict, "decision" | "confidence" | "category" | "rationale"> | null;
+      /** From filing to outcome, in milliseconds. */
+      elapsedMs: number;
       spentCents: number;
       remainingCents: number;
     }

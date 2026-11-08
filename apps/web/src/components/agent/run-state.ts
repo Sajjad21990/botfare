@@ -16,6 +16,12 @@ export type TimelineEntry =
   | ({ kind: "decision"; id: string } & Omit<EventOf<"decision">, "type">)
   | ({ kind: "refusal"; id: string } & Omit<EventOf<"refusal">, "type">)
   | ({ kind: "payment"; id: string } & Omit<EventOf<"payment">, "type">)
+  | ({
+      kind: "dispute";
+      id: string;
+      /** Filled in when BotFare answers; null while the judge is deciding. */
+      outcome: Omit<EventOf<"dispute-outcome">, "type" | "toolCallId" | "receiptId" | "url"> | null;
+    } & Omit<EventOf<"dispute-filed">, "type">)
   | ({ kind: "tool-error"; id: string } & Omit<EventOf<"tool-error">, "type">);
 
 export interface WireTrace {
@@ -155,6 +161,19 @@ function applyEvent(view: RunView, event: ResearchEvent): RunView {
       const entry = { kind: type, id: nextId(type), ...rest } as TimelineEntry;
       const next = push(view, entry);
       return event.type === "payment" ? { ...next, spentCents: event.spentCents } : next;
+    }
+    case "dispute-filed": {
+      const { type: _type, ...rest } = event;
+      return push(view, { kind: "dispute", id: nextId("dispute"), ...rest, outcome: null });
+    }
+    case "dispute-outcome": {
+      const { type: _type, toolCallId, receiptId, url: _url, ...outcome } = event;
+      const entries = view.entries.map((entry) =>
+        entry.kind === "dispute" && entry.toolCallId === toolCallId && entry.receiptId === receiptId
+          ? { ...entry, outcome }
+          : entry,
+      );
+      return { ...view, entries, spentCents: event.spentCents };
     }
     case "wire": {
       if (!event.toolCallId) return view;

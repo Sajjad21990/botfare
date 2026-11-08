@@ -7,6 +7,7 @@ import {
   CircleSlash,
   Loader2,
   ReceiptText,
+  Scale,
   ShieldAlert,
   ShoppingCart,
   Tag,
@@ -24,6 +25,33 @@ const REFUSED_BY: Record<string, string> = {
   publisher: "Facilitator",
 };
 
+/** Dispute reasons in the timeline's words. */
+const DISPUTE_REASON: Record<string, string> = {
+  stub_or_paywall: "subscription stub",
+  error_page: "error page",
+  truncated: "cut short",
+  unrelated: "unrelated content",
+  not_as_described: "not as described",
+  other: "content mismatch",
+};
+
+/** Dispute statuses as a badge. */
+const DISPUTE_STATUS: Record<
+  string,
+  { label: string; variant: "secondary" | "outline" | "destructive" }
+> = {
+  refunded: { label: "Refunded", variant: "secondary" },
+  denied: { label: "Denied", variant: "outline" },
+  pending_publisher: { label: "Publisher review", variant: "outline" },
+  rejected_by_publisher: { label: "Publisher declined", variant: "outline" },
+  invalid: { label: "Not accepted", variant: "destructive" },
+  failed: { label: "Not filed", variant: "destructive" },
+};
+
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
 interface TimelineProps {
   view: RunView;
   selected: string | null;
@@ -39,7 +67,7 @@ export function Timeline({ view, selected, onSelect }: TimelineProps) {
         <CardTitle>Timeline</CardTitle>
         <CardDescription>
           Offers are free to read. Select an offer, payment or refusal to inspect its x402
-          handshake.
+          handshake. Paid pages that are not what they promised are disputed in Fare Court.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -102,6 +130,7 @@ function Icon({ children, tone = "muted" }: { children: ReactNode; tone?: string
         tone === "paid" && "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
         tone === "refused" && "border-destructive/40 text-destructive",
         tone === "skip" && "border-amber-500/40 text-amber-600 dark:text-amber-400",
+        tone === "dispute" && "border-sky-500/40 text-sky-600 dark:text-sky-400",
         tone === "muted" && "text-muted-foreground",
         tone === "primary" && "text-foreground",
       )}
@@ -302,6 +331,51 @@ function EntryRow({
           </Selectable>
         </>
       );
+    case "dispute": {
+      const { outcome } = entry;
+      const status = outcome ? DISPUTE_STATUS[outcome.status] : undefined;
+      const reason = DISPUTE_REASON[entry.reason] ?? entry.reason;
+      let result: string;
+      if (!outcome) result = "The judge is comparing the offer with what arrived…";
+      else if (outcome.status === "refunded")
+        result = `→ refunded ${formatFare(outcome.refundedCents)} in ${seconds(outcome.elapsedMs)}`;
+      else if (outcome.status === "denied") result = "→ denied: the content matched the offer";
+      else if (outcome.status === "pending_publisher")
+        result = "→ sent to the publisher for review";
+      else result = `→ ${outcome.message}`;
+      return (
+        <>
+          <Icon tone={outcome?.status === "refunded" ? "paid" : "dispute"}>
+            {outcome ? <Scale /> : <Loader2 className="animate-spin" />}
+          </Icon>
+          <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1">
+            <Title
+              aside={
+                status ? (
+                  <Badge variant={status.variant}>{status.label}</Badge>
+                ) : (
+                  <Badge variant="outline">Fare Court</Badge>
+                )
+              }
+            >
+              Disputed {formatFare(entry.amountCents)}: {reason}
+            </Title>
+            <p className="text-sm text-foreground">{result}</p>
+            {entry.note ? <p className="text-sm text-muted-foreground">“{entry.note}”</p> : null}
+            {outcome?.verdict ? (
+              <p className="text-sm text-muted-foreground">
+                Judge ({Math.round(outcome.verdict.confidence * 100)}% sure):{" "}
+                {outcome.verdict.rationale}
+              </p>
+            ) : null}
+            <span className="truncate text-sm text-muted-foreground">
+              {entry.title ?? shortPath(entry.url)}
+            </span>
+            <span className="font-mono text-xs text-muted-foreground">{entry.receiptId}</span>
+          </div>
+        </>
+      );
+    }
     case "tool-error":
       return (
         <>

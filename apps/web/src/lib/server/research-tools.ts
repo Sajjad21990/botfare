@@ -1,6 +1,12 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import {
+  type DisputeOutcome,
+  declineCategorySchema,
+  disputeReasonSchema,
+} from "@botfare/contracts/fare";
+import {
   type BotFareAgent,
+  BotFareApiError,
   BotFareSpendLimitError,
   type Offer,
   type WireEvent,
@@ -9,6 +15,7 @@ import {
 import { decodeProtectedHeader } from "jose";
 import { z } from "zod";
 import {
+  MAX_DISPUTES_PER_RUN,
   MAX_PER_REQUEST_CENTS,
   type ResearchCitation,
   type ResearchEvent,
@@ -25,7 +32,7 @@ import {
 /** The parts of a BotFare agent the tools use (a fake one in tests). */
 export type ResearchAgent = Pick<
   BotFareAgent,
-  "keyId" | "maxPerRequestCents" | "getOffer" | "fetch"
+  "keyId" | "maxPerRequestCents" | "getOffer" | "fetch" | "dispute" | "decline" | "reportCitations"
 >;
 
 /** A BotFare site as the research agent sees it: from the sites table. */
@@ -41,6 +48,8 @@ export const MAX_CONTENT_CHARS = 8_000;
 export const MAX_FETCH_BYTES = 1_000_000;
 const MAX_EXCERPT_CHARS = 300;
 const MAX_ARTICLES_PER_SITE = 40;
+/** Longest wait for a best-effort Fare Advisor note (decline, citations) before the run moves on. */
+const NOTE_TIMEOUT_MS = 3_000;
 
 // --- Tool definitions -----------------------------------------------------------------------------
 
@@ -50,7 +59,16 @@ const reasonField = z.string().trim().min(1).max(400);
 export const listSourcesInput = z.object({}).strict();
 export const getOfferInput = z.object({ url: urlField }).strict();
 export const buyInput = z.object({ url: urlField, reason: reasonField }).strict();
-export const skipInput = z.object({ url: urlField, reason: reasonField }).strict();
+export const skipInput = z
+  .object({ url: urlField, reason: reasonField, category: declineCategorySchema.optional() })
+  .strict();
+export const disputeInput = z
+  .object({
+    receipt_id: z.string().trim().min(1).max(200),
+    reason: disputeReasonSchema,
+    note: z.string().trim().min(1).max(500),
+  })
+  .strict();
 export const finishInput = z
   .object({
     answer: z.string().trim().min(1).max(4_000),
@@ -69,7 +87,7 @@ export const finishInput = z
   .strict();
 
 export type FinishInput = z.infer<typeof finishInput>;
-export type ToolName = "list_sources" | "get_offer" | "buy" | "skip" | "finish";
+export type ToolName = "list_sources" | "get_offer" | "buy" | "skip" | "dispute" | "finish";
 
 const string = (description: string, maxLength?: number) => ({
   type: "string" as const,
@@ -116,14 +134,44 @@ export const RESEARCH_TOOLS: Anthropic.Beta.Messages.BetaTool[] = [
   {
     name: "skip",
     description:
-      "Record a decision not to buy a page, with the reason (for example: off-topic, or not worth the price). Free.",
+      "Record a decision not to buy a page, with the reason (for example: off-topic, or not worth the price). Free. The reason and category also go to the publisher as an anonymous note, so they can fix prices and previews: be specific and fair.",
     input_schema: {
       type: "object",
       properties: {
         url: string("Full URL of the page you are not buying", 2048),
         reason: string("Why you are not buying it (one sentence)", 400),
+        category: {
+          type: "string",
+          enum: declineCategorySchema.options,
+          description:
+            "The main reason: too_expensive, irrelevant, low_quality_preview, already_have, over_budget or other",
+        },
       },
       required: ["url", "reason"],
+      additionalProperties: false,
+    },
+    eager_input_streaming: true,
+  },
+  {
+    name: "dispute",
+    description:
+      "Fare Court buyer protection: dispute a page you bought in this run when the delivered text clearly does not match its offer (a 'subscribe to keep reading' stub or paywall, an error or empty page, cut off far short of what was declared, or unrelated to the title and preview). BotFare checks the delivered bytes against the publisher's digest and an AI judge compares offer and delivery; confident cases are refunded in seconds. Free (no budget used). Never dispute a page that matches its offer but is less useful than hoped, and do not cite a disputed page.",
+    input_schema: {
+      type: "object",
+      properties: {
+        receipt_id: string("The receipt ID buy returned for the page", 200),
+        reason: {
+          type: "string",
+          enum: disputeReasonSchema.options,
+          description:
+            "stub_or_paywall, error_page, truncated, unrelated, not_as_described or other",
+        },
+        note: string(
+          "One or two sentences of evidence: what the offer promised and what arrived",
+          500,
+        ),
+      },
+      required: ["receipt_id", "reason", "note"],
       additionalProperties: false,
     },
     eager_input_streaming: true,
@@ -167,6 +215,10 @@ export interface PurchasedPage {
   amountCents: number;
   siteId: string;
   siteName: string;
+  /** The exact bytes delivered (for a dispute); null when too large to keep. */
+  delivered: Uint8Array | null;
+  /** Set once the page was disputed: the outcome, or "failed" when BotFare could not take it. */
+  dispute?: DisputeOutcome["status"] | "failed";
 }
 
 export interface RunState {
@@ -186,6 +238,10 @@ export interface RunState {
    */
   unconfirmed: Map<string, number>;
   sources: CatalogSource[] | null;
+  /** Disputes filed in this run (at most MAX_DISPUTES_PER_RUN). */
+  disputes: number;
+  /** URLs a decline note was sent for (one note per page per run). */
+  declined: Set<string>;
 }
 
 export function createRunState(budgetCents: number): RunState {
@@ -198,6 +254,8 @@ export function createRunState(budgetCents: number): RunState {
     receipts: new Map(),
     unconfirmed: new Map(),
     sources: null,
+    disputes: 0,
+    declined: new Set(),
   };
 }
 
@@ -226,6 +284,8 @@ export interface ResearchToolContext {
   fetchCatalog: (site: ResearchSite, signal: AbortSignal) => Promise<unknown>;
   emit: (event: ResearchEvent) => void;
   signal: AbortSignal;
+  /** ID of this run's answer for the citation report (8-64 characters, e.g. the run ID). */
+  answerId?: string;
 }
 
 // --- Helpers --------------------------------------------------------------------------------------
@@ -641,9 +701,11 @@ export async function runTool(
       case "buy":
         return await buy(ctx, input, toolCallId);
       case "skip":
-        return skip(ctx, input, toolCallId);
+        return await skip(ctx, input, toolCallId);
+      case "dispute":
+        return await dispute(ctx, input, toolCallId);
       case "finish":
-        return finish(ctx, input);
+        return await finish(ctx, input);
       default:
         return toolError(`Unknown tool ${JSON.stringify(name).slice(0, 60)}`);
     }
@@ -919,7 +981,7 @@ async function buy(
   }
 
   const content = await readableContent(result.response);
-  if (!result.paid || !result.receipt?.transaction) {
+  if (!result.paid || !result.receiptId) {
     return {
       content: json({
         url,
@@ -937,10 +999,11 @@ async function buy(
   const page: PurchasedPage = {
     url,
     title,
-    receiptId: result.receipt.transaction,
+    receiptId: result.receiptId,
     amountCents,
     siteId: paidSite.id,
     siteName: paidSite.name,
+    delivered: result.body,
   };
   state.spentCents += amountCents;
   state.receipts.set(page.receiptId, page);
@@ -968,22 +1031,158 @@ async function buy(
   };
 }
 
-function skip(ctx: ResearchToolContext, input: unknown, toolCallId: string): ToolOutcome {
+/** Waits for a best-effort note at most NOTE_TIMEOUT_MS; false on timeout or failure. */
+async function bestEffort(note: Promise<boolean>): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), NOTE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([note.catch(() => false), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function skip(
+  ctx: ResearchToolContext,
+  input: unknown,
+  toolCallId: string,
+): Promise<ToolOutcome> {
   const parsed = skipInput.safeParse(input);
   if (!parsed.success) return invalidInput("skip", parsed.error);
   const url = normalizeUrl(parsed.data.url);
   if (!url) return toolError("url must be an absolute http(s) URL");
-  const offer = ctx.state.offers.get(url);
+  const { state } = ctx;
+  const offer = state.offers.get(url);
   ctx.emit({
     type: "decision",
     toolCallId,
     action: "skip",
     url,
-    title: offer?.preview?.title ?? ctx.state.titles.get(url) ?? null,
+    title: offer?.preview?.title ?? state.titles.get(url) ?? null,
     priceCents: offer ? offer.priceCents : null,
     reason: parsed.data.reason,
   });
-  return { content: json({ recorded: true, budget: budgetLine(ctx.state) }) };
+  // Fare Advisor: tell the publisher why (free, best effort), once per page, only for an offer
+  // this run actually saw and did not buy.
+  const bought = [...state.receipts.values()].some((page) => page.url === url);
+  let noted = false;
+  if (offer && !bought && !state.declined.has(url) && siteForUrl(ctx.sites, url)) {
+    state.declined.add(url);
+    noted = await bestEffort(
+      ctx.agent.decline(offer, {
+        category: parsed.data.category ?? "other",
+        reason: parsed.data.reason,
+      }),
+    );
+  }
+  return { content: json({ recorded: true, publisherNoted: noted, budget: budgetLine(state) }) };
+}
+
+async function dispute(
+  ctx: ResearchToolContext,
+  input: unknown,
+  toolCallId: string,
+): Promise<ToolOutcome> {
+  const parsed = disputeInput.safeParse(input);
+  if (!parsed.success) return invalidInput("dispute", parsed.error);
+  const { state } = ctx;
+  const { receipt_id: receiptId, reason, note } = parsed.data;
+  const page = state.receipts.get(receiptId);
+  if (!page) {
+    return toolError(
+      `Receipt ${JSON.stringify(receiptId).slice(0, 80)} was not obtained in this run; only pages bought in this run can be disputed.`,
+    );
+  }
+  if (page.dispute)
+    return toolError(`Receipt ${receiptId} was already disputed (${page.dispute}).`);
+  if (state.disputes >= MAX_DISPUTES_PER_RUN) {
+    return toolError(`At most ${MAX_DISPUTES_PER_RUN} disputes per run.`);
+  }
+  if (!page.delivered) {
+    return toolError("The delivered content was too large to keep, so it cannot be disputed.");
+  }
+  state.disputes += 1;
+  ctx.emit({
+    type: "dispute-filed",
+    toolCallId,
+    receiptId,
+    url: page.url,
+    title: page.title,
+    amountCents: page.amountCents,
+    reason,
+    note,
+  });
+  const started = Date.now();
+  const outcomeEvent = (
+    fields: Pick<
+      Extract<ResearchEvent, { type: "dispute-outcome" }>,
+      "status" | "refundedCents" | "message" | "verdict"
+    >,
+  ) =>
+    ctx.emit({
+      type: "dispute-outcome",
+      toolCallId,
+      receiptId,
+      url: page.url,
+      ...fields,
+      elapsedMs: Date.now() - started,
+      spentCents: state.spentCents,
+      remainingCents: remainingCents(state),
+    });
+
+  let outcome: DisputeOutcome;
+  try {
+    outcome = await ctx.agent.dispute({ receiptId, reason, note, content: page.delivered });
+  } catch (err) {
+    if (ctx.signal.aborted) throw err;
+    page.dispute = "failed";
+    const message =
+      err instanceof BotFareApiError
+        ? err.message
+        : `The dispute could not be filed (${describe(err)})`;
+    outcomeEvent({
+      status: "failed",
+      refundedCents: 0,
+      message: truncate(message, 300),
+      verdict: null,
+    });
+    return toolError(`${truncate(message, 300)}. Do not cite this page.`);
+  }
+
+  page.dispute = outcome.status;
+  // Money moved back to the wallet: the run may spend it again (never more than was paid).
+  const refundedCents = Math.min(Math.max(outcome.refundedCents, 0), page.amountCents);
+  if (outcome.status === "refunded")
+    state.spentCents = Math.max(0, state.spentCents - refundedCents);
+  const verdict = outcome.verdict
+    ? {
+        decision: outcome.verdict.decision,
+        confidence: outcome.verdict.confidence,
+        category: outcome.verdict.category,
+        rationale: truncate(outcome.verdict.rationale, 600),
+      }
+    : null;
+  outcomeEvent({
+    status: outcome.status,
+    refundedCents: outcome.status === "refunded" ? refundedCents : 0,
+    message: truncate(outcome.message, 300),
+    verdict,
+  });
+  return {
+    content: json({
+      receiptId,
+      status: outcome.status,
+      refundedCents: outcome.status === "refunded" ? refundedCents : 0,
+      message: truncate(outcome.message, 300),
+      verdict: verdict ? { decision: verdict.decision, rationale: verdict.rationale } : null,
+      // Only a denied dispute (the judge found the content matched) leaves the page citable.
+      citable: outcome.status === "denied",
+      budget: budgetLine(state),
+    }),
+    ...(outcome.status === "invalid" ? { isError: true } : {}),
+  };
 }
 
 /** Checks the final answer: every citation must name a receipt this run obtained, for its URL. */
@@ -1006,6 +1205,12 @@ export function validateFinish(
         message: `citations[${index}]: receipt ${JSON.stringify(citation.receiptId).slice(0, 80)} was not obtained in this run. Cite only pages you bought, with the receipt ID buy returned.`,
       };
     }
+    if (page.dispute && page.dispute !== "denied") {
+      return {
+        ok: false,
+        message: `citations[${index}]: receipt ${page.receiptId} was disputed (${page.dispute}); do not cite a page whose content you disputed.`,
+      };
+    }
     if (normalizeUrl(citation.url) !== page.url) {
       return {
         ok: false,
@@ -1026,9 +1231,18 @@ export function validateFinish(
   return { ok: true, answer: parsed.data.answer, citations };
 }
 
-function finish(ctx: ResearchToolContext, input: unknown): ToolOutcome {
+async function finish(ctx: ResearchToolContext, input: unknown): Promise<ToolOutcome> {
   const result = validateFinish(ctx.state, input);
   if (!result.ok) return toolError(result.message);
+  // Fare Advisor, "citations are the new clicks": which paid reads the answer used (best effort).
+  if (result.citations.length > 0 && ctx.answerId) {
+    await bestEffort(
+      ctx.agent.reportCitations({
+        answerId: ctx.answerId,
+        citations: result.citations.map((c) => ({ receiptId: c.receiptId, claim: c.claim })),
+      }),
+    );
+  }
   return {
     content: json({ finished: true }),
     finished: { answer: result.answer, citations: result.citations },
