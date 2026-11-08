@@ -103,6 +103,7 @@ export {
   DISPUTE_JUDGE_TEXT_CHARS,
   type DisputeDecisionResult,
   type DisputeJudgeInput,
+  type DisputeKeyLimits,
   type DisputeListRow,
   deliveredTextFromBytes,
   getDispute,

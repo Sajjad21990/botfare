@@ -1,4 +1,9 @@
-import { siteAuthHeader } from "@botfare/contracts";
+import {
+  agentKeyPayloadSchema,
+  DEMO_PERSONAS,
+  encodeAgentKey,
+  siteAuthHeader,
+} from "@botfare/contracts";
 import { contentDigestSha256, type DisputeVerdict } from "@botfare/contracts/fare";
 import { createRequestSigner, type Ed25519PrivateJwk } from "@botfare/contracts/web-bot-auth";
 import {
@@ -6,6 +11,7 @@ import {
   createAgentKey,
   createUser,
   type DisputeJudgeInput,
+  getUserByEmail,
   seedWallet,
   type User,
   walletBalanceMicros,
@@ -49,6 +55,7 @@ import {
 
 const BOTFARE_URL = "http://botfare.test";
 const savedEnv = {
+  BOTFARE_AGENT_KEY: process.env.BOTFARE_AGENT_KEY,
   BOTFARE_URL: process.env.BOTFARE_URL,
   RENDER_EXTERNAL_URL: process.env.RENDER_EXTERNAL_URL,
 };
@@ -322,6 +329,52 @@ describe("POST /api/disputes: verdicts", () => {
     expect(again.status).toBe(409);
     expect((await again.json()).error).toBe("already_refunded");
     expect(await walletBalanceMicros(getDb(), agent.owner.id)).toBe(before + 30_000);
+    await expectLedgerOk();
+  });
+
+  it("the shared demo key skips the dispute-rate rule; any other key keeps it", async () => {
+    const db = getDb();
+    // The demo research key: BOTFARE_AGENT_KEY, owned by the agent-owner persona.
+    const persona = DEMO_PERSONAS.agentOwner;
+    const owner =
+      (await getUserByEmail(db, persona.email)) ??
+      (await createUser(db, { email: persona.email, name: persona.name }));
+    const keys = await generateAgentKeyPair();
+    const key = await createAgentKey(db, {
+      ownerUserId: owner.id,
+      name: "Demo research agent (test)",
+      publicJwk: keys.publicJwk,
+    });
+    await seedWallet(db, { ownerUserId: owner.id, cents: 100, idempotencyKey: `demo-${key.id}` });
+    const demo: SigningAgent = {
+      owner,
+      keyId: key.id,
+      privateJwk: keys.privateJwk as Ed25519PrivateJwk,
+      client: new PrepaidPayPalClient({ keyId: key.id, privateJwk: keys.privateJwk }),
+    };
+    const other = await makeSigningAgent("rate");
+    process.env.BOTFARE_AGENT_KEY = encodeAgentKey(
+      agentKeyPayloadSchema.parse({ v: 1, keyId: key.id, privateJwk: keys.privateJwk }),
+    );
+    setJudgeForTests(scriptedJudge(REFUND).judge);
+
+    // Ten purchases each; three disputes is 30%, over DISPUTE_POLICY's 20%.
+    const statuses: Record<string, string[]> = { demo: [], other: [] };
+    for (const [name, agent] of [
+      ["demo", demo],
+      ["other", other],
+    ] as const) {
+      const receipts: string[] = [];
+      for (let i = 0; i < 10; i++) receipts.push(await buyAndAttest(publisher, agent, STUB));
+      for (const receiptId of receipts.slice(0, 3)) {
+        const response = await disputeRoute(
+          await signedDispute(agent, disputeBody(receiptId, STUB)),
+        );
+        statuses[name]?.push((await response.json()).status);
+      }
+    }
+    expect(statuses.demo).toEqual(["refunded", "refunded", "refunded"]);
+    expect(statuses.other).toEqual(["refunded", "refunded", "pending_publisher"]);
     await expectLedgerOk();
   });
 

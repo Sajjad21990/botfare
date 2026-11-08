@@ -171,6 +171,17 @@ export interface DisputeJudgeInput {
   };
 }
 
+/**
+ * Limits for one key that differ from DISPUTE_POLICY. Only for a key that many people share, such
+ * as the judges' demo research key, where "one agent disputing too often" does not apply.
+ */
+export interface DisputeKeyLimits {
+  /** Disputes per UTC day (DISPUTE_POLICY.maxDisputesPerKeyPerDay by default). */
+  maxDisputesPerDay?: number;
+  /** False skips the 7-day dispute-rate rule, so confident AI verdicts may refund (default true). */
+  autoRefundRateRule?: boolean;
+}
+
 export type OpenDisputeRefusal =
   | "invalid_request"
   | "content_too_large"
@@ -212,9 +223,13 @@ export async function openDispute(
     request: DisputeRequest;
     /** The delivered bytes; decoded from `request.contentBase64` when left out. */
     contentBytes?: Uint8Array;
+    /** Per-key limits other than DISPUTE_POLICY's, for a key many people share (the demo key). */
+    limits?: DisputeKeyLimits;
     now?: Date;
   },
 ): Promise<OpenDisputeResult> {
+  const maxPerDay = input.limits?.maxDisputesPerDay ?? DISPUTE_POLICY.maxDisputesPerKeyPerDay;
+  const rateRule = input.limits?.autoRefundRateRule ?? true;
   const parsed = disputeRequestSchema.safeParse(input.request);
   if (!parsed.success) {
     return { ok: false, reason: "invalid_request", message: "Dispute request is not valid" };
@@ -288,11 +303,11 @@ export async function openDispute(
         .where(
           and(eq(disputes.agentKeyId, input.agentKeyId), gte(disputes.createdAt, utcDayStart(now))),
         );
-      if ((today?.n ?? 0) >= DISPUTE_POLICY.maxDisputesPerKeyPerDay) {
+      if ((today?.n ?? 0) >= maxPerDay) {
         return {
           ok: false,
           reason: "rate_limited",
-          message: `At most ${DISPUTE_POLICY.maxDisputesPerKeyPerDay} disputes per agent key per day`,
+          message: `At most ${maxPerDay} disputes per agent key per day`,
         };
       }
 
@@ -347,8 +362,9 @@ export async function openDispute(
         );
       }
 
-      const rate = await disputeRate(tx, input.agentKeyId, now);
+      const rate = rateRule ? await disputeRate(tx, input.agentKeyId, now) : null;
       const autoAllowed =
+        !rate ||
         rate.purchases < DISPUTE_POLICY.minSampleForRate ||
         (rate.disputes + 1) / rate.purchases <= DISPUTE_POLICY.maxAutoRefundRate;
 

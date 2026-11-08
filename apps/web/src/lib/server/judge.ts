@@ -1,5 +1,7 @@
 import { type DemoPersona, decodeAgentKey, isDemoPersonaEmail } from "@botfare/contracts";
 import {
+  type AgentKey,
+  type DisputeKeyLimits,
   ensureDemoWalletFloor,
   getAgentKeyById,
   getUserById,
@@ -58,5 +60,33 @@ export async function refillDemoAgentWallet(agentKey: string): Promise<void> {
     await ensureDemoWalletFloor(db, { userId: owner.id });
   } catch (err) {
     console.error("judge mode: could not top up the demo agent wallet", (err as Error)?.message);
+  }
+}
+
+/**
+ * Fare Court limits for the shared demo research key. Every judge's research run disputes with
+ * this one key (BOTFARE_AGENT_KEY, owned by a demo persona), so DISPUTE_POLICY's per-key rules,
+ * written for one agent, would stop the demo for everyone after a few runs: ten disputes a day,
+ * and the 7-day dispute-rate rule that sends refunds to the publisher once a key disputes more than
+ * a fifth of its purchases. For that key only: 200 disputes a day and no rate rule. Refunds still
+ * need a confident AI verdict (or the publisher) and still go through the ledger's one refund per
+ * receipt. Any other key, including a judge's own, keeps the normal policy (undefined).
+ */
+export const SHARED_DEMO_KEY_DISPUTE_LIMITS: DisputeKeyLimits = {
+  maxDisputesPerDay: 200,
+  autoRefundRateRule: false,
+};
+
+export async function disputeLimitsFor(
+  key: Pick<AgentKey, "id" | "ownerUserId">,
+): Promise<DisputeKeyLimits | undefined> {
+  const configured = process.env.BOTFARE_AGENT_KEY?.trim();
+  if (!configured) return undefined;
+  try {
+    if (decodeAgentKey(configured).keyId !== key.id) return undefined;
+    const owner = await getUserById(getDb(), key.ownerUserId);
+    return owner && isDemoPersonaEmail(owner.email) ? SHARED_DEMO_KEY_DISPUTE_LIMITS : undefined;
+  } catch {
+    return undefined;
   }
 }

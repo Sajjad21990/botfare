@@ -23,6 +23,7 @@ import { authenticateSiteRequest, unauthorized } from "./auth";
 import { getDb } from "./db";
 import { currentJudge, explainOutcome, judgeDispute } from "./fare-court";
 import { jsonError, readLimitedJson } from "./http";
+import { disputeLimitsFor } from "./judge";
 import { receiptPath } from "./wallet";
 
 /**
@@ -120,10 +121,12 @@ export async function handleDispute(request: Request): Promise<Response> {
   }
 
   try {
+    const limits = await disputeLimitsFor(auth.key);
     const opened = await openDispute(db, {
       agentKeyId: auth.key.id,
       request: body.data,
       contentBytes: bytes,
+      ...(limits ? { limits } : {}),
     });
     if (!opened.ok) {
       const status = REFUSAL_STATUS[opened.reason] ?? 400;

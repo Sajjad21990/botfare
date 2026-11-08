@@ -376,6 +376,23 @@ describe("openDispute", () => {
     expect(result).toMatchObject({ ok: true, outcome: { status: "pending_publisher" } });
     expect((await getReceipt(db, bought[2] as string))?.status).toBe("settled");
   });
+
+  it("takes other per-key limits for a shared key (daily limit, no rate rule)", async () => {
+    const publisher = await makePublisher(db);
+    const agent = await makeAgent(db, { balanceCents: 100 });
+    const bought: string[] = [];
+    for (let i = 0; i < DISPUTE_POLICY.minSampleForRate; i++)
+      bought.push(await buy(agent, publisher));
+    const limits = { maxDisputesPerDay: 3, autoRefundRateRule: false };
+    const open = (receiptId: string) =>
+      openDispute(db, { agentKeyId: agent.key.id, request: disputeRequest(receiptId), limits });
+
+    // Without the rate rule the third dispute (3/10) may still refund automatically.
+    const results = [];
+    for (const receiptId of bought.slice(0, 3)) results.push(await open(receiptId));
+    expect(results.map((r) => r.ok && r.autoAllowed)).toEqual([true, true, true]);
+    expect(await open(bought[3] as string)).toMatchObject({ ok: false, reason: "rate_limited" });
+  });
 });
 
 describe("applyVerdict", () => {
