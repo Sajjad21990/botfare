@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Sun 8 Nov 2026, late night IST (agent detection done)
+**Last updated:** Mon 9 Nov 2026, early hours IST (Phase 3 builds done: research agent, MCP server, /judge, Docker stack, polish; Log in with PayPal waits on the sandbox app setup)
 
 ## Overview
 
@@ -13,11 +13,11 @@
 | 0. Setup and proof | Sun 8 | ✅ Done | 10 / 10 |
 | 1. Protocol end to end | Mon 9 | ✅ Done (a day early) | 9 / 9 |
 | 2. Real money and dashboards | Tue 10 | ✅ Done (one optional item needs you) | 10 / 11 |
-| 3. Agent detection, AI and polish | Wed 11 | 🔄 In progress (detection done) | 3 / 9 |
+| 3. Agent detection, AI and polish | Wed 11 | 🔄 Built two days early; Log in with PayPal needs you | 8 / 9 |
 | 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
 | 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
 
-**Overall: about 60% done** (32 of 53 items), and ahead of the plan by about two days.
+**Overall: about 70% done** (37 of 53 items), and ahead of the plan by about two days. Next: deploy to Render.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -68,19 +68,19 @@
 | ✅ | 👤 Approve one wallet top-up in the browser with the sandbox agent-owner account | Done: order 9LL18551JF351230G, capture 4UK59144XL504881G, $5.00 gross, $0.66 PayPal fee, wallet credited |
 | ⏳ | 👤 Optional: AG Studio 45-day trial key in `.env` as `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` | Removes the watermark |
 
-## Phase 3: Agent detection, AI and polish 🔄
+## Phase 3: Agent detection, AI and polish 🔄 (8 / 9)
 
 | | Task | Notes |
 | --- | --- | --- |
 | ✅ | **Agent detection layer** in `botfare()`: signed agents (Web Bot Auth, RFC 9421 Ed25519; the SDK signs every request, BotFare publishes the key directory), edge bot scores (Cloudflare, Akamai headers, configurable), crawler impostor check (677 published IP prefixes), automation heuristics (HTTP client and headless user agents, missing browser headers); the signal travels in `extra.botfareSignal` and is stored on each receipt | Score-based: "pay, or prove you're human", never a hard block. Real Chrome, Firefox and Safari headers are never charged. Left out on purpose: datacenter IP lists and request rates. `packages/express/src/detection`; e2e 16/16 incl. 7 detection checks; SDK-to-middleware interop test |
 | ✅ | Human escape hatch: Cloudflare Turnstile "Reading as a human? Continue free" | `POST /__botfare/human` sets a signed 24 h pass; Crema Notes uses Cloudflare's test key (always passes). A real widget key is optional before the live demo. Test site keys always use Cloudflare's test secret and a real key never accepts a test secret (logged once); while the facilitator is unreachable a suspected human still gets the check (503 page) |
 | ✅ | Dashboard "Bot detection" panel: strictness, edge settings, revenue recovered per signal | Site card tab + "Revenue by detection signal" in analytics; `pnpm seed` sets Crema Notes to standard |
-| ⏳ | Research agent: `get_offer` / `buy` / `skip` / `finish`, wire inspector, cost meter, citations linked to receipts | 👤 needs an Anthropic API key |
-| ⏳ | `/judge` page: one-click demo flows and sandbox logins | |
-| ⏳ | MCP server for Claude Desktop and Claude Code (should) | `get_offer`, `fetch_paid`, `wallet_balance`, `recent_receipts` |
-| ⏳ | Log in with PayPal for publishers (should) | 👤 enable it on the sandbox app |
-| ⏳ | Full-stack Docker Compose so judges can run everything locally (should) | |
-| ⏳ | Polish: empty, loading, error and mobile states (hide revoked test keys in the wallet); feature freeze at 10 pm IST | |
+| ✅ | Research agent: `list_sources` / `get_offer` / `buy` / `skip` / `finish`, wire inspector, cost meter, citations linked to receipts | `/agent`, `POST /api/research` (SSE); budget 5¢–$1, 10¢ per page, caps in code, SDK and facilitator; tests use a scripted model. 👤 A live run needs `ANTHROPIC_API_KEY`. In Docker it reaches the demo via `DEMO_INTERNAL_URL` |
+| ✅ | `/judge` page: one-click demo flows and sandbox logins | Three steps (publisher, wallet, research agent → `/agent`), curl commands for `DEMO_PUBLIC_URL`, sandbox buyer (fake money) when `JUDGE_SANDBOX_BUYER_*` is set |
+| ✅ | MCP server for Claude Desktop and Claude Code (should) | [`packages/mcp`](../packages/mcp/README.md): `get_offer`, `fetch_paid`, `wallet_balance`, `recent_receipts`; agent API `/api/agent/*` authenticated by Web Bot Auth signatures |
+| 🔄 | Log in with PayPal for publishers (should) | Code done and tested against a mock PayPal (`/api/auth/paypal/*`, off unless `PAYPAL_LOGIN_ENABLED=true`). 👤 Enable it on the sandbox app with the return URL `<BOTFARE_URL>/api/auth/paypal/callback` (README) |
+| ✅ | Full-stack Docker Compose so judges can run everything locally (should) | `docker-compose.full.yml`, project `botfare-judge`, ports 3300/4300; Safari-safe cookies (Secure only over https) |
+| ✅ | Polish: empty, loading, error and mobile states (hide revoked test keys in the wallet); feature freeze at 10 pm IST | Wallet "Show revoked" toggle, loading skeleton, error and 404 pages, card actions stack on phones; every page checked at 375 px with no horizontal scroll. Detection: non-browser user agents (no `Mozilla/`) now pay at standard/strict, chat link previews stay free |
 
 ## Phase 4: Deploy to Render ⏳
 

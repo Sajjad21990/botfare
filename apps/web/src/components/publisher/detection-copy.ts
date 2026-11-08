@@ -25,7 +25,8 @@ export const SIGNAL_DESCRIPTIONS: Record<DetectionSignal, string> = {
   "known-bot": "A known AI crawler, from its published IP ranges.",
   "bot-impostor": "Claimed to be a known crawler but came from somewhere else.",
   "edge-score": "Your CDN (Cloudflare or Akamai) scored the request as a bot.",
-  automation: "HTTP client libraries, headless browsers or missing browser headers.",
+  automation:
+    "HTTP client libraries, headless browsers, user agents that are not browsers, or missing browser headers.",
   everyone: "The path charges every caller, people included (APIs).",
 };
 

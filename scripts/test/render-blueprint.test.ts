@@ -39,6 +39,21 @@ describe("render.yaml", () => {
     }
   });
 
+  it("gives botfare-web its public URL and the judge, login and research agent settings", () => {
+    const yaml = read("render.yaml");
+    const web = /name: botfare-web\n([\s\S]*?)(?=\n {2}- type:)/.exec(yaml)?.[1] ?? "";
+    for (const key of [
+      "BOTFARE_URL",
+      "DEMO_PUBLIC_URL",
+      "BOTFARE_AGENT_KEY",
+      "PAYPAL_LOGIN_ENABLED",
+      "JUDGE_SANDBOX_BUYER_EMAIL",
+      "JUDGE_SANDBOX_BUYER_PASSWORD",
+    ]) {
+      expect(web).toContain(`key: ${key}`);
+    }
+  });
+
   it("runs the daily payouts job as a cron service with the payouts script", () => {
     const yaml = read("render.yaml");
     const cron = /- type: cron\n([\s\S]*?)(?=\n {2}- type:|\ndatabases:)/.exec(yaml)?.[1] ?? "";

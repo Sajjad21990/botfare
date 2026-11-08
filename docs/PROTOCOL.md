@@ -189,6 +189,24 @@ Signature: sig1=:<base64 Ed25519 signature>:
 - **Failure is never punished.** An expired, unknown or tampered signature is ignored and the request is scored as if unsigned. A valid one is the `signed-agent` signal, which charges at every detection level.
 - **Not done:** the directory response itself is not signed (the draft asks for one signature per listed key, made with that key's private key, which BotFare does not hold).
 
+## Agent API (signed requests, no tokens)
+
+Besides paying publishers, an agent can ask BotFare about its own budget. The MCP server's `wallet_balance` and `recent_receipts` tools use these endpoints ([`packages/mcp/README.md`](../packages/mcp/README.md)).
+
+| Endpoint | Response |
+| --- | --- |
+| `GET ${BOTFARE_URL}/api/agent/wallet` | `{keyId, keyName, balanceUsd, spentTodayUsd, dailyCapUsd, perRequestMaxUsd, allowedSiteIds}`; `balanceUsd` is the owner's wallet, `spentTodayUsd` this key's settled spend in the current UTC day; `null` limits mean none |
+| `GET ${BOTFARE_URL}/api/agent/receipts?limit=N` | `{keyId, receipts: [{receiptId, time, site, siteId, url, amountUsd, status}]}`, newest first; `limit` 1 to 100, default 10 |
+
+**Auth.** There is no API token or session. Each request carries the same Web Bot Auth signature the SDK puts on every request (`Signature-Agent`, `Signature-Input`, `Signature`, RFC 9421 over Ed25519, signed with the agent key), and BotFare checks it like this:
+
+- The `keyid` (JWK thumbprint) must name an **active** agent key in BotFare's database. The `Signature-Agent` URL is never fetched or trusted.
+- The covered `@authority` must be **BotFare's own host**: the host of `BOTFARE_URL` (or `RENDER_EXTERNAL_URL`), or the request's `Host` when neither is set (local development). A signature an agent sent to a publisher therefore cannot be replayed against BotFare.
+- `created` and `expires` are required; the signature may live at most 5 minutes, with 30 s of clock skew.
+- Each `nonce` is accepted once while its signature is valid (in memory, per app instance).
+
+A missing, expired, reused or foreign signature, or a revoked or unknown key, gets `401 {error: "unauthorized", message}` with `WWW-Authenticate: Signature realm="botfare-agent-api"` and `Cache-Control: no-store`; the message says which check failed. The API only reads: it never moves money.
+
 ## Security notes
 
 - The signature covers every field that decides who pays whom and how much. The resource URL is not signed: the price, payee and nonce bind the payment, and `resource.url` is recorded on the receipt only for display.

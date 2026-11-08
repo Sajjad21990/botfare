@@ -22,6 +22,26 @@ services:
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
+      # Public https URL of this service, e.g. https://botfare-web.onrender.com: PayPal return URLs
+      # (top-ups, Log in with PayPal), the agent API's host check, Signature-Agent, the publisher
+      # snippet. The app falls back to RENDER_EXTERNAL_URL, but set it explicitly.
+      - key: BOTFARE_URL
+        sync: false
+      # Public URL of botfare-demo (the /judge curl commands; trusted by the research agent).
+      - key: DEMO_PUBLIC_URL
+        sync: false
+      # The demo agent key from `pnpm seed --print-secrets`, for the research agent (/agent).
+      - key: BOTFARE_AGENT_KEY
+        sync: false
+      # "true" once the sandbox app has Log in with PayPal with the return URL
+      # https://<botfare-web>.onrender.com/api/auth/paypal/callback (README).
+      - key: PAYPAL_LOGIN_ENABLED
+        sync: false
+      # Optional: PayPal sandbox buyer (fake money) shown on /judge for approving a top-up.
+      - key: JUDGE_SANDBOX_BUYER_EMAIL
+        sync: false
+      - key: JUDGE_SANDBOX_BUYER_PASSWORD
+        sync: false
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: PAYPAL_CLIENT_SECRET

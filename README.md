@@ -12,6 +12,8 @@ AI agents read pages and call APIs for free, and the open standard for paying pe
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), November 2026.
 
+**Judges:** open `/judge` on the running app for a two-minute guided tour (publisher, wallet, research agent, and a 402 you can curl), or run the whole stack locally with one Docker command ([below](#run-everything-in-docker)).
+
 ## Why it needs a ledger
 
 A PayPal payment costs at least 49¢ in fees (3.49% + $0.49), and even PayPal's micropayments rate is 4.99% + 9¢. Neither works for a 3¢ article. BotFare batches the PayPal side and settles each request in its own ledger:
@@ -65,7 +67,7 @@ The first signal that charges at the site's level is recorded on the receipt and
 | `known-bot` | An AI crawler user agent (GPTBot, ClaudeBot, PerplexityBot, CCBot, …) from its published IP ranges, a crawler that publishes no ranges, or a CDN-verified bot | Known AI bots and up |
 | `bot-impostor` | A crawler user agent from outside that crawler's published ranges (score 90) | Known AI bots and up |
 | `edge-score` | Cloudflare `cf-bot-score` at or below 29, or an Akamai bot verdict, when the publisher enables those headers | Standard, Strict |
-| `automation` | HTTP client user agents (curl, python-requests, Node fetch: 80), headless browsers (80), no user agent (70), a desktop-browser user agent without a real `Accept-Language` (30) or without `Sec-Fetch-Site`/`-Dest` (30) | Standard, Strict |
+| `automation` | HTTP client user agents (curl, python-requests, Node fetch: 80), headless browsers (80), no user agent (70), any other user agent that is not a browser, i.e. has no `Mozilla/` token, such as `research-bot/1.0` (70), a desktop-browser user agent without a real `Accept-Language` (30) or without `Sec-Fetch-Site`/`-Dest` (30) | Standard, Strict |
 | `payment-signature` | An x402 payment and nothing above | every level |
 | `everyone` | The path charges every request (the brew API) | every level |
 
@@ -74,12 +76,49 @@ The first signal that charges at the site's level is recorded on the receipt and
 **Honest limits.**
 
 - The heuristics read request headers only. A scraper that copies a real browser's full header set reads free, by design: wrongly charging a person costs more than a missed bot. Signed agents, the agent header, crawler checks and CDN scores are what catch it.
+- Link-preview fetchers of chat and social apps (Slack, Discord, Telegram, WhatsApp, iMessage, LinkedIn, Teams, Mastodon) are never scored on their user agent: they fetch a link once for the person who just shared it, and charging them would break link sharing for the publisher's own readers. A scraper can claim to be one of them. Search crawlers without a `Mozilla/` token (Googlebot-Image, for one) score 70 like any other non-browser; most search crawlers send the token and are unaffected.
 - No IP reputation, datacenter lists or request-rate signals.
 - The crawler ranges are a snapshot (677 prefixes from OpenAI, Anthropic, Perplexity, Google, Apple and Common Crawl, fetched 8 Nov 2026) and need refreshing. Bytespider, Amazonbot and meta-externalagent publish no usable list, so they are matched by user agent alone.
 - The crawler check uses `req.ip`: behind a proxy or CDN the publisher must set Express's `trust proxy`, or real crawlers look like impostors (still charged only from Known AI bots up).
 - CDN headers are trusted as sent: turn them on only when the CDN sets them and strips client copies. With Cloudflare enabled, every CF-verified bot (search crawlers included) counts as `known-bot`.
 - The human pass is not bound to an IP or browser: a scraper that solves Turnstile once gets 24 hours past the scores, though never past the other signals.
 - Sites created before detection keep their old behaviour (off, or Known AI bots if they charged known bots); BotFare's key directory is not itself signed.
+
+## The research agent
+
+`/agent` (signed in as the agent owner) runs a Claude agent with a BotFare key and a budget of 5¢ to $1.00. It has five tools, and every input is validated with zod; the model never sees the agent key, the wallet or PayPal:
+
+| Tool | What it does | Moves money? |
+| --- | --- | --- |
+| `list_sources` | The BotFare sites and their free `catalog.json`: titles, prices, excerpts | No |
+| `get_offer` | One unpaid request: the 402's price and the free preview | No |
+| `buy` | Pays through the SDK (x402 `prepaid`), returns the page text and the receipt ID, with a reason the owner sees | Yes |
+| `skip` | Records a decision not to buy, with the reason | No |
+| `finish` | The answer; every citation must name a receipt bought in this run | No |
+
+Hard limits live in code, not in the prompt: 10¢ per page (the 50¢ trap article is refused by the SDK before anything is signed), the run's budget (the SDK's per-request cap shrinks to what is left), and the key's daily cap, enforced again by the facilitator. The page streams the run over SSE: a timeline of offers, decisions, payments and refusals, a cost meter, a **wire inspector** (decoded `PAYMENT-REQUIRED`, the signed JWS header and claims, `PAYMENT-RESPONSE`) and the cited answer, each citation linked to its receipt.
+
+It needs `ANTHROPIC_API_KEY` (model `ANTHROPIC_MODEL`, default `claude-sonnet-5-5`) and `BOTFARE_AGENT_KEY` (written by `pnpm seed`); without them the page says what is missing. The tests drive it with a scripted model.
+
+## MCP server
+
+[`packages/mcp`](packages/mcp/README.md) lets Claude Desktop and Claude Code pay BotFare sites from a local process: `get_offer`, `fetch_paid` (capped by the key's limits and an optional `max_price_usd`), `wallet_balance` and `recent_receipts`. The agent key stays in that process; the wallet and receipts calls authenticate with the request's own Web Bot Auth signature, with no API token ([protocol](docs/PROTOCOL.md#agent-api-signed-requests-no-tokens)). Setup for both clients is in its [README](packages/mcp/README.md).
+
+## Judge mode and Log in with PayPal
+
+`/judge` is a one-page tour: sign in as the publisher, the agent owner, or go straight to the research agent, plus copy-paste curl commands that show a person reading free and an agent getting a 402. The demo personas need no password and are shared, so signing in restores Crema Notes' prices and payout email, and the site secret, payout account and seeded agent keys are locked. When `JUDGE_SANDBOX_BUYER_EMAIL` and `JUDGE_SANDBOX_BUYER_PASSWORD` are set, the page shows that PayPal **sandbox** buyer (fake money) for approving a top-up.
+
+Publishers who want their own account use **Log in with PayPal** (sandbox), which signs them in by their verified PayPal email and sets it as their payout email. It is off until `PAYPAL_LOGIN_ENABLED=true`, because the sandbox app must be set up first:
+
+1. developer.paypal.com > Apps & Credentials > Sandbox > the BotFare app > **Features**: tick **Log in with PayPal**, then **Advanced settings**.
+2. Return URL: the app's `BOTFARE_URL` followed by `/api/auth/paypal/callback`, exactly:
+   - Render: `https://<botfare-web>.onrender.com/api/auth/paypal/callback`
+   - local: `http://localhost:3000/api/auth/paypal/callback`
+   - judge Docker stack: `http://localhost:3300/api/auth/paypal/callback`
+3. Information requested: **Email** (and Full name). Add the privacy policy and user agreement URLs PayPal asks for, then save.
+4. Set `PAYPAL_LOGIN_ENABLED=true` and restart the app; `/signin` shows the button.
+
+The callback checks a one-time `state` cookie, exchanges the code with the app's own credentials, requires `email_verified`, and refuses the shared demo emails.
 
 ## Architecture
 
@@ -168,7 +207,12 @@ Everything runs in the PayPal **sandbox only**.
 | Publisher analytics in AG Studio, with a Claude assistant | ✅ Built |
 | `pnpm seed:traffic`: ~150 paid requests over 14 days for the dashboards | ✅ Built |
 | Agent detection: signed agents (Web Bot Auth), crawler IP checks, CDN scores, heuristics, Turnstile human check, Bot detection panel, revenue by signal | ✅ Built; `pnpm e2e` checks it on real servers |
-| Research agent, MCP server, judge mode, deployment | ⏳ Planned |
+| Research agent (`/agent`): tools, budget and caps, SSE timeline, wire inspector, cited answer | ✅ Built; tested with a scripted model (a live run needs `ANTHROPIC_API_KEY`) |
+| MCP server ([`packages/mcp`](packages/mcp/README.md)) and the signed agent API | ✅ Built and tested against an in-process publisher and facilitator |
+| `/judge` tour and judge mode | ✅ Built |
+| Log in with PayPal | ✅ Code done and tested against a mock PayPal; off until the sandbox app has it enabled |
+| One-command Docker stack ([`docker-compose.full.yml`](docker-compose.full.yml)) | ✅ Built and checked |
+| Deploy to Render | ⏳ Next |
 
 The full proposal, decisions and day-by-day plan are in [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -183,8 +227,11 @@ packages/express       botfare({ siteId, siteSecret }): one-line publisher middl
                        agent detection engine (src/detection) and the Turnstile human check
 packages/sdk           createBotFareAgent(): getOffer() and a paying fetch on @x402/fetch; signs every request
 packages/paypal        typed PayPal REST client (sandbox only)
-apps/web               Next.js: landing page, wallet, publisher dashboard and analytics, x402 facilitator
-                       API (/api/x402/*), PayPal webhook, site config, health
+packages/mcp           MCP server for Claude Desktop and Claude Code: get_offer, fetch_paid, wallet_balance,
+                       recent_receipts
+apps/web               Next.js: landing page, /judge, sign-in (personas, Log in with PayPal), wallet,
+                       research agent (/agent), publisher dashboard and analytics, x402 facilitator
+                       API (/api/x402/*), agent API (/api/agent/*), PayPal webhook, site config, health
 apps/demo              Crema Notes: fictional coffee site and brew-ratio API behind botfare()
 scripts/seed.ts        demo personas, site, $5 wallet and agent key, written to .env
 scripts/traffic.ts     demo traffic: three more agent keys and ~150 paid requests over 14 days
@@ -193,6 +240,7 @@ scripts/e2e.ts         end to end: web app + demo + Postgres, payments and detec
 scripts/spike          Day-0 PayPal and x402 spikes
 docs                   plan, protocol spec, spike results
 render.yaml            Render Blueprint: botfare-web, botfare-demo, botfare-payouts (cron), Postgres 17
+docker-compose.full.yml the whole stack for judges (project botfare-judge); docker/ has its scripts and README
 ```
 
 ## Run it locally
@@ -226,7 +274,7 @@ It then checks:
 - a 50¢ article is refused by the 10¢ cap before anything is signed;
 - the brew API charges 1¢ to any paying client;
 - a refund restores the wallet exactly once;
-- curl and python-requests without the agent header, and a script with a bare Chrome user agent, get a 402 with signal `automation`;
+- curl and python-requests without the agent header, a script with a bare Chrome user agent, and a `research-bot/1.0` user agent get a 402 with signal `automation`, while a Slack link preview reads free;
 - a GPTBot user agent from 127.0.0.1 is a `bot-impostor`;
 - the SDK's signed requests are recognised as `signed-agent` and pay;
 - a headless browser gets the Turnstile page, Cloudflare's test token sets the human pass, and its next read is free (an agent with the same cookie still pays);
@@ -246,7 +294,7 @@ pnpm dev:demo           # Crema Notes on http://localhost:4000, payments on with
 
 Open http://localhost:3000/signin and pick a persona:
 
-- **Agent owner** (`/wallet`): balance, a PayPal top-up button ($5, $10 or $20, approved with a sandbox buyer account), agent keys generated in the browser with their budgets, and receipts.
+- **Agent owner** (`/wallet`, `/agent`): balance, a PayPal top-up button ($5, $10 or $20, approved with a sandbox buyer account), agent keys generated in the browser with their budgets (revoked keys are hidden until "Show revoked"), receipts, and the research agent.
 - **Publisher** (`/publisher`, `/publisher/analytics`): earnings, Withdraw now to `PUBLISHER_PAYPAL_EMAIL` through PayPal Payouts, payout history with "Refresh status", the pricing editor, and the AG Studio analytics dashboard.
 
 `pnpm seed:traffic` is safe to run again: nonces, the wallet funding and two publisher refunds are keyed by its run key, and the plan's dates are anchored to the first run (stored with the funding), so a rerun moves no money on the same day or any later one. `pnpm seed:traffic --run-key <name>` adds a fresh batch. It settles every request through `PostgresPrepaidLedger` with a clock set to the request's time, so per-request maxes, daily caps and allowed sites apply as they would live.
@@ -260,9 +308,21 @@ curl -i -H 'x-botfare-agent: 1' http://localhost:4000/articles/burr-basics
 curl -i http://localhost:4000/articles/burr-basics
 ```
 
+Or start at http://localhost:3000/judge for the guided tour.
+
 Run `pnpm seed` again whenever you like. It keeps the site secret in `.env` while it still works, so a running demo keeps charging; `pnpm seed --rotate-site-secret` issues a new one (restart `dev:demo` after it).
 
-Checks:
+### Run everything in Docker
+
+One command builds and starts Postgres, a one-shot setup (migrations, seed, two weeks of demo traffic), the BotFare app and Crema Notes, isolated from the development database under the project name `botfare-judge`:
+
+```bash
+docker compose -f docker-compose.full.yml -p botfare-judge up --build -d --wait
+```
+
+Then open http://localhost:3300/judge (BotFare) and http://localhost:4300 (Crema Notes). PayPal and Anthropic keys are read from `.env` when present; browsing, the dashboards and paid agent requests work without them. Inside the stack the research agent reaches the demo through `DEMO_INTERNAL_URL` (`http://demo:4000`), since `localhost:4300` is the host's port. Stop with `docker compose -f docker-compose.full.yml -p botfare-judge down` (add `-v` to delete the judge database). Details: [`docker/README.md`](docker/README.md).
+
+### Checks
 
 ```bash
 pnpm typecheck && pnpm lint && pnpm test   # unit tests plus *.db.test.ts against botfare_test
@@ -304,6 +364,8 @@ DEMO_ORIGIN=https://<botfare-demo>.onrender.com pnpm seed --print-secrets
 To fill the dashboards, run `pnpm seed:traffic` in the same Shell.
 
 Then point PayPal at the app: in the sandbox app's Webhooks section, add `https://<botfare-web>.onrender.com/api/paypal/webhook` for `PAYMENT.CAPTURE.*`, `PAYMENT.PAYOUTS-ITEM.*` and `PAYMENT.PAYOUTSBATCH.*`, and put its webhook ID in `botfare-web`'s `PAYPAL_WEBHOOK_ID`. Until then the route answers 503 and PayPal retries later.
+
+`botfare-web` also takes `BOTFARE_URL` (its public `https://` URL: PayPal return URLs, the agent API's host check, the publisher snippet), `DEMO_PUBLIC_URL` (the demo's URL for `/judge`), optional `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD`, `PAYPAL_LOGIN_ENABLED` and, for the research agent, `BOTFARE_AGENT_KEY` from the seed. Session cookies are `Secure` whenever the request arrived over https, which Render's proxy reports with `X-Forwarded-Proto`.
 
 Judge mode is public: anyone who opens the app can sign in as a persona. The personas cannot rotate the demo site's secret, change the payout email or revoke the seeded agent keys, and each publisher sign-in restores Crema Notes' prices, the payout email and enough earnings to try Withdraw. The analytics assistant runs on `ANTHROPIC_API_KEY` with a server-side prompt, a 512 KB request cap, a per-visitor turn limit and a shared budget (3M input-token equivalents an hour, 15M a day; see `apps/web/src/lib/server/ai-budget.ts`). Also set a monthly spend limit on the Anthropic workspace that holds the key.
 

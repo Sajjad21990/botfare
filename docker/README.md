@@ -17,12 +17,13 @@ docker compose -f docker-compose.full.yml -p botfare-judge up --build -d --wait
 
 | What | URL |
 | --- | --- |
+| The two-minute tour for judges | http://localhost:3300/judge |
 | BotFare (sign in as the publisher or the agent owner, no password) | http://localhost:3300 |
 | Crema Notes, the demo publisher (free for people, paid for agents) | http://localhost:4300 |
 | Health checks | http://localhost:3300/api/health, http://localhost:4300/health |
 
-Use Chrome, Edge or Firefox. BotFare's session cookie is marked `Secure`, which these browsers
-accept on `http://localhost`.
+Any browser works, Safari included: the session cookie is marked `Secure` only when the request
+came over https, so on `http://localhost:3300` it is a plain HttpOnly cookie.
 
 Requires Docker with Compose v2 (Docker Desktop is fine) and about 3 GB of free disk for the
 images.
@@ -42,10 +43,23 @@ network at `http://web:3000`.
 
 `setup` seeds the two judge personas, the Crema Notes site with its prices and bot detection, a
 $5.00 demo wallet, a demo agent key, and two weeks of settled demo traffic so the dashboards have
-data. It writes the site's ID and secret plus a generated `SESSION_SECRET` to `judge.env` on a
-shared volume (`judge-shared`); `web` and `demo` load that file when they start
+data. It writes the site's ID and secret, the demo agent key (for the research agent) and a
+generated `SESSION_SECRET` to `judge.env` on a shared volume (`judge-shared`); `web` and `demo` load that file when they start
 (`docker/env-entrypoint.sh`). Secrets are never printed: the seed log shows IDs and last four
 characters only. Every step is idempotent, so `up` again reuses the same site secret and agent key.
+
+## How the web container reaches the demo
+
+Crema Notes is registered as `http://localhost:4300`, the address browsers and agents on the host
+use. Inside the `web` container `localhost` is the container itself, so `web` sets
+`DEMO_PUBLIC_URL=http://localhost:4300` and `DEMO_INTERNAL_URL=http://demo:4000`: the research
+agent's requests for the public origin (catalog, offers, paid reads) go to the `demo` service on
+the compose network instead, with `X-Forwarded-Host: localhost:4300` so the demo still verifies the
+agent's request signature for the host it was signed for. Only that exact origin is rewritten, only
+server-side; the model, the page and the receipts keep the public URL
+(`apps/web/src/lib/server/demo-origin.ts`). The demo itself reaches BotFare's facilitator at
+`http://web:3000`. `setup` runs with `BOTFARE_JUDGE_DOCKER=1`, which drops the seed's "restart the
+demo" hint (the demo starts after setup).
 
 ## Keys (optional)
 
@@ -55,7 +69,9 @@ Compose reads the repo's `.env` if there is one, and passes on only these variab
 | --- | --- |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | PayPal top-ups and payouts (sandbox). |
 | `PUBLISHER_PAYPAL_EMAIL` | The sandbox account that receives test Payouts. |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | The analytics assistant and the research agent. |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | The analytics assistant and the research agent (`/agent`). |
+| `JUDGE_SANDBOX_BUYER_EMAIL`, `JUDGE_SANDBOX_BUYER_PASSWORD` | The PayPal sandbox buyer (fake money) `/judge` shows for approving a top-up. |
+| `PAYPAL_LOGIN_ENABLED` | Log in with PayPal; the sandbox app's return URL must be `http://localhost:3300/api/auth/paypal/callback`. |
 | `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` | Removes the AG Studio watermark (build time). |
 | `TURNSTILE_SECRET_KEY` | The human check; defaults to Cloudflare's always-pass test secret. |
 

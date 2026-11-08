@@ -83,6 +83,11 @@ services:
       DEMO_INTERNAL_URL: http://demo:4000
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      # Optional: the PayPal sandbox buyer (fake money) /judge shows for approving a top-up, and
+      # Log in with PayPal (return URL http://localhost:3300/api/auth/paypal/callback).
+      JUDGE_SANDBOX_BUYER_EMAIL: ${JUDGE_SANDBOX_BUYER_EMAIL:-}
+      JUDGE_SANDBOX_BUYER_PASSWORD: ${JUDGE_SANDBOX_BUYER_PASSWORD:-}
+      PAYPAL_LOGIN_ENABLED: ${PAYPAL_LOGIN_ENABLED:-}
     ports:
       - "3300:3000"
     volumes:

@@ -18,7 +18,8 @@ Solo entry for the PayPal AI Hackathon (Devpost). **Deadline: Thu 12 Nov 2026, 1
 
 ## Layout (target; packages are added as each phase needs them)
 ```
-apps/web             Next.js: dashboards, wallet, research agent, /judge, facilitator /api/x402/*, PayPal webhooks
+apps/web             Next.js: dashboards, wallet, research agent (/agent, POST /api/research), /judge, Log in with
+                     PayPal (/api/auth/paypal/*), facilitator /api/x402/*, agent API /api/agent/*, PayPal webhooks
 apps/demo            Express demo publisher (original articles + /api/brew-ratio) behind @botfare/express
 packages/x402-paypal the plug-in: client, server and facilitator parts, JWS helpers, ledger port, in-memory ledger
 packages/contracts   shared wire contracts: IDs, site auth header, site config + pricing rules, agent key string, preview
@@ -33,6 +34,7 @@ scripts/seed.ts      local demo data (judge personas, site, wallet, agent key) -
 scripts/traffic.ts   demo traffic for the dashboards (seed:traffic)
 scripts/payouts.ts   daily Payouts batch + status sync (payouts:run; Render cron)
 scripts/e2e.ts       end-to-end PASS/FAIL checks (payments + agent detection) on real processes
+docker-compose.full.yml + docker/   one-command judge stack (project botfare-judge; docker/README.md)
 ```
 
 ## Commands
@@ -44,6 +46,9 @@ scripts/e2e.ts       end-to-end PASS/FAIL checks (payments + agent detection) on
 - `pnpm payouts:run`: daily PayPal Payouts batch (publishers with ≥ $1.00 and a payout email), then sync of open payouts; idempotent. Runs on Render as the `botfare-payouts` cron
 - `pnpm e2e`: starts the web app (:3000, reused if up) and the demo (:4000), runs the payment and agent-detection PASS/FAIL checks, stops both; `E2E_VERBOSE=1` streams their logs. Ports 3000/4000 belong to the user's own dev servers: run beside them with `pnpm --filter @botfare/web build && WEB_PORT=3100 DEMO_PORT=4100 E2E_WEB=start pnpm e2e` (`next start`; Next allows one `next dev` per app directory). The human-check step calls Cloudflare's siteverify (network)
 - `pnpm dev:web` / `pnpm dev:demo`: run the app or the demo (both read the root `.env`)
+- Judge stack: `docker compose -f docker-compose.full.yml -p botfare-judge up --build -d --wait` (its own Postgres, setup, web on :3300, demo on :4300; web reaches the demo via `DEMO_INTERNAL_URL=http://demo:4000`); stop with `docker compose -f docker-compose.full.yml -p botfare-judge down -v`. Always pass `-p botfare-judge`: the dev Postgres (project `botfare`, volume pgdata) holds real sandbox records and is never stopped or removed
+- Ports: 3000/4000 are the user's own dev servers (never kill or reuse); 3100/4100 for `pnpm e2e` beside them; 3300/4300 the judge Docker stack; 3200+ for other throwaway servers
+- MCP server: `packages/mcp` (stdio; setup for Claude Desktop/Code in its README); `pnpm test` covers it
 - `pnpm --filter @botfare/web build`: production build of the app
 - `pnpm spike:01`…`spike:05`: Day-0 spikes; results in `docs/SPIKE_RESULTS.md`
 - `render.yaml`: Render Blueprint (botfare-web, botfare-demo, botfare-payouts cron, botfare-db); not deployed yet
@@ -68,6 +73,12 @@ scripts/e2e.ts       end-to-end PASS/FAIL checks (payments + agent detection) on
 - Signals (strongest first): signed-agent, agent-header, known-bot, bot-impostor, edge-score, automation, payment-signature (last, so a paid retry keeps the 402's signal); `everyone` on everyone-priced paths. Sent as `extra.botfareSignal`, stored on the receipt.
 - Web Bot Auth signing and verification live in one module, `@botfare/contracts/web-bot-auth`, shared by the SDK and the middleware.
 - `TURNSTILE_SECRET_KEY` is optional with Cloudflare's test site key (the always-pass test secret is the fallback).
+- A user agent without a `Mozilla/` token that is not a known crawler or a chat/social link-preview fetcher scores 70 (`automation`, charged at standard/strict; no human check since it is not a browser).
+
+## Web app notes
+- Session and Log in with PayPal state cookies are `Secure` only when the request is https (`X-Forwarded-Proto`, then the URL: `lib/server/secure-cookies.ts`), so Safari keeps sessions on http://localhost.
+- Research agent: `ANTHROPIC_API_KEY` + `BOTFARE_AGENT_KEY`; `DEMO_PUBLIC_URL`/`DEMO_INTERNAL_URL` rewrite the demo's origin server-side (`lib/server/demo-origin.ts`). Tests use scripted models; no live Claude runs.
+- Log in with PayPal is off unless `PAYPAL_LOGIN_ENABLED=true`; return URL `<BOTFARE_URL>/api/auth/paypal/callback`.
 
 ## Decisions (8 Nov)
 1. x402 plug-in (`prepaid` on `paypal:sandbox`) for the official SDK, not an imitation; own code only as fallback.
