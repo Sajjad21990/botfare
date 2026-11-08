@@ -41,6 +41,7 @@ describe("demo publisher in free mode (no BotFare configured)", () => {
     expect(prices).toEqual({
       "burr-basics": 3,
       "dialing-in-espresso": 5,
+      "grinder-maintenance": 3,
       "grinders-under-200": 3,
       "latte-art-hearts": 3,
       "premium-grinder-roundup": 50,

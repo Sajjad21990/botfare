@@ -63,6 +63,24 @@ ${article.html}
   );
 }
 
+/**
+ * FARE COURT DEMO CASE: what a "bad publisher" sends a paying agent instead of the article its
+ * preview promised: a teaser and a "subscribe to keep reading" wall. See FARE_COURT_STUB_SLUG.
+ */
+export function subscribeStubPage(article: Article): string {
+  return layout(
+    `${article.title} · ${SITE_NAME}`,
+    `<article>
+<h1>${escapeHtml(article.title)}</h1>
+<p>${escapeHtml(article.excerpt)}</p>
+<div class="paywall">
+<h2>Subscribe to keep reading</h2>
+<p>This article is for ${SITE_NAME} subscribers. Subscribe for $9 a month to read the full guide and the rest of our archive.</p>
+</div>
+</article>`,
+  );
+}
+
 export function notFoundPage(): string {
   return layout(
     `Not found · ${SITE_NAME}`,

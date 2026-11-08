@@ -2,6 +2,7 @@
  * The demo behind a real botfare() against the in-process fake BotFare from packages/express:
  * the site config is exactly pricing.ts, the agent pays through the official @x402/fetch.
  */
+import { contentDigestSha256 } from "@botfare/contracts/fare";
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader } from "@x402/core/http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -11,7 +12,7 @@ import {
   siteConfig,
   startFakeBotFare,
 } from "../../../packages/express/test/helpers";
-import { type RunningDemo, startDemo } from "../src/app";
+import { FARE_COURT_STUB_SLUG, type RunningDemo, startDemo } from "../src/app";
 import { freePaths, pricing } from "../src/pricing";
 
 describe("demo publisher with BotFare payments on", () => {
@@ -78,6 +79,73 @@ describe("demo publisher with BotFare payments on", () => {
 
     expect((await agent.fetch(`${demo.url}/catalog.json`)).status).toBe(200);
     expect((await agent.fetch(`${demo.url}/health`)).status).toBe(200);
+  });
+
+  describe("Fare Court demo case: a paid agent gets a stub", () => {
+    const url = () => `${demo.url}/articles/${FARE_COURT_STUB_SLUG}`;
+
+    it("serves humans the full article free", async () => {
+      const res = await fetch(url());
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("Step 3: clear the chute");
+      expect(html).not.toContain("Subscribe to keep reading");
+    });
+
+    it("offers agents a real, useful preview of the full article for 3¢", async () => {
+      const res = await agent.fetch(url());
+      expect(res.status).toBe(402);
+      const required = decodePaymentRequiredHeader(res.headers.get("payment-required") ?? "");
+      expect(required.accepts[0]?.amount).toBe("3");
+      const { preview } = (await res.json()) as {
+        preview: { title: string; excerpt: string; wordCount: number };
+      };
+      expect(preview.title).toBe("Grinder maintenance, step by step");
+      expect(preview.excerpt).toMatch(/^A burr grinder slowly fills with old coffee/);
+      expect(preview.wordCount).toBeGreaterThan(500);
+      expect(required.accepts[0]?.extra?.botfareOffer).toMatchObject({
+        title: "Grinder maintenance, step by step",
+        preview: preview.excerpt,
+      });
+    });
+
+    it("charges 3¢ and serves a subscribe stub, whose digest botfare() attests", async () => {
+      const before = agent.wallet();
+      const res = await agent.payingFetch(url());
+      expect(res.status).toBe(200);
+      const body = new Uint8Array(await res.arrayBuffer());
+      const html = new TextDecoder().decode(body);
+      expect(html).toContain("Subscribe to keep reading");
+      expect(html).not.toContain("Step 3: clear the chute");
+      expect(before - agent.wallet()).toBe(30_000);
+
+      const receiptId = decodePaymentResponseHeader(
+        res.headers.get("payment-response") ?? "",
+      ).transaction;
+      // The declared offer reached the facilitator's settle call.
+      expect(botfare.settled.at(-1)?.extra?.botfareOffer).toMatchObject({
+        title: "Grinder maintenance, step by step",
+      });
+      let attestation: (typeof botfare.attestations)[number] | undefined;
+      for (let i = 0; i < 100 && !attestation; i++) {
+        attestation = botfare.attestations.find((a) => a.receiptId === receiptId);
+        if (!attestation) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(attestation?.body).toMatchObject({
+        contentDigest: await contentDigestSha256(body),
+        contentLength: body.length,
+        status: 200,
+      });
+    });
+
+    it("lists the article in the catalog at 3¢", async () => {
+      const catalog = (await (await fetch(`${demo.url}/catalog.json`)).json()) as {
+        articles: { slug: string; priceCents: number }[];
+      };
+      expect(catalog.articles).toContainEqual(
+        expect.objectContaining({ slug: FARE_COURT_STUB_SLUG, priceCents: 3 }),
+      );
+    });
   });
 
   it("charges everyone 1¢ for the brew-ratio API", async () => {

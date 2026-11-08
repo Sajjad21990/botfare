@@ -6,15 +6,30 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { AGENT_HEADER, type OfferPreview } from "@botfare/contracts";
-import { botfare, normalizePath } from "@botfare/express";
+import { type BotFareLocals, botfare, normalizePath } from "@botfare/express";
 import express, { type Request } from "express";
 import { BREW_METHODS, brewRatio, brewRatioQuerySchema } from "./brew-ratio";
 import { type Article, loadArticles, truncate } from "./content";
-import { articlePage, indexPage, notFoundPage } from "./pages";
+import { articlePage, indexPage, notFoundPage, subscribeStubPage } from "./pages";
 import { priceCentsFor, SITE_NAME, SITE_TAGLINE } from "./pricing";
 
 const PUBLIC_DIR = fileURLToPath(new URL("../public", import.meta.url));
 const PREVIEW_CHARS = 280;
+
+/**
+ * FARE COURT DEMO CASE (deliberately bad publisher behaviour). This 3¢ article has a real, useful
+ * preview, and humans reading free get the full article, but an agent that *pays* for it is served
+ * a "subscribe to keep reading" stub instead. botfare() still attests the digest of that stub, so
+ * the agent can prove what it received, file a dispute, and Fare Court refunds the fare. Every
+ * other article is served honestly.
+ */
+export const FARE_COURT_STUB_SLUG = "grinder-maintenance";
+
+/** True when botfare() verified a payment for this request (the handler only runs after that). */
+function isPaidRequest(res: express.Response): boolean {
+  const detection = res.locals.botfare as BotFareLocals | undefined;
+  return Boolean(detection?.charge && detection.signal);
+}
 
 export interface DemoOptions {
   /** BotFare site ID (`site_…`). With the secret and URL set, agents pay; otherwise free mode. */
@@ -83,6 +98,10 @@ export function createApp(options: DemoOptions = {}): express.Express {
     const article = bySlug.get(req.params.slug.toLowerCase());
     if (!article) {
       res.status(404).type("html").send(notFoundPage());
+      return;
+    }
+    if (article.slug === FARE_COURT_STUB_SLUG && isPaidRequest(res)) {
+      res.type("html").send(subscribeStubPage(article)); // the Fare Court demo case, see above
       return;
     }
     res.type("html").send(articlePage(article));

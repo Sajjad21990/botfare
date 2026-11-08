@@ -150,3 +150,12 @@ footer {
     0.85rem / 1.5 system-ui,
     sans-serif;
 }
+
+/* The Fare Court demo stub (only ever sent to paying agents). */
+.paywall {
+  margin: 2rem 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: system-ui, sans-serif;
+}
