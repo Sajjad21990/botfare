@@ -5,6 +5,7 @@ import { jwtVerify, SignJWT } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "./db";
+import { isSecureRequest } from "./secure-cookies";
 
 /**
  * Sessions are a signed JWT (HS256, SESSION_SECRET) in an httpOnly cookie holding the user ID.
@@ -23,7 +24,11 @@ function secretKey(): Uint8Array {
   return new TextEncoder().encode("botfare-local-dev-session-secret-not-for-production");
 }
 
-export async function createSessionCookie(userId: string): Promise<void> {
+/**
+ * Signs the user in. `Secure` follows the request's scheme (isSecureRequest): set on https
+ * (Render), left off on http://localhost so Safari keeps the session in the judge Docker stack.
+ */
+export async function createSessionCookie(userId: string, request: Request): Promise<void> {
   const token = await new SignJWT({})
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
@@ -33,7 +38,7 @@ export async function createSessionCookie(userId: string): Promise<void> {
   (await cookies()).set(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureRequest(request),
     path: "/",
     maxAge: MAX_AGE_SECONDS,
   });

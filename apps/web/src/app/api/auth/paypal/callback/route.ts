@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request): Promise<Response> {
   const base = appBaseUrl(request);
-  const clear = clearStateCookieHeader();
+  const clear = clearStateCookieHeader(request);
   const fail = (code: PayPalLoginErrorCode) =>
     redirectResponse(`${base}/signin?error=${code}`, [clear]);
 
@@ -48,7 +48,7 @@ export async function GET(request: Request): Promise<Response> {
     const email = verifiedPayPalEmail(info);
     if (!email) return fail("paypal_unverified");
     const user = await signInWithPayPalEmail(getDb(), { email, name: info.name });
-    await createSessionCookie(user.id);
+    await createSessionCookie(user.id, request);
     return redirectResponse(`${base}/publisher`, [clear]);
   } catch (err) {
     if (err instanceof PayPalLoginError) {

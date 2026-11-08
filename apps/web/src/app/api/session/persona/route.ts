@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   if (!parsed.ok) return parsed.response;
   const user = await personaUser(parsed.data.persona);
   await prepareDemoPersona(parsed.data.persona, user);
-  await createSessionCookie(user.id);
+  await createSessionCookie(user.id, request);
   return Response.json({
     user: { id: user.id, email: user.email, name: user.name },
     home: DEMO_PERSONAS[parsed.data.persona].home,

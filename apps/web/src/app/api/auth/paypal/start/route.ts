@@ -19,5 +19,5 @@ export async function GET(request: Request): Promise<Response> {
   }
   const state = newLoginState();
   const url = paypalAuthorizeUrl({ clientId, redirectUri: paypalRedirectUri(request), state });
-  return redirectResponse(url, [stateCookieHeader(state)]);
+  return redirectResponse(url, [stateCookieHeader(state, request)]);
 }

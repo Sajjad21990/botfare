@@ -4,6 +4,7 @@ import { isDemoPersonaEmail } from "@botfare/contracts";
 import { createUser, type DbOrTx, getUserByEmail, setPayoutEmail, type User } from "@botfare/core";
 import { SANDBOX_BASE_URL } from "@botfare/paypal";
 import { z } from "zod";
+import { isSecureRequest } from "./secure-cookies";
 
 /**
  * Log in with PayPal (sandbox only), for publishers who want their own account:
@@ -105,18 +106,19 @@ export function paypalAuthorizeUrl(input: {
   return `${PAYPAL_AUTHORIZE_URL}?${query}`;
 }
 
-function cookieAttributes(maxAge: number): string {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+function cookieAttributes(maxAge: number, request: Request): string {
+  const secure = isSecureRequest(request) ? "; Secure" : "";
   // Lax: the cookie must ride along on PayPal's top-level GET redirect back to the callback.
   return `Path=${STATE_COOKIE_PATH}; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }
 
-export function stateCookieHeader(state: string): string {
-  return `${STATE_COOKIE}=${state}; ${cookieAttributes(STATE_MAX_AGE_SECONDS)}`;
+/** `Secure` only when the request came over https (see isSecureRequest). */
+export function stateCookieHeader(state: string, request: Request): string {
+  return `${STATE_COOKIE}=${state}; ${cookieAttributes(STATE_MAX_AGE_SECONDS, request)}`;
 }
 
-export function clearStateCookieHeader(): string {
-  return `${STATE_COOKIE}=; ${cookieAttributes(0)}`;
+export function clearStateCookieHeader(request: Request): string {
+  return `${STATE_COOKIE}=; ${cookieAttributes(0, request)}`;
 }
 
 /** One cookie's value from the request's Cookie header. */
