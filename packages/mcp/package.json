@@ -4,9 +4,6 @@
   "private": true,
   "type": "module",
   "description": "MCP server that lets Claude Desktop and Claude Code pay BotFare sites per request.",
-  "bin": {
-    "botfare-mcp": "./src/server.ts"
-  },
   "scripts": {
     "start": "tsx --env-file-if-exists=../../.env src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
