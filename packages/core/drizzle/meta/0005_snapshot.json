@@ -93,12 +93,8 @@
           "name": "agent_keys_owner_user_id_users_id_fk",
           "tableFrom": "agent_keys",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -233,12 +229,8 @@
           "name": "citations_agent_key_id_agent_keys_id_fk",
           "tableFrom": "citations",
           "tableTo": "agent_keys",
-          "columnsFrom": [
-            "agent_key_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["agent_key_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -246,12 +238,8 @@
           "name": "citations_owner_user_id_users_id_fk",
           "tableFrom": "citations",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -259,12 +247,8 @@
           "name": "citations_receipt_id_receipts_id_fk",
           "tableFrom": "citations",
           "tableTo": "receipts",
-          "columnsFrom": [
-            "receipt_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["receipt_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -272,12 +256,8 @@
           "name": "citations_site_id_sites_id_fk",
           "tableFrom": "citations",
           "tableTo": "sites",
-          "columnsFrom": [
-            "site_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["site_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -533,12 +513,8 @@
           "name": "disputes_receipt_id_receipts_id_fk",
           "tableFrom": "disputes",
           "tableTo": "receipts",
-          "columnsFrom": [
-            "receipt_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["receipt_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -546,12 +522,8 @@
           "name": "disputes_agent_key_id_agent_keys_id_fk",
           "tableFrom": "disputes",
           "tableTo": "agent_keys",
-          "columnsFrom": [
-            "agent_key_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["agent_key_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -559,12 +531,8 @@
           "name": "disputes_owner_user_id_users_id_fk",
           "tableFrom": "disputes",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -572,12 +540,8 @@
           "name": "disputes_site_id_sites_id_fk",
           "tableFrom": "disputes",
           "tableTo": "sites",
-          "columnsFrom": [
-            "site_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["site_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -585,12 +549,8 @@
           "name": "disputes_publisher_user_id_users_id_fk",
           "tableFrom": "disputes",
           "tableTo": "users",
-          "columnsFrom": [
-            "publisher_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["publisher_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -598,12 +558,8 @@
           "name": "disputes_refund_transaction_id_ledger_transactions_id_fk",
           "tableFrom": "disputes",
           "tableTo": "ledger_transactions",
-          "columnsFrom": [
-            "refund_transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["refund_transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -663,12 +619,8 @@
           "name": "ledger_accounts_owner_user_id_users_id_fk",
           "tableFrom": "ledger_accounts",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -754,12 +706,8 @@
           "name": "ledger_entries_transaction_id_ledger_transactions_id_fk",
           "tableFrom": "ledger_entries",
           "tableTo": "ledger_transactions",
-          "columnsFrom": [
-            "transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -767,12 +715,8 @@
           "name": "ledger_entries_account_id_ledger_accounts_id_fk",
           "tableFrom": "ledger_entries",
           "tableTo": "ledger_accounts",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["account_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -826,9 +770,7 @@
         "ledger_transactions_idempotency_key_unique": {
           "name": "ledger_transactions_idempotency_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "idempotency_key"
-          ]
+          "columns": ["idempotency_key"]
         }
       },
       "policies": {},
@@ -961,12 +903,8 @@
           "name": "offer_declines_agent_key_id_agent_keys_id_fk",
           "tableFrom": "offer_declines",
           "tableTo": "agent_keys",
-          "columnsFrom": [
-            "agent_key_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["agent_key_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -974,12 +912,8 @@
           "name": "offer_declines_site_id_sites_id_fk",
           "tableFrom": "offer_declines",
           "tableTo": "sites",
-          "columnsFrom": [
-            "site_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["site_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1099,12 +1033,8 @@
           "name": "offer_events_site_id_sites_id_fk",
           "tableFrom": "offer_events",
           "tableTo": "sites",
-          "columnsFrom": [
-            "site_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["site_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1278,12 +1208,8 @@
           "name": "payouts_publisher_user_id_users_id_fk",
           "tableFrom": "payouts",
           "tableTo": "users",
-          "columnsFrom": [
-            "publisher_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["publisher_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1291,12 +1217,8 @@
           "name": "payouts_transaction_id_ledger_transactions_id_fk",
           "tableFrom": "payouts",
           "tableTo": "ledger_transactions",
-          "columnsFrom": [
-            "transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1304,12 +1226,8 @@
           "name": "payouts_reversal_transaction_id_ledger_transactions_id_fk",
           "tableFrom": "payouts",
           "tableTo": "ledger_transactions",
-          "columnsFrom": [
-            "reversal_transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["reversal_transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1317,12 +1235,8 @@
           "name": "payouts_redebit_transaction_id_ledger_transactions_id_fk",
           "tableFrom": "payouts",
           "tableTo": "ledger_transactions",
-          "columnsFrom": [
-            "redebit_transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["redebit_transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1414,12 +1328,8 @@
           "name": "paypal_orders_owner_user_id_users_id_fk",
           "tableFrom": "paypal_orders",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1481,12 +1391,8 @@
           "name": "receipt_statements_receipt_id_receipts_id_fk",
           "tableFrom": "receipt_statements",
           "tableTo": "receipts",
-          "columnsFrom": [
-            "receipt_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["receipt_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1494,10 +1400,7 @@
       "compositePrimaryKeys": {
         "receipt_statements_pk": {
           "name": "receipt_statements_pk",
-          "columns": [
-            "receipt_id",
-            "kind"
-          ]
+          "columns": ["receipt_id", "kind"]
         }
       },
       "uniqueConstraints": {},
@@ -1734,12 +1637,8 @@
           "name": "receipts_agent_key_id_agent_keys_id_fk",
           "tableFrom": "receipts",
           "tableTo": "agent_keys",
-          "columnsFrom": [
-            "agent_key_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["agent_key_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1747,12 +1646,8 @@
           "name": "receipts_owner_user_id_users_id_fk",
           "tableFrom": "receipts",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1760,12 +1655,8 @@
           "name": "receipts_site_id_sites_id_fk",
           "tableFrom": "receipts",
           "tableTo": "sites",
-          "columnsFrom": [
-            "site_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["site_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1773,12 +1664,8 @@
           "name": "receipts_publisher_user_id_users_id_fk",
           "tableFrom": "receipts",
           "tableTo": "users",
-          "columnsFrom": [
-            "publisher_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["publisher_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1786,12 +1673,8 @@
           "name": "receipts_transaction_id_ledger_transactions_id_fk",
           "tableFrom": "receipts",
           "tableTo": "ledger_transactions",
-          "columnsFrom": [
-            "transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1799,12 +1682,8 @@
           "name": "receipts_refund_transaction_id_ledger_transactions_id_fk",
           "tableFrom": "receipts",
           "tableTo": "ledger_transactions",
-          "columnsFrom": [
-            "refund_transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["refund_transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1935,12 +1814,8 @@
           "name": "sites_owner_user_id_users_id_fk",
           "tableFrom": "sites",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2048,12 +1923,8 @@
           "name": "topups_owner_user_id_users_id_fk",
           "tableFrom": "topups",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2061,12 +1932,8 @@
           "name": "topups_transaction_id_ledger_transactions_id_fk",
           "tableFrom": "topups",
           "tableTo": "ledger_transactions",
-          "columnsFrom": [
-            "transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["transaction_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2076,9 +1943,7 @@
         "topups_capture_id_unique": {
           "name": "topups_capture_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "capture_id"
-          ]
+          "columns": ["capture_id"]
         }
       },
       "policies": {},
@@ -2128,9 +1993,7 @@
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},
@@ -2221,9 +2084,7 @@
         "webhook_events_paypal_event_id_unique": {
           "name": "webhook_events_paypal_event_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "paypal_event_id"
-          ]
+          "columns": ["paypal_event_id"]
         }
       },
       "policies": {},
