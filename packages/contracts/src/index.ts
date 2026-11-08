@@ -116,6 +116,82 @@ export function isKnownAiBot(userAgent: string | null | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Agent detection (who gets a 402). Score-based: "pay, or prove you're human", never a hard block.
+
+/**
+ * Strictness of agent detection on a site:
+ * - "off": only self-identified agents (AGENT_HEADER, PAYMENT-SIGNATURE, signed agents) pay.
+ * - "known-bots": also charge known AI crawlers (same as the old chargeKnownBots switch).
+ * - "standard": also charge requests whose combined automation score reaches the threshold
+ *   (edge bot scores, crawler impostors, automation heuristics); suspected humans can pass the
+ *   human check (Turnstile) and read free.
+ * - "strict": like standard with a lower threshold.
+ */
+export const detectionLevelSchema = z.enum(["off", "known-bots", "standard", "strict"]);
+export type DetectionLevel = z.infer<typeof detectionLevelSchema>;
+
+/** Why a request was treated as an agent; recorded on each receipt for "revenue recovered" analytics. */
+export const detectionSignalSchema = z.enum([
+  "agent-header", // sent X-BotFare-Agent
+  "payment-signature", // arrived with an x402 payment
+  "signed-agent", // valid HTTP Message Signature (Web Bot Auth style) from a BotFare agent key
+  "known-bot", // user agent of a known AI crawler from its published IP ranges
+  "bot-impostor", // claims to be a known crawler but comes from outside its published ranges
+  "edge-score", // CDN bot score (Cloudflare, Akamai) below the site's threshold
+  "automation", // heuristics: HTTP client libraries, headless browsers, missing browser headers
+  "everyone", // the path charges everyone (APIs)
+]);
+export type DetectionSignal = z.infer<typeof detectionSignalSchema>;
+
+export const detectionConfigSchema = z.object({
+  level: detectionLevelSchema.default("known-bots"),
+  /** Score in [0, 100] at or above which a request counts as automated ("standard": 60, "strict": 40 when unset). */
+  threshold: z.number().int().min(1).max(100).optional(),
+  edge: z
+    .object({
+      /** Cloudflare Bot Management score forwarded as a request header (1 = bot, 99 = human). */
+      cloudflare: z
+        .object({
+          enabled: z.boolean().default(false),
+          scoreHeader: z.string().default("cf-bot-score"),
+          verifiedBotHeader: z.string().default("cf-verified-bot"),
+          /** Scores at or below this count as bots. */
+          maxBotScore: z.number().int().min(1).max(99).default(29),
+        })
+        .default({
+          enabled: false,
+          scoreHeader: "cf-bot-score",
+          verifiedBotHeader: "cf-verified-bot",
+          maxBotScore: 29,
+        }),
+      /** Akamai Bot Manager result forwarded as a request header. */
+      akamai: z
+        .object({
+          enabled: z.boolean().default(false),
+          header: z.string().default("akamai-bot"),
+        })
+        .default({ enabled: false, header: "akamai-bot" }),
+    })
+    .default({
+      cloudflare: {
+        enabled: false,
+        scoreHeader: "cf-bot-score",
+        verifiedBotHeader: "cf-verified-bot",
+        maxBotScore: 29,
+      },
+      akamai: { enabled: false, header: "akamai-bot" },
+    }),
+  /** Cloudflare Turnstile site key for the "prove you're human" escape hatch; null disables it. */
+  turnstileSiteKey: z.string().nullable().default(null),
+});
+export type DetectionConfig = z.infer<typeof detectionConfigSchema>;
+
+export const DEFAULT_DETECTION: DetectionConfig = detectionConfigSchema.parse({});
+
+/** Signed agents (Web Bot Auth style): BotFare publishes active agent public keys here as a JWKS. */
+export const SIGNATURE_DIRECTORY_PATH = "/.well-known/http-message-signatures-directory";
+
+// ---------------------------------------------------------------------------------------------
 // Site config (set in the dashboard, read by the middleware)
 
 /**
@@ -143,7 +219,10 @@ export const siteConfigSchema = z.object({
   pricing: z.array(pricingRuleSchema),
   /** Paths that are always free, even for agents (same pattern syntax). */
   freePaths: z.array(z.string()).default([]),
+  /** Legacy switch; superseded by detection.level ("known-bots" or stricter charges known AI crawlers). */
   chargeKnownBots: z.boolean().default(false),
+  /** Agent detection settings; older configs without it behave as before. */
+  detection: detectionConfigSchema.default(DEFAULT_DETECTION),
   /** Changes whenever the dashboard saves the site; lets the middleware skip unchanged configs. */
   version: z.string(),
 });
