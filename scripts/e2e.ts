@@ -14,6 +14,9 @@
  *   default) or `start` (next start on the last `pnpm --filter @botfare/web build`; use it when a
  *   next dev already runs on another port, since Next allows one dev server per app directory).
  * - E2E_VERBOSE=1 streams the child processes' logs.
+ * - E2E_AI=1 (with ANTHROPIC_API_KEY in .env) keeps the key for the web app this run starts and
+ *   adds an optional check that the AI judge refunds a stub. By default the web app starts without
+ *   the key, so Fare Court's no-AI path (the publisher decides) is what the required checks cover.
  *
  * The human-check step posts Cloudflare's dummy Turnstile token, so the demo calls Cloudflare's
  * real siteverify with the always-pass test secret: it needs network access.
@@ -29,6 +32,7 @@ import {
   siteAuthHeader,
   siteConfigPath,
 } from "@botfare/contracts";
+import { contentDigestSha256, REQUIREMENT_EXTRA_KEYS } from "@botfare/contracts/fare";
 import {
   Accounts,
   accountBalanceMicros,
@@ -39,14 +43,21 @@ import {
   getReceipt,
   getSite,
   listReceipts,
+  type Site,
 } from "@botfare/core";
 import { BOTFARE_SIGNAL_EXTRA, HUMAN_CHECK_PATH, HUMAN_PASS_COOKIE } from "@botfare/express";
-import { BotFareSpendLimitError, createBotFareAgent, type WireEvent } from "@botfare/sdk";
+import {
+  type BotFareAgent,
+  BotFareSpendLimitError,
+  createBotFareAgent,
+  type WireEvent,
+} from "@botfare/sdk";
 import { PAYPAL_SANDBOX, PrepaidPayPalClient } from "@botfare/x402-paypal";
 import { decodePaymentRequiredHeader, decodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload, SettleResponse } from "@x402/core/types";
 import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import type { JWK } from "jose";
+import { FARE_COURT_STUB_SLUG } from "../apps/demo/src/app";
 import { loadRootEnv, ROOT, requireEnv } from "./lib/env-file";
 
 function port(name: string, fallback: number): number {
@@ -63,6 +74,10 @@ const WEB_MODE = process.env.E2E_WEB === "start" ? "start" : "dev";
 const WEB_URL = `http://localhost:${WEB_PORT}`;
 const DEMO_URL = `http://localhost:${DEMO_PORT}`;
 const VERBOSE = process.env.E2E_VERBOSE === "1";
+/** Start the web app with ANTHROPIC_API_KEY and run the optional AI judge check (never required). */
+const E2E_AI = process.env.E2E_AI === "1" && Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+/** True when this run started the web app (so it knows whether an AI judge is configured). */
+let WEB_STARTED_BY_E2E = false;
 
 /** What Chrome 130 on macOS sends for a top-level navigation (a person clicking a link). */
 const CHROME_HEADERS = {
@@ -326,12 +341,15 @@ async function main(): Promise<void> {
         ["--filter", "@botfare/web", "exec", "next", WEB_MODE, "--port", String(WEB_PORT)],
         {
           ...process.env,
+          // Without E2E_AI the judge is off, so disputes go to the publisher (checked below).
+          ANTHROPIC_API_KEY: E2E_AI ? process.env.ANTHROPIC_API_KEY : "",
           BOTFARE_URL: WEB_URL,
           // next start refuses to run without one; a throwaway secret is fine for this run.
           SESSION_SECRET: process.env.SESSION_SECRET || randomBytes(32).toString("hex"),
         },
       );
       await waitFor("BotFare app", `${WEB_URL}/api/health`, healthy, 180_000, web);
+      WEB_STARTED_BY_E2E = true;
     }
     if (await answers(DEMO_URL)) {
       throw new Error(
@@ -789,6 +807,18 @@ async function main(): Promise<void> {
       return seen.join(", ");
     });
 
+    // 5. Fare Court and Fare Advisor.
+    await fareChecks({
+      db,
+      agent,
+      wire,
+      keyId,
+      site,
+      auth,
+      snapshot,
+      citable: [signedReceiptId, automationReceiptId],
+    });
+
     await check("Ledger sums to zero and cached balances match entries", async () => {
       const report = await checkLedgerInvariants(db);
       expect(report.totalMicros === 0, `entries sum to ${report.totalMicros}`);
@@ -802,6 +832,384 @@ async function main(): Promise<void> {
   } finally {
     await close();
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fare Court and Fare Advisor
+
+interface FareContext {
+  db: Db;
+  agent: BotFareAgent;
+  wire: WireEvent[];
+  keyId: string;
+  site: Site;
+  auth: string;
+  snapshot: () => Promise<Balances>;
+  /** Settled receipts of this run that an answer may cite. */
+  citable: string[];
+}
+
+/** Signs in as a demo persona (POST /api/session/persona) and returns the session cookie. */
+async function personaCookie(persona: "publisher" | "agentOwner"): Promise<string> {
+  const response = await fetch(`${WEB_URL}/api/session/persona`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ persona }),
+  });
+  await response.body?.cancel();
+  if (!response.ok) throw new Error(`persona sign-in answered ${response.status}`);
+  const cookie = response.headers
+    .getSetCookie()
+    .map((line) => line.split(";")[0])
+    .join("; ");
+  if (!cookie) throw new Error("persona sign-in set no cookie");
+  return cookie;
+}
+
+async function waitUntil<T>(
+  what: string,
+  read: () => Promise<T | null | undefined>,
+  timeoutMs: number,
+  everyMs = 500,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await read();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`${what} within ${timeoutMs / 1000}s`);
+    await new Promise((done) => setTimeout(done, everyMs));
+  }
+}
+
+async function fareChecks(ctx: FareContext): Promise<void> {
+  const { db, agent, wire, keyId, site, auth, snapshot } = ctx;
+  const runStarted = new Date();
+  const stubUrl = `${DEMO_URL}/articles/${FARE_COURT_STUB_SLUG}`;
+  const premiumPattern = "/articles/premium-*";
+  // The web app this run started has no AI judge unless E2E_AI=1; a reused one may have either.
+  const judge = WEB_STARTED_BY_E2E ? (E2E_AI ? "ai" : "none") : "unknown";
+  if (E2E_AI && judge !== "ai") {
+    console.log("NOTE E2E_AI=1 has no effect on a web app this run did not start");
+  }
+  // Signing in as the publisher persona restores the demo prices and earnings: do it before any
+  // ledger snapshot, since it may post demo earnings.
+  const publisherCookie = await personaCookie("publisher");
+  const publisherApi = (path: string, init: RequestInit = {}) =>
+    fetch(`${WEB_URL}${path}`, {
+      ...init,
+      headers: { Cookie: publisherCookie, "Content-Type": "application/json", ...init.headers },
+    });
+
+  let stubReceiptId = "";
+  let delivered: Uint8Array | null = null;
+  await check(
+    "Paid stub article: the offer is declared and the publisher attests the delivered digest",
+    async () => {
+      const before = await snapshot();
+      wire.length = 0;
+      const result = await agent.fetch(stubUrl);
+      const text = new TextDecoder().decode(result.body ?? new Uint8Array());
+      expect(result.paid && result.receiptId, `status ${result.response.status}, not paid`);
+      expect(result.body, "the SDK kept no body");
+      expect(text.includes("Subscribe to keep reading"), "the paid agent did not get the stub");
+      const required = wire.find((event) => event.stage === "payment-required");
+      const offer =
+        required?.stage === "payment-required"
+          ? (required.decoded.accepts[0]?.extra?.[REQUIREMENT_EXTRA_KEYS.offer] as
+              | { title?: string }
+              | undefined)
+          : undefined;
+      expect(offer?.title === "Grinder maintenance, step by step", `declared ${offer?.title}`);
+      stubReceiptId = result.receiptId;
+      delivered = result.body;
+      const digest = await contentDigestSha256(result.body);
+      const receipt = await waitUntil(
+        "no attestation arrived",
+        async () => {
+          const row = await getReceipt(db, result.receiptId as string);
+          return row?.contentDigest ? row : null;
+        },
+        10_000,
+      );
+      expect(receipt.contentDigest === digest, `attested ${receipt.contentDigest}, got ${digest}`);
+      expect(receipt.contentLength === result.body.length, "attested length differs");
+      expect(receipt.declaredOffer?.title === offer?.title, "receipt lacks the declared offer");
+      expectDelta(
+        delta(before, await snapshot()),
+        { wallet: -30_000, earnings: 28_500, fees: 1_500, receipts: 1 },
+        "stub",
+      );
+      return `${stubReceiptId}, ${result.body.length} bytes, ${digest.slice(0, 20)}…`;
+    },
+  );
+
+  await check("A dispute with tampered bytes is invalid and moves no money", async () => {
+    expect(stubReceiptId && delivered, "no stub purchase");
+    const before = await snapshot();
+    const tampered = new TextDecoder()
+      .decode(delivered)
+      .replace("Subscribe to keep reading", "Error 500");
+    const outcome = await agent.dispute({
+      receiptId: stubReceiptId,
+      reason: "error_page",
+      content: tampered,
+    });
+    expect(outcome.status === "invalid", `status ${outcome.status}`);
+    expect(outcome.refundedCents === 0, `refunded ${outcome.refundedCents}`);
+    expectDelta(
+      delta(before, await snapshot()),
+      { wallet: 0, earnings: 0, fees: 0, receipts: 0 },
+      "tampered",
+    );
+    return `invalid: ${outcome.message}`;
+  });
+
+  let disputeId = "";
+  let disputeStatus = "";
+  const beforeDispute = await snapshot();
+  await check("A dispute with the real delivered bytes is accepted by Fare Court", async () => {
+    expect(stubReceiptId && delivered, "no stub purchase");
+    const outcome = await agent.dispute({
+      receiptId: stubReceiptId,
+      reason: "stub_or_paywall",
+      note: "Paid for the maintenance guide and got a subscribe wall (e2e)",
+      content: delivered,
+    });
+    disputeId = outcome.disputeId;
+    disputeStatus = outcome.status;
+    if (judge === "none") {
+      expect(outcome.status === "pending_publisher", `status ${outcome.status}`);
+      expect(outcome.verdict === null, "a verdict without an AI judge");
+      expectDelta(
+        delta(beforeDispute, await snapshot()),
+        { wallet: 0, earnings: 0, fees: 0, receipts: 0 },
+        "pending dispute",
+      );
+    } else {
+      expect(outcome.status !== "invalid", `status ${outcome.status}: ${outcome.message}`);
+    }
+    return `${outcome.disputeId} ${outcome.status}: ${outcome.message}`;
+  });
+
+  await check(
+    "The publisher accepts through the API and the refund happens exactly once",
+    async () => {
+      expect(disputeId, "no dispute");
+      const list = await publisherApi(`/api/publisher/disputes?siteId=${site.id}`);
+      const listed = (await list.json()) as {
+        pendingCount: number;
+        disputes: { id: string; status: string; deliveredExcerpt: string | null }[];
+      };
+      const row = listed.disputes.find((d) => d.id === disputeId);
+      expect(list.status === 200 && row, `dispute not listed (${list.status})`);
+      expect(row.deliveredExcerpt?.includes("Subscribe to keep reading"), "excerpt not shown");
+      const decide = () =>
+        publisherApi("/api/publisher/disputes", {
+          method: "POST",
+          body: JSON.stringify({ disputeId, decision: "accept" }),
+        });
+      let how = "by the AI judge";
+      if (disputeStatus === "pending_publisher") {
+        expect(row.status === "pending_publisher", `listed as ${row.status}`);
+        const accepted = await decide();
+        const body = (await accepted.json()) as {
+          outcome?: { status: string; refundedCents: number };
+        };
+        expect(accepted.status === 200, `accept answered ${accepted.status}`);
+        expect(body.outcome?.status === "refunded", `outcome ${body.outcome?.status}`);
+        expect(body.outcome?.refundedCents === 3, `refunded ${body.outcome?.refundedCents}`);
+        how = "by the publisher";
+      }
+      if (disputeStatus === "pending_publisher" || disputeStatus === "refunded") {
+        const afterRefund = await snapshot();
+        expectDelta(
+          delta(beforeDispute, afterRefund),
+          { wallet: 30_000, earnings: -28_500, fees: -1_500, receipts: 0 },
+          "dispute refund",
+        );
+        const again = await decide();
+        await again.body?.cancel();
+        expect(again.status === 409, `second accept answered ${again.status}`);
+        let refused = "";
+        try {
+          await agent.dispute({
+            receiptId: stubReceiptId,
+            reason: "stub_or_paywall",
+            content: delivered as Uint8Array,
+          });
+        } catch (err) {
+          refused = (err as Error).message;
+        }
+        expect(/refunded/i.test(refused), `re-dispute: ${refused || "accepted"}`);
+        expectDelta(
+          delta(afterRefund, await snapshot()),
+          { wallet: 0, earnings: 0, fees: 0, receipts: 0 },
+          "repeat",
+        );
+        return `refunded 3¢ ${how}; second accept 409, re-dispute refused`;
+      }
+      return `the AI judge decided ${disputeStatus}; nothing for the publisher to accept`;
+    },
+  );
+
+  if (E2E_AI && judge === "ai") {
+    await check("Optional (E2E_AI=1): the AI judge refunds a stub instantly", async () => {
+      const result = await agent.fetch(stubUrl);
+      expect(result.receiptId && result.body, "no paid stub");
+      await waitUntil(
+        "no attestation arrived",
+        async () => (await getReceipt(db, result.receiptId as string))?.contentDigest,
+        10_000,
+      );
+      const outcome = await agent.dispute({
+        receiptId: result.receiptId,
+        reason: "stub_or_paywall",
+        content: result.body,
+      });
+      expect(outcome.status === "refunded", `status ${outcome.status}: ${outcome.message}`);
+      expect(outcome.verdict?.decision === "refund", `verdict ${outcome.verdict?.decision}`);
+      return `${outcome.verdict?.confidence} sure: ${outcome.verdict?.rationale.slice(0, 80)}`;
+    });
+  } else {
+    console.log("SKIP Optional AI judge check (set ANTHROPIC_API_KEY and E2E_AI=1 to run it)");
+  }
+
+  await check("A decline note and a citation report are recorded", async () => {
+    // Decline notes find their site by its registered origin (the demo runs here on DEMO_PORT),
+    // and one note per key, URL and day is kept: the query string makes this run's note its own.
+    const reason = "Thin listicle, not worth 50¢";
+    const declineUrl = `${site.origin}/articles/premium-grinder-roundup?ref=e2e-${runStarted.getTime().toString(36)}`;
+    const declined = await agent.decline(
+      { url: declineUrl, priceCents: 50 },
+      { category: "too_expensive", reason },
+    );
+    expect(declined, "BotFare refused the decline note");
+    const day = new Date().toISOString().slice(0, 10);
+    const note = await db.query.offerDeclines.findFirst({
+      where: (t, { and, eq }) =>
+        and(eq(t.agentKeyId, keyId), eq(t.url, declineUrl), eq(t.day, day)),
+    });
+    expect(
+      note?.siteId === site.id && note.reason === reason,
+      "this run's decline note is missing",
+    );
+    expect(note.path === "/articles/premium-grinder-roundup", `stored path ${note.path}`);
+
+    const citable = ctx.citable.filter(Boolean);
+    expect(citable.length > 0, "no receipts to cite");
+    const answerId = `e2e-${runStarted.getTime().toString(36)}`;
+    const reported = await agent.reportCitations({
+      answerId,
+      citations: citable.map((receiptId) => ({ receiptId, claim: "e2e citation" })),
+    });
+    expect(reported, "BotFare refused the citation report");
+    const rows = await db.query.citations.findMany({
+      where: (t, { eq }) => eq(t.answerId, answerId),
+    });
+    expect(rows.length === citable.length, `${rows.length} citations stored`);
+    return `decline "${note.reason}" (${note.category}); ${rows.length} citations for ${answerId}`;
+  });
+
+  await check("Offer telemetry from the middleware reaches BotFare", async () => {
+    // botfare() sends a batch every 15 s; this run showed the premium offer to the capped agent.
+    const event = await waitUntil(
+      "no offer event from this run",
+      () =>
+        db.query.offerEvents.findFirst({
+          where: (t, { and, eq, gte }) => and(eq(t.siteId, site.id), gte(t.receivedAt, runStarted)),
+        }),
+      25_000,
+      1_000,
+    );
+    return `${event.method} ${event.path} at ${event.priceCents}¢ (${event.signal})`;
+  });
+
+  await check("Fare Advisor returns the funnel per pricing rule without an AI key", async () => {
+    const response = await publisherApi(`/api/publisher/advisor?siteId=${site.id}&ai=1`);
+    const body = (await response.json()) as {
+      aiAvailable: boolean;
+      aiStatus: string;
+      inputsSummary: {
+        rules: {
+          pattern: string;
+          priceCents: number;
+          offers: number;
+          paid: number;
+          declined: number;
+          disputed: number;
+          topReasons: { reason: string; count: number }[];
+        }[];
+      };
+    };
+    expect(response.status === 200, `advisor answered ${response.status}`);
+    if (judge === "none") {
+      expect(body.aiAvailable === false, "aiAvailable without a key");
+      expect(body.aiStatus === "unavailable", `aiStatus ${body.aiStatus}`);
+    }
+    const premium = body.inputsSummary.rules.find((rule) => rule.pattern === premiumPattern);
+    const articles = body.inputsSummary.rules.find((rule) => rule.pattern === "/articles/*");
+    expect(premium && articles, "pricing rules missing from the funnel");
+    expect(premium.offers > 0 && premium.declined > 0, "no offers or declines on the premium rule");
+    expect(articles.disputed > 0, "no disputes on the article rule");
+    const top = premium.topReasons[0];
+    return `premium ${premium.priceCents}¢: ${premium.offers} offers, ${premium.paid} paid, ${premium.declined} declined (top: "${top?.reason}" ×${top?.count}); aiStatus ${body.aiStatus}`;
+  });
+
+  await check(
+    "Apply 50¢ → 8¢ on the premium rule: config, middleware and the next agent buys",
+    async () => {
+      const apply = async (priceCents: number) => {
+        const response = await publisherApi("/api/publisher/advisor/apply", {
+          method: "POST",
+          body: JSON.stringify({ siteId: site.id, pattern: premiumPattern, priceCents }),
+        });
+        const body = (await response.json()) as { changed?: boolean };
+        expect(response.status === 200, `apply ${priceCents}¢ answered ${response.status}`);
+        return body;
+      };
+      const config = async () => {
+        const response = await fetch(`${WEB_URL}${siteConfigPath(site.id)}`, {
+          headers: { Authorization: auth },
+        });
+        return (await response.json()) as {
+          version: string;
+          pricing: { pattern: string; priceCents: number }[];
+        };
+      };
+      const premiumPrice = (c: Awaited<ReturnType<typeof config>>) =>
+        c.pricing.find((rule) => rule.pattern === premiumPattern)?.priceCents;
+      const before = await config();
+      try {
+        expect((await apply(8)).changed, "apply reported no change");
+        const after = await config();
+        expect(premiumPrice(after) === 8, `config price ${premiumPrice(after)}`);
+        expect(after.version !== before.version, "config version did not change");
+        // botfare() caches the config for up to 30 s; then the 10¢-capped agent can buy.
+        const premiumUrl = `${DEMO_URL}/articles/premium-grinder-roundup`;
+        await waitUntil(
+          "the middleware never offered 8¢",
+          async () => (await agent.getOffer(premiumUrl).catch(() => null))?.priceCents === 8,
+          40_000,
+          2_000,
+        );
+        const balances = await snapshot();
+        const bought = await agent.fetch(premiumUrl);
+        await bought.response.body?.cancel();
+        expect(bought.paid, `status ${bought.response.status}`);
+        expectDelta(
+          delta(balances, await snapshot()),
+          { wallet: -80_000, earnings: 76_000, fees: 4_000, receipts: 1 },
+          "premium at 8¢",
+        );
+        return `config version ${before.version.slice(0, 8)}… → ${after.version.slice(0, 8)}…, agent paid 8¢ (${bought.receiptId})`;
+      } finally {
+        await apply(50).catch(() => undefined);
+        const restored = await config().catch(() => null);
+        if (restored && premiumPrice(restored) !== 50)
+          fail("restore premium price", "still not 50¢");
+      }
+    },
+  );
 }
 
 process.on("SIGINT", () => {
