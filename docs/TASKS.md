@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Sun 8 Nov 2026, 10:30 pm IST (Phase 3b done: Fare Court and Fare Advisor built, seeded and checked end to end; e2e 25/25) · previously the same day (Fare Court and Fare Advisor added to the plan)
+**Last updated:** Sun 8 Nov 2026, 11:15 pm IST (Fare Court and Fare Advisor review: 10 confirmed findings fixed; e2e 25/25, 601 unit and DB tests) · previously 10:30 pm (Phase 3b done)
 
 ## Overview
 
@@ -14,11 +14,11 @@
 | 1. Protocol end to end | Mon 9 | ✅ Done (a day early) | 9 / 9 |
 | 2. Real money and dashboards | Tue 10 | ✅ Done (one optional item needs you) | 10 / 11 |
 | 3. Agent detection, AI and polish | Wed 11 | 🔄 Built two days early; Log in with PayPal needs you | 8 / 9 |
-| 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 7 / 7 |
+| 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 8 / 8 |
 | 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
 | 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
 
-**Overall: about 73% done** (44 of 60 items); ahead of the plan. Next: deploy to Render, then run one live Fare Court verdict and one Fare Advisor recommendation with `ANTHROPIC_API_KEY` set.
+**Overall: about 74% done** (45 of 61 items); ahead of the plan. Next: deploy to Render, then run one live Fare Court verdict and one Fare Advisor recommendation with `ANTHROPIC_API_KEY` set.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -84,7 +84,7 @@
 | ✅ | Agent-safety review: 8 findings confirmed and fixed (two were the same demo-key issue) | Linear `htmlToText` (a hostile 1 MB page took 10–50 s on the event loop, now ms); SDK cap is always min(10¢, remaining budget), unreceipted payments count; agent reads only the demo publisher and a real user's own sites; outbound guard (no redirects, no private/mapped-IPv6/DNS-to-private hosts in production); run lock per visitor; demo key $10/day, raised in place by `pnpm seed`; agent-owner wallet kept at $5 at sign-in and before each run; daily-cap refusals explained. 👤 Rerun `pnpm seed` to raise the existing demo key's cap |
 | ✅ | Polish: empty, loading, error and mobile states (hide revoked test keys in the wallet); feature freeze at 10 pm IST | Wallet "Show revoked" toggle, loading skeleton, error and 404 pages, card actions stack on phones; every page checked at 375 px with no horizontal scroll. Detection: non-browser user agents (no `Mozilla/`) now pay at standard/strict, chat link previews stay free |
 
-## Phase 3b: Fare Court and Fare Advisor (AI on every side) ✅ (7 / 7)
+## Phase 3b: Fare Court and Fare Advisor (AI on every side) ✅ (8 / 8)
 
 Why: micropayments fail on the *decision* cost, not the technology (Szabo 1999, Shirky 2000). BotFare puts AI on the decisions too small for a human, and keeps money movement in code. See [`docs/PLAN.md`](PLAN.md), "Decisions (9 Nov)".
 
@@ -97,6 +97,7 @@ Why: micropayments fail on the *decision* cost, not the technology (Szabo 1999, 
 | ✅ | ⭐ Fare Advisor, signals: middleware offer telemetry (402s shown), agent decline notes (SDK `decline()`, MCP `decline_offer`, research agent skip reasons), citation reports from research answers, disputes | Telemetry batched every 15 s (best effort); declines once per key, URL and day; citations replace by answer ID; e2e checks all three arrive. Privacy: no IPs or user agents stored |
 | ✅ | ⭐ Fare Advisor, recommendations: Claude clusters reasons per page and proposes price, preview and audience changes with projected revenue; one-click Apply; "Citations are the new clicks" metrics on the dashboard and in analytics | Fare Advisor card (funnel per rule, why agents didn't buy, checked recommendations, projection from BotFare's funnel model, confirmed Apply); AG Studio citations and declines tables and charts. e2e: Apply 50¢ → 8¢ reaches the middleware and the next capped agent buys. 👤 Live recommendations need `ANTHROPIC_API_KEY` |
 | ✅ | Integration, e2e coverage, review and fixes | `pnpm seed:traffic` tells the Advisor story (premium roundup declined as "Thin listicle, not worth 50¢", burr-basics and dialing-in cited); e2e 25/25 on 3100/4100 (9 new Fare checks, optional AI check with `E2E_AI=1`); 575 unit and DB tests; build and spike 05 pass |
+| ✅ | Fare review: 10 confirmed findings fixed, each with a regression test | Dispute HTML-to-text is one linear, capped pass and runs only after the window, attestation and digest checks (1 MB of unclosed `<a` took minutes, now ms); attested `Content-Type` stored as its media type and given to the judge inside `<case>`; decline notes need a price the page really has, one per key and page (no query strings), three per owner, page and day; telemetry drops control-character events one by one and keeps 20,000 per publisher per day; the funnel counts each rule at its current price only (no AI advice until agents see a new price); "Disputed · refunded" totals Fare Court refunds only; the SDK and the research agent return a paid redirect with its receipt instead of following it; each publisher persona sign-in puts one dispute back in review; weekly Render cron `botfare-demo-refresh` (`pnpm seed:traffic --weekly`) keeps the story inside the 14-day window, and offers and citations count each run's own purchases once |
 
 ## Phase 4: Deploy to Render ⏳
 
@@ -107,7 +108,7 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | ⏳ | 👤 Render: New → Blueprint, connect GitHub, enter secrets | Account and $50 credits ready |
 | ⏳ | Provision the demo site on Render (`pnpm seed --print-secrets` in botfare-web's Shell) | README "Deploy" |
 | ⏳ | PayPal sandbox webhook on the live URL; set `PAYPAL_WEBHOOK_ID` | |
-| ⏳ | Daily payouts cron live | |
+| ⏳ | Daily payouts cron and weekly demo refresh cron live | `botfare-payouts`, `botfare-demo-refresh` (`pnpm seed:traffic --weekly`, Mondays) |
 | ⏳ | Live smoke test: 402 → pay → receipt, top-up, Withdraw now | |
 
 ## Phase 5: Submission ⏳

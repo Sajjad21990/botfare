@@ -135,7 +135,8 @@ API:
   outcome `{ disputeId, receiptId, status, refundedCents, verdict, message }`
   (`@botfare/contracts/fare`).
 - `POST /api/offers/decline` with `{ url, priceCents, category, reason }`: one note per key,
-  URL and day is kept. The URL must be on a site registered with BotFare.
+  page and day is kept (query strings are dropped). The URL must be on a site registered with
+  BotFare, at a price that site charges for it.
 
 There is no API token. Each request carries the agent's Web Bot Auth signature
 (`Signature-Input`, `Signature`, `Signature-Agent`). BotFare looks the `keyid` (the key's JWK
