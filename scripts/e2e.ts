@@ -34,6 +34,16 @@ import {
 } from "@botfare/contracts";
 import { contentDigestSha256, REQUIREMENT_EXTRA_KEYS } from "@botfare/contracts/fare";
 import {
+  checkAnswerSource,
+  decodeStatement,
+  RECEIPT_JWT_TYPE,
+  RECEIPT_KEYS_PATH,
+  type ReceiptStatements,
+  receiptStatementsPath,
+  SETTLE_EXTRA_RECEIPT_KEY,
+  verifyStatement,
+} from "@botfare/contracts/receipts";
+import {
   Accounts,
   accountBalanceMicros,
   checkLedgerInvariants,
@@ -56,7 +66,7 @@ import { PAYPAL_SANDBOX, PrepaidPayPalClient } from "@botfare/x402-paypal";
 import { decodePaymentRequiredHeader, decodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload, SettleResponse } from "@x402/core/types";
 import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@x402/fetch";
-import type { JWK } from "jose";
+import type { JSONWebKeySet, JWK } from "jose";
 import { FARE_COURT_STUB_SLUG } from "../apps/demo/src/app";
 import { loadRootEnv, ROOT, requireEnv } from "./lib/env-file";
 
@@ -301,6 +311,53 @@ function rawPayingFetch(userAgent: string, keyId: string, privateJwk: unknown) {
 const micros = (value: number) => `${value > 0 ? "+" : ""}${value.toLocaleString("en-US")}`;
 
 // ---------------------------------------------------------------------------------------------
+// Signed receipts
+
+/** BotFare's public receipt keys, fetched from the web app under test (never from the database). */
+async function fetchReceiptKeys(): Promise<{ jwks: JSONWebKeySet; response: Response }> {
+  const response = await fetch(`${WEB_URL}${RECEIPT_KEYS_PATH}`);
+  if (!response.ok) throw new Error(`${RECEIPT_KEYS_PATH} answered ${response.status}`);
+  return { jwks: (await response.json()) as JSONWebKeySet, response };
+}
+
+/** The public statements for a receipt (GET /api/receipts/:id/statements); null on 404. */
+async function fetchStatements(receiptId: string): Promise<ReceiptStatements | null> {
+  const response = await fetch(`${WEB_URL}${receiptStatementsPath(receiptId)}`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`statements for ${receiptId} answered ${response.status}`);
+  return (await response.json()) as ReceiptStatements;
+}
+
+/** Waits until BotFare holds a statement of `kind` for the receipt. */
+async function waitForStatement(
+  receiptId: string,
+  kind: "payment" | "delivery" | "refund",
+  timeoutMs = 10_000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const statements = await fetchStatements(receiptId);
+    const token = statements?.[kind];
+    if (token) return token;
+    if (Date.now() > deadline) {
+      throw new Error(`no ${kind} statement for ${receiptId} within ${timeoutMs / 1000}s`);
+    }
+    await new Promise((done) => setTimeout(done, 500));
+  }
+}
+
+/** The statement with one claim changed and the original signature kept. */
+function tamper(token: string, edit: (claims: Record<string, unknown>) => void): string {
+  const [header, payload, signature] = token.split(".");
+  const claims = JSON.parse(Buffer.from(payload as string, "base64url").toString("utf8"));
+  edit(claims);
+  return `${header}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.${signature}`;
+}
+
+/** JWK members that only a private (or symmetric) key has. */
+const PRIVATE_JWK_MEMBERS = ["d", "p", "q", "dp", "dq", "qi", "k", "oth"];
+
+// ---------------------------------------------------------------------------------------------
 // Main
 
 async function main(): Promise<void> {
@@ -425,6 +482,10 @@ async function main(): Promise<void> {
     let receiptId = "";
     let brewReceiptId = "";
     let signatureHeader = "";
+    /** The paid article as the agent received it, and the PAYMENT-RESPONSE statement. */
+    let articleBytes: Uint8Array | null = null;
+    let articleReadDigest: string | null = null;
+    let paymentStatement = "";
     const beforePay = await snapshot();
     await check("Agent pays 3¢ and gets the article with a receipt", async () => {
       wire.length = 0;
@@ -443,6 +504,13 @@ async function main(): Promise<void> {
       const signed = wire.find((event) => event.stage === "payment-signature");
       signatureHeader = signed?.header ?? "";
       receiptId = result.receipt.transaction;
+      articleBytes = result.body;
+      articleReadDigest = result.readDigest;
+      // The raw PAYMENT-RESPONSE header as the publisher sent it, decoded here (not by the SDK).
+      const settled = wire.find((event) => event.stage === "payment-response");
+      const raw = settled ? decodePaymentResponseHeader(settled.header) : null;
+      const statement = raw?.extra?.[SETTLE_EXTRA_RECEIPT_KEY];
+      paymentStatement = typeof statement === "string" ? statement : "";
       return `200, ${receiptId}, wire: ${stages}`;
     });
 
@@ -451,6 +519,126 @@ async function main(): Promise<void> {
       expectDelta(moved, { wallet: -30_000, earnings: 28_500, fees: 1_500, receipts: 1 }, "pay");
       return `micros: wallet ${micros(moved.wallet)}, earnings ${micros(moved.earnings)}, fees ${micros(moved.fees)}`;
     });
+
+    // Signed receipts: everything below verifies with the public JWKS only.
+    let jwks: JSONWebKeySet = { keys: [] };
+    await check("Receipt JWKS: public Ed25519 keys only, no private members", async () => {
+      const { jwks: published, response } = await fetchReceiptKeys();
+      jwks = published;
+      expect(
+        response.headers.get("content-type")?.startsWith("application/jwk-set+json"),
+        `content-type ${response.headers.get("content-type")}`,
+      );
+      expect(published.keys.length > 0, "no keys published: is BOTFARE_RECEIPT_KEY_SEED set?");
+      for (const key of published.keys) {
+        const leaked = PRIVATE_JWK_MEMBERS.filter((member) => member in key);
+        expect(leaked.length === 0, `key ${key.kid} publishes ${leaked.join(", ")}`);
+        expect(
+          key.kty === "OKP" && key.crv === "Ed25519",
+          `key ${key.kid} is ${key.kty}/${key.crv}`,
+        );
+        expect(key.kid && key.x, "a key without kid or x");
+      }
+      return `${published.keys.length} key(s), kid ${published.keys[0]?.kid?.slice(0, 12)}…, ${response.headers.get("cache-control")}`;
+    });
+
+    await check(
+      "PAYMENT-RESPONSE carries a payment statement that verifies against the JWKS",
+      async () => {
+        expect(paymentStatement, `no extra.${SETTLE_EXTRA_RECEIPT_KEY} in PAYMENT-RESPONSE`);
+        const verified = await verifyStatement(paymentStatement, jwks, {
+          issuer: WEB_URL,
+          kind: "payment",
+        });
+        expect(verified.ok, verified.ok ? "" : `${verified.error}: ${verified.message}`);
+        const { statement } = verified;
+        expect(statement.kind === "payment", `kind ${statement.kind}`);
+        const p = statement.payment;
+        expect(statement.sub === receiptId, `sub ${statement.sub}, expected ${receiptId}`);
+        expect(p.amount === "3" && p.amountMicros === 30_000, `amount ${p.amount}`);
+        expect(p.publisherMicros === 28_500 && p.feeMicros === 1_500, "split is not 95/5");
+        expect(p.payTo === siteId, `payTo ${p.payTo}`);
+        expect(p.payer === keyId, `payer ${p.payer}`);
+        expect(p.resource === articleUrl, `resource ${p.resource}`);
+        expect(p.signal === "signed-agent", `signal ${p.signal}`);
+        expect(p.offerDigest, "no offerDigest for a declared offer");
+        // The SDK hands the agent the same statement, and its own verifier agrees.
+        const viaSdk = await agent.verifyReceipt(paymentStatement, { receiptId, kind: "payment" });
+        expect(viaSdk.ok, viaSdk.ok ? "" : `SDK: ${viaSdk.message}`);
+        // BotFare keeps it: the public statements endpoint returns the identical JWS.
+        const stored = await fetchStatements(receiptId);
+        expect(stored?.payment === paymentStatement, "the statements endpoint differs");
+        return `kid ${verified.kid.slice(0, 12)}…, ${p.amount}¢ to ${p.payTo.slice(0, 12)}…, 28,500 + 1,500 micros, signal ${p.signal}`;
+      },
+    );
+
+    await check("A tampered payment statement does not verify", async () => {
+      expect(paymentStatement, "no payment statement");
+      const cheaper = tamper(paymentStatement, (claims) => {
+        (claims.payment as { amountMicros: number }).amountMicros = 1;
+      });
+      const otherReceipt = tamper(paymentStatement, (claims) => {
+        claims.sub = "rcpt_tampered";
+      });
+      const [signature] = paymentStatement.split(".").slice(2);
+      const flipped = `${paymentStatement.slice(0, -(signature as string).length)}${
+        (signature as string)[0] === "A" ? "B" : "A"
+      }${(signature as string).slice(1)}`;
+      const results = await Promise.all(
+        [cheaper, otherReceipt, flipped].map((token) => verifyStatement(token, jwks)),
+      );
+      const errors = results.map((result) => (result.ok ? "ok" : result.error));
+      expect(
+        errors.every((error) => error === "bad_signature"),
+        `results ${errors.join(", ")}`,
+      );
+      const forged = decodeStatement(cheaper);
+      expect(forged?.kind === "payment", "the tampered claims no longer decode");
+      const wrongIssuer = await verifyStatement(paymentStatement, jwks, {
+        issuer: "https://not-botfare.example",
+      });
+      expect(!wrongIssuer.ok && wrongIssuer.error === "wrong_issuer", "issuer not enforced");
+      return `amount, receipt and signature edits: ${errors.join(", ")}; other issuer: wrong_issuer`;
+    });
+
+    await check(
+      "After attestation a delivery statement's digest equals the bytes the agent received",
+      async () => {
+        expect(articleBytes && paymentStatement, "no paid article");
+        const digest = await contentDigestSha256(articleBytes);
+        expect(articleReadDigest === digest, `SDK readDigest ${articleReadDigest}`);
+        const delivery = await waitForStatement(receiptId, "delivery");
+        const verified = await verifyStatement(delivery, jwks, {
+          issuer: WEB_URL,
+          kind: "delivery",
+        });
+        expect(verified.ok, verified.ok ? "" : `${verified.error}: ${verified.message}`);
+        expect(verified.statement.kind === "delivery", "not a delivery statement");
+        const d = verified.statement.delivery;
+        expect(verified.statement.sub === receiptId, `sub ${verified.statement.sub}`);
+        expect(d.contentDigest === digest, `attested ${d.contentDigest}, received ${digest}`);
+        expect(d.contentLength === articleBytes.length, `length ${d.contentLength}`);
+        // What the research agent's "Verify sources" panel shows: three checks for the source.
+        const source = await checkAnswerSource(
+          {
+            url: articleUrl,
+            receiptId,
+            claim: "e2e",
+            payment: paymentStatement,
+            delivery,
+            readDigest: articleReadDigest,
+          },
+          jwks,
+          { issuer: WEB_URL },
+        );
+        const checks = [source.paid, source.delivered, source.bytesMatch];
+        expect(
+          checks.every((c) => c.ok),
+          checks.map((c) => c.message).join("; "),
+        );
+        return `${d.contentLength} bytes, ${d.contentDigest.slice(0, 22)}…; Paid ✓ Delivered ✓ Bytes match ✓`;
+      },
+    );
 
     await check("Replayed PAYMENT-SIGNATURE is refused (nonce_used)", async () => {
       expect(signatureHeader, "no PAYMENT-SIGNATURE was captured");
@@ -581,7 +769,19 @@ async function main(): Promise<void> {
         { wallet: 0, earnings: 0, fees: 0, receipts: 0 },
         "repeat refund",
       );
-      return `wallet +30,000 micros, repeat call alreadyRefunded`;
+      const refundStatement = await waitForStatement(receiptId, "refund");
+      const verified = await verifyStatement(refundStatement, jwks, {
+        issuer: WEB_URL,
+        kind: "refund",
+      });
+      expect(verified.ok, verified.ok ? "" : `refund statement: ${verified.message}`);
+      expect(verified.statement.kind === "refund", "not a refund statement");
+      const r = verified.statement.refund;
+      expect(
+        r.refundedMicros === 30_000 && r.via === "publisher",
+        `refund ${r.via} ${r.refundedMicros}`,
+      );
+      return `wallet +30,000 micros, repeat call alreadyRefunded; signed refund statement (via ${r.via})`;
     });
 
     // 4. Agent detection: who pays, and why (Crema Notes: standard level, Turnstile test key).
@@ -817,6 +1017,23 @@ async function main(): Promise<void> {
       auth,
       snapshot,
       citable: [signedReceiptId, automationReceiptId],
+      jwks,
+    });
+
+    await check("/verify renders for a receipt; unknown receipts are 404 on the API", async () => {
+      const page = await fetch(`${WEB_URL}/verify?receipt=${encodeURIComponent(receiptId)}`);
+      const html = await page.text();
+      expect(page.status === 200, `/verify answered ${page.status}`);
+      expect(/verif/i.test(html), "the page does not mention verification");
+      const unknown = await fetch(`${WEB_URL}${receiptStatementsPath("rcpt_doesnotexist000")}`);
+      await unknown.body?.cancel();
+      expect(unknown.status === 404, `unknown receipt answered ${unknown.status}`);
+      expect(
+        decodeStatement(paymentStatement)?.sub === receiptId &&
+          paymentStatement.split(".").length === 3,
+        "payment statement is not a compact JWS",
+      );
+      return `200, ${html.length} bytes; unknown receipt 404; typ ${RECEIPT_JWT_TYPE}`;
     });
 
     await check("Ledger sums to zero and cached balances match entries", async () => {
@@ -847,6 +1064,8 @@ interface FareContext {
   snapshot: () => Promise<Balances>;
   /** Settled receipts of this run that an answer may cite. */
   citable: string[];
+  /** BotFare's public receipt keys, as fetched from the web app. */
+  jwks: JSONWebKeySet;
 }
 
 /** Signs in as a demo persona (POST /api/session/persona) and returns the session cookie. */
@@ -1046,7 +1265,21 @@ async function fareChecks(ctx: FareContext): Promise<void> {
           { wallet: 0, earnings: 0, fees: 0, receipts: 0 },
           "repeat",
         );
-        return `refunded 3¢ ${how}; second accept 409, re-dispute refused`;
+        // Fare Court's refund is signed too, naming the dispute that decided it.
+        const refundStatement = await waitForStatement(stubReceiptId, "refund");
+        const verified = await verifyStatement(refundStatement, ctx.jwks, {
+          issuer: WEB_URL,
+          kind: "refund",
+        });
+        expect(verified.ok, verified.ok ? "" : `refund statement: ${verified.message}`);
+        expect(verified.statement.kind === "refund", "not a refund statement");
+        const r = verified.statement.refund;
+        expect(
+          r.via === "dispute" && r.disputeId === disputeId,
+          `refund via ${r.via} ${r.disputeId}`,
+        );
+        expect(r.refundedMicros === 30_000, `refunded ${r.refundedMicros} micros`);
+        return `refunded 3¢ ${how}; second accept 409, re-dispute refused; signed refund statement via dispute ${disputeId}`;
       }
       return `the AI judge decided ${disputeStatus}; nothing for the publisher to accept`;
     },
