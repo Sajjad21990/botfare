@@ -40,7 +40,7 @@ afterAll(async () => {
 });
 
 describe("BotFare MCP server", () => {
-  it("lists six tools and tells Claude to check the offer first", async () => {
+  it("lists seven tools and tells Claude to check the offer first", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "decline_offer",
@@ -48,6 +48,7 @@ describe("BotFare MCP server", () => {
       "fetch_paid",
       "get_offer",
       "recent_receipts",
+      "verify_receipt",
       "wallet_balance",
     ]);
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));

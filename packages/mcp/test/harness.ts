@@ -6,6 +6,13 @@
  */
 import type { AddressInfo } from "node:net";
 import { encodeAgentKey } from "@botfare/contracts";
+import { contentDigestSha256 } from "@botfare/contracts/fare";
+import {
+  publicJwk as publicPart,
+  RECEIPT_JWT_TYPE,
+  RECEIPT_KEYS_PATH,
+  type ReceiptStatements,
+} from "@botfare/contracts/receipts";
 import {
   type Ed25519PublicJwk,
   jwkThumbprint,
@@ -23,6 +30,7 @@ import { x402Facilitator } from "@x402/core/facilitator";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import { paymentMiddleware } from "@x402/express";
 import express from "express";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
 export const SITE_ID = "site_mcptest";
 export const KEY_ID = "ak_mcptest";
@@ -59,7 +67,14 @@ function listen(app: express.Express): Promise<{ url: string; close: () => Promi
   });
 }
 
-export async function startStack() {
+export const RECEIPT_KID = "rk_mcptest";
+
+export interface StackOptions {
+  /** BotFare signs a payment statement at settle and serves its receipt keys and statements. */
+  signReceipts?: boolean;
+}
+
+export async function startStack(options: StackOptions = {}) {
   const ledger = new InMemoryLedger();
   const { publicJwk, privateJwk } = await generateAgentKeyPair();
   ledger.addKey({
@@ -82,6 +97,22 @@ export async function startStack() {
     PAYPAL_SANDBOX,
     new PrepaidPayPalFacilitator({ ledger }),
   );
+  // Receipt signing (a stand-in for BotFare's): the key is made here; only its public half is served.
+  const receiptKey = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
+  const receiptJwk = publicPart({
+    ...(await exportJWK(receiptKey.privateKey)),
+    kid: RECEIPT_KID,
+    alg: "EdDSA",
+    use: "sig",
+  });
+  const statements = new Map<string, ReceiptStatements>();
+  let botfareOrigin = "";
+  const signStatement = (claims: Record<string, unknown>) =>
+    new SignJWT({ v: 1, iss: botfareOrigin, ...claims })
+      .setProtectedHeader({ alg: "EdDSA", typ: RECEIPT_JWT_TYPE, kid: RECEIPT_KID })
+      .setIssuedAt()
+      .sign(receiptKey.privateKey);
+
   const facilitatorApp = express().use(express.json());
   facilitatorApp.get("/supported", (_req, res) => {
     res.json(facilitator.getSupported());
@@ -90,7 +121,41 @@ export async function startStack() {
     res.json(await facilitator.verify(req.body.paymentPayload, req.body.paymentRequirements));
   });
   facilitatorApp.post("/settle", async (req, res) => {
-    res.json(await facilitator.settle(req.body.paymentPayload, req.body.paymentRequirements));
+    const settle = await facilitator.settle(req.body.paymentPayload, req.body.paymentRequirements);
+    if (!options.signReceipts || !settle.success) {
+      res.json(settle);
+      return;
+    }
+    const requirements = req.body.paymentRequirements;
+    const micros = Number(requirements.amount) * 10_000;
+    const payment = await signStatement({
+      sub: settle.transaction,
+      kind: "payment",
+      payment: {
+        scheme: requirements.scheme,
+        network: requirements.network,
+        asset: requirements.asset,
+        amount: requirements.amount,
+        amountMicros: micros,
+        publisherMicros: Math.round(micros * 0.95),
+        feeMicros: micros - Math.round(micros * 0.95),
+        payTo: requirements.payTo,
+        siteOrigin: null,
+        resource: req.body.paymentPayload?.resource?.url ?? null,
+        payer: KEY_ID,
+        payerThumbprint: null,
+        signal: null,
+        offerDigest: null,
+        settledAt: new Date().toISOString(),
+      },
+    });
+    statements.set(settle.transaction, {
+      receiptId: settle.transaction,
+      payment,
+      delivery: null,
+      refund: null,
+    });
+    res.json({ ...settle, extra: { ...settle.extra, botfareReceipt: payment } });
   });
   const facilitatorServer = await listen(facilitatorApp);
 
@@ -154,6 +219,15 @@ export async function startStack() {
   // BotFare agent API stand-in.
   let apiRequests = 0;
   const botfare = express();
+  // Public, unsigned: the receipt keys and a receipt's statements.
+  botfare.get(RECEIPT_KEYS_PATH, (_req, res) => {
+    res.json({ keys: [receiptJwk] });
+  });
+  botfare.get("/api/receipts/:id/statements", (req, res) => {
+    const found = statements.get(req.params.id ?? "");
+    if (found) res.json(found);
+    else res.status(404).json({ error: "not_found", message: "No such receipt" });
+  });
   botfare.use(async (req, res, next) => {
     apiRequests += 1;
     const host = req.headers.host ?? "";
@@ -227,6 +301,7 @@ export async function startStack() {
     });
   });
   const botfareServer = await listen(botfare);
+  botfareOrigin = botfareServer.url;
 
   return {
     ledger,
@@ -239,6 +314,25 @@ export async function startStack() {
     declines,
     articleHtml: ARTICLE_HTML,
     walletMicros: () => ledger.balanceMicros(`wallet:${WALLET_ID}`),
+    statements,
+    /** BotFare signs a delivery statement for `body` (what the publisher's attestation leads to). */
+    async attest(receiptId: string, body: string, contentType = "text/html; charset=utf-8") {
+      const held = statements.get(receiptId);
+      if (!held) throw new Error(`no statements for ${receiptId}`);
+      held.delivery = await signStatement({
+        sub: receiptId,
+        kind: "delivery",
+        delivery: {
+          contentDigest: await contentDigestSha256(body),
+          contentLength: new TextEncoder().encode(body).length,
+          contentType,
+          status: 200,
+          attestedAt: new Date().toISOString(),
+        },
+      });
+    },
+    /** A statement signed with the stack's receipt key (for tests of bad claims). */
+    signStatement,
     async stop() {
       await siteServer.close();
       await facilitatorServer.close();

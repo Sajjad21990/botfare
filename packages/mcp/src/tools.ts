@@ -6,12 +6,19 @@ import {
   MAX_DISPUTE_CONTENT_BYTES,
 } from "@botfare/contracts/fare";
 import {
+  type BotFareStatement,
+  decodeStatement,
+  RECEIPT_KEYS_PATH,
+  type ReceiptStatements,
+} from "@botfare/contracts/receipts";
+import {
   BotFareOfferError,
   BotFareApiError as BotFareSdkApiError,
   BotFareSpendLimitError,
   createBotFareAgent,
   DEFAULT_MAX_PER_REQUEST_USD,
   type Offer,
+  type ReceiptVerification,
 } from "@botfare/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -27,7 +34,7 @@ import { formatUsd, htmlTitle, htmlToText, truncate, usdToCents } from "./text";
 /**
  * BotFare's MCP tools: get_offer (free price + preview), fetch_paid (pay within limits and read),
  * decline_offer (a free note on why an offer was skipped), dispute_purchase (Fare Court),
- * wallet_balance and recent_receipts. The agent key never leaves this process: requests are
+ * verify_receipt (check BotFare's signed statements offline), wallet_balance and recent_receipts. The agent key never leaves this process: requests are
  * signed here (Web Bot Auth for every request, an Ed25519 JWS for each payment).
  */
 
@@ -51,7 +58,8 @@ export interface BotFareMcpOptions {
 
 export const SERVER_INSTRUCTIONS = `BotFare lets you read pages and APIs that charge AI agents a small fee per request (x402 over PayPal), paid from the user's prepaid BotFare balance.
 Workflow: call get_offer first to see the price and a free preview; decide whether the content is worth it for the user's task; then either call fetch_paid with max_price_usd set to the offered price, or call decline_offer with a short, honest reason (free; it tells the publisher why, so prices and previews get better). Never pay for something the preview shows is irrelevant. Payments are settled only after a successful response, and every payment returns a receipt ID you can cite.
-Buyer protection (Fare Court): if paid content clearly does not match its offer (a "subscribe to keep reading" stub, a paywall or login wall, an error page, or something unrelated to the declared title and preview), call dispute_purchase with the receipt ID within 24 hours; an AI judge compares the offer with what was delivered and confident cases are refunded in seconds. Do not dispute content that matches the offer but is merely shorter or less useful than hoped. Use wallet_balance to check the budget and recent_receipts to review spending.`;
+Buyer protection (Fare Court): if paid content clearly does not match its offer (a "subscribe to keep reading" stub, a paywall or login wall, an error page, or something unrelated to the declared title and preview), call dispute_purchase with the receipt ID within 24 hours; an AI judge compares the offer with what was delivered and confident cases are refunded in seconds. Do not dispute content that matches the offer but is merely shorter or less useful than hoped. Use wallet_balance to check the budget and recent_receipts to review spending.
+Signed receipts: every payment comes with a payment statement signed by BotFare (Ed25519 JWS), and fetch_paid checks it for you. Call verify_receipt with a receipt ID to check BotFare's signed payment, delivery (the publisher's digest of the bytes it sent) and refund statements, for example before citing a paid source.`;
 
 /** A paid read kept in memory so dispute_purchase can submit the exact bytes delivered. */
 interface Purchase {
@@ -60,6 +68,10 @@ interface Purchase {
   priceUsd: string;
   /** Null when the body was larger than a dispute may carry. */
   bytes: Uint8Array | null;
+  /** BotFare's signed payment statement from the PAYMENT-RESPONSE, if it sent one. */
+  statement?: string | null;
+  /** sha-256 Content-Digest of the bytes this server read. */
+  readDigest?: string | null;
   at: number;
   disputed?: DisputeOutcome;
 }
@@ -140,6 +152,34 @@ function describeOutcome(outcome: DisputeOutcome): string {
 
 const MAX_BODY_BYTES = 2_000_000;
 
+function microsToUsd(micros: number): string {
+  return formatUsd(micros / 1_000_000);
+}
+
+/** One line on what a verified statement says. */
+function summarizeStatement(statement: BotFareStatement): string {
+  switch (statement.kind) {
+    case "payment": {
+      const p = statement.payment;
+      return `${microsToUsd(p.amountMicros)} paid to ${p.payTo}${p.resource ? ` for ${p.resource}` : ""} by ${p.payer} at ${p.settledAt} (publisher ${microsToUsd(p.publisherMicros)}, BotFare fee ${microsToUsd(p.feeMicros)})`;
+    }
+    case "delivery": {
+      const d = statement.delivery;
+      return `HTTP ${d.status}, ${d.contentLength} bytes of ${d.contentType || "unknown type"}, ${d.contentDigest}, attested at ${d.attestedAt}`;
+    }
+    case "refund": {
+      const r = statement.refund;
+      return `${microsToUsd(r.refundedMicros)} refunded via ${r.via}${r.disputeId ? ` (dispute ${r.disputeId})` : ""} at ${r.refundedAt}`;
+    }
+  }
+}
+
+/** "verified (BotFare key …): …" or "NOT verified (error): message". One line. */
+function verificationLine(result: ReceiptVerification): string {
+  return result.ok
+    ? `verified, signed by BotFare key ${result.kid}: ${summarizeStatement(result.statement)}`
+    : `NOT verified (${result.error}): ${result.message}`;
+}
 function text(body: string, isError = false): CallToolResult {
   return { content: [{ type: "text", text: body }], ...(isError ? { isError: true } : {}) };
 }
@@ -286,6 +326,22 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
         note: `Could not read this key's limits from BotFare (${describeError(err)}); BotFare still enforces them when it settles.`,
       };
     }
+  }
+
+  /** The signed payment statement of a paid fetch and a one-line check of it. */
+  async function signedReceiptLines(
+    receiptId: string,
+    statement: string | null,
+  ): Promise<string[]> {
+    if (!statement) {
+      return ["Signed receipt: none (BotFare sent no payment statement with this payment)."];
+    }
+    const verified = await probe.verifyReceipt(statement, { kind: "payment", receiptId });
+    log(`fetch_paid ${receiptId}: signed receipt ${verified.ok ? "verified" : verified.error}`);
+    return [
+      `Signed receipt (BotFare payment statement, Ed25519 JWS): ${statement}`,
+      `Signature check: ${verificationLine(verified)}`,
+    ];
   }
 
   const server = new McpServer(
@@ -436,6 +492,7 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
         }
         const content = await readContent(response, maxChars);
         const paidUsd = result.offer?.priceUsd ?? offer.priceUsd;
+        let receiptLines: string[] = [];
         if (result.paid && result.receiptId) {
           const bytes = result.body;
           purchases.add({
@@ -443,10 +500,17 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
             url,
             priceUsd: paidUsd,
             bytes: bytes && bytes.length <= MAX_DISPUTE_CONTENT_BYTES ? bytes : null,
+            statement: result.receiptStatement,
+            readDigest: result.readDigest,
           });
+          receiptLines = await signedReceiptLines(result.receiptId, result.receiptStatement);
         }
         const header = result.paid
-          ? `Paid ${paidUsd} to site ${result.offer?.payTo ?? offer.payTo} for ${url}. Receipt: ${receipt?.transaction}\nIf this clearly is not what the offer promised (a stub, paywall, error page or unrelated content), call dispute_purchase with this receipt ID.`
+          ? [
+              `Paid ${paidUsd} to site ${result.offer?.payTo ?? offer.payTo} for ${url}. Receipt: ${receipt?.transaction}`,
+              ...receiptLines,
+              "If this clearly is not what the offer promised (a stub, paywall, error page or unrelated content), call dispute_purchase with this receipt ID.",
+            ].join("\n")
           : `Read ${url} (HTTP ${response.status}); no payment was settled.`;
         log(
           `fetch_paid ${url}: ${result.paid ? `paid ${paidUsd}, ${receipt?.transaction}` : "not paid"}`,
@@ -556,6 +620,110 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
         log(`dispute_purchase ${receipt_id} failed: ${describeError(err)}`);
         return text(`Could not file the dispute: ${describeError(err)}`, true);
       }
+    },
+  );
+
+  server.registerTool(
+    "verify_receipt",
+    {
+      title: "Verify a signed receipt",
+      description: `Check BotFare's signed statements for a payment, offline, against the public keys BotFare publishes (${RECEIPT_KEYS_PATH}): the payment statement (who paid whom, how much, for which URL), the delivery statement (the publisher's digest of the exact bytes it sent) and a refund statement if one exists. Pass receipt_id (rcpt_...) to fetch and check every statement BotFare holds for it, or statement to check one signed statement (a JWS) you were given. For a purchase made in this session, also says whether the bytes this server read match the attested digest. Free; never pays.`,
+      inputSchema: {
+        receipt_id: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Receipt ID (rcpt_...) from fetch_paid or recent_receipts"),
+        statement: z
+          .string()
+          .max(10_000)
+          .optional()
+          .describe("A signed BotFare statement (compact JWS) to check"),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ receipt_id, statement }) => {
+      const given = statement?.trim();
+      if (!receipt_id?.trim() && !given) {
+        return text("Pass receipt_id (rcpt_...) or statement (a signed JWS).", true);
+      }
+      const lines: string[] = [];
+      const claims: BotFareStatement[] = [];
+      let receiptId = receipt_id?.trim() || null;
+      let failed = false;
+
+      if (given) {
+        const result = await probe.verifyReceipt(given, receiptId ? { receiptId } : {});
+        const decoded = result.ok ? result.statement : decodeStatement(given);
+        lines.push(
+          `Given ${decoded?.kind ?? "statement"} statement${decoded ? ` for ${decoded.sub}` : ""}: ${verificationLine(result)}`,
+        );
+        if (result.ok) claims.push(result.statement);
+        else {
+          failed = true;
+          if (decoded) {
+            lines.push(
+              `Claims as written (UNVERIFIED, do not rely on them): ${JSON.stringify(decoded)}`,
+            );
+          }
+        }
+        receiptId ??= decoded?.sub ?? null;
+      }
+
+      if (receiptId) {
+        let held: ReceiptStatements | null = null;
+        try {
+          held = await probe.fetchStatements(receiptId);
+          if (!held) {
+            lines.push(`BotFare has no statements for ${receiptId} (unknown receipt).`);
+            if (!given) failed = true;
+          }
+        } catch (err) {
+          lines.push(`Could not read BotFare's statements for ${receiptId}: ${describeError(err)}`);
+          if (!given) failed = true;
+        }
+        if (held) {
+          lines.push(`Statements BotFare holds for ${receiptId}:`);
+          let attested: string | null = null;
+          for (const kind of ["payment", "delivery", "refund"] as const) {
+            const token = held[kind];
+            if (!token) {
+              lines.push(
+                `- ${kind}: none${kind === "delivery" ? " yet (the publisher attests just after delivery)" : ""}`,
+              );
+              continue;
+            }
+            const result = await probe.verifyReceipt(token, { kind, receiptId });
+            lines.push(`- ${kind}: ${verificationLine(result)}`);
+            if (!result.ok) {
+              failed = true;
+              continue;
+            }
+            if (!claims.some((c) => c.kind === kind && c.iat === result.statement.iat)) {
+              claims.push(result.statement);
+            }
+            if (result.statement.kind === "delivery") {
+              attested = result.statement.delivery.contentDigest;
+            }
+          }
+          const purchase = purchases.get(receiptId);
+          if (purchase?.readDigest && attested) {
+            lines.push(
+              purchase.readDigest === attested
+                ? "The bytes this server read match the attested digest."
+                : `The bytes this server read (${purchase.readDigest}) differ from the attested digest.`,
+            );
+          } else if (purchase?.readDigest) {
+            lines.push(`Digest of the bytes this server read: ${purchase.readDigest}`);
+          }
+        }
+      }
+
+      if (claims.length > 0) {
+        lines.push("Verified claims:", ...claims.map((c) => JSON.stringify(c)));
+      }
+      log(`verify_receipt ${receiptId ?? "(statement)"}: ${failed ? "not verified" : "verified"}`);
+      return text(lines.join("\n"), failed);
     },
   );
 
