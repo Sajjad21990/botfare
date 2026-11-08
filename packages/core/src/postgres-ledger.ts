@@ -4,6 +4,7 @@ import {
   declaredOfferSchema,
   REQUIREMENT_EXTRA_KEYS,
 } from "@botfare/contracts/fare";
+import { SETTLE_EXTRA_RECEIPT_KEY } from "@botfare/contracts/receipts";
 import {
   type AgentKeyRecord,
   type ChargeRequest,
@@ -18,6 +19,7 @@ import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { Accounts, PG_CHECK_VIOLATION, PG_UNIQUE_VIOLATION, pgError } from "./accounts";
 import type { Db, DbOrTx } from "./db";
 import { postTransaction } from "./ledger";
+import type { ReceiptKeyring } from "./receipt-keys";
 import {
   type AgentKey,
   agentKeys,
@@ -27,6 +29,7 @@ import {
   type Site,
   sites,
 } from "./schema";
+import { issueAfterCommit, issueReceiptStatementQuietly } from "./services/receipt-statements";
 
 /** A refusal from the ledger port (not exported by the plug-in by name). */
 type LedgerRefusal = Exclude<LedgerDecision, { ok: true }>;
@@ -75,10 +78,13 @@ export function declaredOfferFromExtra(extra: unknown): DeclaredOffer | null {
 export class PostgresPrepaidLedger implements PrepaidLedgerPort {
   private readonly db: Db;
   private readonly now: () => Date;
+  private readonly keyring: ReceiptKeyring | undefined;
 
-  constructor(db: Db, options: { now?: () => Date } = {}) {
+  /** `keyring` signs payment statements (the process keyring from the environment by default). */
+  constructor(db: Db, options: { now?: () => Date; keyring?: ReceiptKeyring } = {}) {
     this.db = db;
     this.now = options.now ?? (() => new Date());
+    this.keyring = options.keyring;
   }
 
   async getAgentKey(keyId: string): Promise<AgentKeyRecord | null> {
@@ -94,7 +100,22 @@ export class PostgresPrepaidLedger implements PrepaidLedgerPort {
     return evaluation.ok ? { ok: true } : evaluation;
   }
 
+  /**
+   * Charges, then (after the commit) signs the payment statement and returns it as
+   * `extra.botfareReceipt`. Signing never fails a charge: without a statement the result has no
+   * `extra`, and the statements endpoint issues it later.
+   */
   async charge(request: ChargeRequestWithExtra): Promise<ChargeResult> {
+    const result = await this.chargeOnce(request);
+    if (!result.ok) return result;
+    const statement = await issueReceiptStatementQuietly(this.db, result.transaction, "payment", {
+      keyring: this.keyring,
+      network: request.network,
+    });
+    return statement ? { ...result, extra: { [SETTLE_EXTRA_RECEIPT_KEY]: statement } } : result;
+  }
+
+  private async chargeOnce(request: ChargeRequestWithExtra): Promise<ChargeResult> {
     const amountMicros = centsToMicros(request.amountCents);
     const feeMicros = platformFeeMicros(amountMicros);
     try {
@@ -253,6 +274,16 @@ export type RefundResult =
  * transaction it runs as a savepoint, so a failed refund leaves the caller's transaction usable.
  */
 export async function refundReceipt(
+  db: DbOrTx,
+  input: { receiptId: string; siteId: string; memo?: string },
+): Promise<RefundResult> {
+  const result = await refundReceiptOnce(db, input);
+  // Signed refund statement (skipped inside a transaction: the caller issues it after commit).
+  if (result.ok) await issueAfterCommit(db, result.receipt.id, "refund");
+  return result;
+}
+
+async function refundReceiptOnce(
   db: DbOrTx,
   input: { receiptId: string; siteId: string; memo?: string },
 ): Promise<RefundResult> {

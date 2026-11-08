@@ -102,6 +102,7 @@ export class PrepaidPayPalFacilitator implements SchemeNetworkFacilitator {
         transaction: result.transaction,
         network: requirements.network,
         amount: requirements.amount,
+        ...(result.extra ? { extra: result.extra } : {}),
       };
     } catch (err) {
       return failed(ErrorReason.UnexpectedSettleError, (err as Error).message, request.keyId);

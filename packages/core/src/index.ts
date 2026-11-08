@@ -26,6 +26,18 @@ export {
   type RefundResult,
   refundReceipt,
 } from "./postgres-ledger";
+export {
+  DEV_RECEIPT_KEY_SEED,
+  deriveReceiptKey,
+  getReceiptKeyring,
+  MIN_RECEIPT_SEED_LENGTH,
+  RECEIPT_KEY_HKDF_INFO,
+  type ReceiptKeyring,
+  type ReceiptSigningKey,
+  receiptJwks,
+  receiptKeyringFromEnv,
+  setReceiptKeyring,
+} from "./receipt-keys";
 export type {
   AgentKey,
   Citation,
@@ -44,6 +56,8 @@ export type {
   PayPalOrder,
   PayPalOrderStatus,
   Receipt,
+  ReceiptStatementKind,
+  ReceiptStatementRow,
   Site,
   TopUp,
   User,
@@ -150,6 +164,14 @@ export {
   syncPayoutBatch,
   syncPendingPayouts,
 } from "./services/payouts";
+export {
+  canonicalJson,
+  declaredOfferDigest,
+  getReceiptStatements,
+  type IssueStatementOptions,
+  issueReceiptStatement,
+  issueReceiptStatementQuietly,
+} from "./services/receipt-statements";
 export { getReceipt, type ListReceiptsInput, listReceipts } from "./services/receipts";
 export {
   authenticateSite,

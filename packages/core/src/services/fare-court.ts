@@ -32,6 +32,7 @@ import {
   receipts,
   sites,
 } from "../schema";
+import { issueAfterCommit } from "./receipt-statements";
 
 /** Characters of delivered text stored on the dispute for the publisher's review. */
 export const DISPUTE_EXCERPT_CHARS = 4_000;
@@ -77,7 +78,11 @@ export async function attestReceipt(
     })
     .where(and(ownReceipt, isNull(receipts.contentDigest)))
     .returning();
-  if (updated) return { ok: true, receipt: updated, alreadyAttested: false };
+  if (updated) {
+    // Signed delivery statement, once (skipped inside a transaction; issued lazily on read then).
+    await issueAfterCommit(db, updated.id, "delivery");
+    return { ok: true, receipt: updated, alreadyAttested: false };
+  }
 
   const [existing] = await db.select().from(receipts).where(ownReceipt);
   if (!existing)
@@ -588,80 +593,94 @@ export async function applyVerdict(
   },
 ): Promise<DisputeDecisionResult> {
   const now = input.now ?? new Date();
-  return db.transaction(async (tx): Promise<DisputeDecisionResult> => {
-    const [dispute] = await tx
-      .select()
-      .from(disputes)
-      .where(eq(disputes.id, input.disputeId))
-      .for("update");
-    if (!dispute) return { ok: false, reason: "not_found", message: "No such dispute" };
-    if (dispute.status !== "open") {
-      return { ok: true, dispute, outcome: toDisputeOutcome(dispute), changed: false };
-    }
+  return withRefundStatement(db, async () =>
+    db.transaction(async (tx): Promise<DisputeDecisionResult> => {
+      const [dispute] = await tx
+        .select()
+        .from(disputes)
+        .where(eq(disputes.id, input.disputeId))
+        .for("update");
+      if (!dispute) return { ok: false, reason: "not_found", message: "No such dispute" };
+      if (dispute.status !== "open") {
+        return { ok: true, dispute, outcome: toDisputeOutcome(dispute), changed: false };
+      }
 
-    const parsed = input.verdict == null ? null : disputeVerdictSchema.safeParse(input.verdict);
-    const verdict = parsed?.success ? parsed.data : null;
-    const toPublisher = (message: string) =>
-      save(tx, dispute.id, { status: "pending_publisher", verdict, message });
+      const parsed = input.verdict == null ? null : disputeVerdictSchema.safeParse(input.verdict);
+      const verdict = parsed?.success ? parsed.data : null;
+      const toPublisher = (message: string) =>
+        save(tx, dispute.id, { status: "pending_publisher", verdict, message });
 
-    if (!verdict) {
-      return toPublisher(
-        parsed
-          ? "The AI verdict was not valid, so the publisher decides"
-          : "No AI verdict was available, so the publisher decides",
-      );
-    }
-    const confidence = `${Math.round(verdict.confidence * 100)}%`;
-
-    if (
-      verdict.decision === "refund" &&
-      verdict.confidence >= DISPUTE_POLICY.autoRefundConfidence
-    ) {
-      if (!dispute.autoAllowed || input.autoAllowed === false) {
+      if (!verdict) {
         return toPublisher(
-          `The AI found the purchase ${label(verdict.category)} (${confidence} sure), but this agent key disputes often, so the publisher decides`,
+          parsed
+            ? "The AI verdict was not valid, so the publisher decides"
+            : "No AI verdict was available, so the publisher decides",
         );
       }
-      const refund = await refundReceipt(tx, {
-        receiptId: dispute.receiptId,
-        siteId: dispute.siteId,
-        memo: `Fare Court refund (dispute ${dispute.id})`,
-      });
-      if (!refund.ok) {
-        if (refund.reason === "insufficient_earnings") {
+      const confidence = `${Math.round(verdict.confidence * 100)}%`;
+
+      if (
+        verdict.decision === "refund" &&
+        verdict.confidence >= DISPUTE_POLICY.autoRefundConfidence
+      ) {
+        if (!dispute.autoAllowed || input.autoAllowed === false) {
           return toPublisher(
-            `The AI found the purchase ${label(verdict.category)} (${confidence} sure), but the publisher's earnings were already paid out, so the publisher decides`,
+            `The AI found the purchase ${label(verdict.category)} (${confidence} sure), but this agent key disputes often, so the publisher decides`,
           );
         }
-        throw new Error(`Receipt ${dispute.receiptId} of dispute ${dispute.id} is missing`);
+        const refund = await refundReceipt(tx, {
+          receiptId: dispute.receiptId,
+          siteId: dispute.siteId,
+          memo: `Fare Court refund (dispute ${dispute.id})`,
+        });
+        if (!refund.ok) {
+          if (refund.reason === "insufficient_earnings") {
+            return toPublisher(
+              `The AI found the purchase ${label(verdict.category)} (${confidence} sure), but the publisher's earnings were already paid out, so the publisher decides`,
+            );
+          }
+          throw new Error(`Receipt ${dispute.receiptId} of dispute ${dispute.id} is missing`);
+        }
+        return save(tx, dispute.id, {
+          status: "refunded",
+          verdict,
+          message: refund.alreadyRefunded
+            ? "The receipt had already been refunded"
+            : `Refunded automatically: ${label(verdict.category)} (${confidence} sure)`,
+          refundedCents: refund.receipt.amountCents,
+          refundTransactionId: refund.refundTransactionId,
+          decidedAt: now,
+          decidedBy: "ai",
+        });
       }
-      return save(tx, dispute.id, {
-        status: "refunded",
-        verdict,
-        message: refund.alreadyRefunded
-          ? "The receipt had already been refunded"
-          : `Refunded automatically: ${label(verdict.category)} (${confidence} sure)`,
-        refundedCents: refund.receipt.amountCents,
-        refundTransactionId: refund.refundTransactionId,
-        decidedAt: now,
-        decidedBy: "ai",
-      });
-    }
 
-    if (verdict.decision === "deny" && verdict.confidence >= DISPUTE_POLICY.autoDenyConfidence) {
-      return save(tx, dispute.id, {
-        status: "denied",
-        verdict,
-        message: `The AI found the content matched the offer (${confidence} sure)`,
-        decidedAt: now,
-        decidedBy: "ai",
-      });
-    }
+      if (verdict.decision === "deny" && verdict.confidence >= DISPUTE_POLICY.autoDenyConfidence) {
+        return save(tx, dispute.id, {
+          status: "denied",
+          verdict,
+          message: `The AI found the content matched the offer (${confidence} sure)`,
+          decidedAt: now,
+          decidedBy: "ai",
+        });
+      }
 
-    return toPublisher(
-      `The AI was not sure (${verdict.decision}, ${confidence}), so the publisher decides`,
-    );
-  });
+      return toPublisher(
+        `The AI was not sure (${verdict.decision}, ${confidence}), so the publisher decides`,
+      );
+    }),
+  );
+}
+
+/** Runs a dispute decision, then signs the refund statement if it refunded the receipt. */
+async function withRefundStatement(
+  db: Db,
+  decide: () => Promise<DisputeDecisionResult>,
+): Promise<DisputeDecisionResult> {
+  const result = await decide();
+  if (result.ok && result.changed && result.dispute.status === "refunded") {
+    await issueAfterCommit(db, result.dispute.receiptId, "refund");
+  }
+  return result;
 }
 
 /**
@@ -675,65 +694,70 @@ export async function publisherDecide(
   input: { disputeId: string; publisherUserId: string; accept: boolean; now?: Date },
 ): Promise<DisputeDecisionResult> {
   const now = input.now ?? new Date();
-  return db.transaction(async (tx): Promise<DisputeDecisionResult> => {
-    const [dispute] = await tx
-      .select()
-      .from(disputes)
-      .where(
-        and(eq(disputes.id, input.disputeId), eq(disputes.publisherUserId, input.publisherUserId)),
-      )
-      .for("update");
-    if (!dispute) return { ok: false, reason: "not_found", message: "No such dispute" };
-    if (!OPEN_STATUSES.includes(dispute.status)) {
-      return {
-        ok: false,
-        reason: "already_decided",
-        message: `This dispute was already decided (${dispute.status})`,
-        dispute,
-        outcome: toDisputeOutcome(dispute),
-      };
-    }
+  return withRefundStatement(db, async () =>
+    db.transaction(async (tx): Promise<DisputeDecisionResult> => {
+      const [dispute] = await tx
+        .select()
+        .from(disputes)
+        .where(
+          and(
+            eq(disputes.id, input.disputeId),
+            eq(disputes.publisherUserId, input.publisherUserId),
+          ),
+        )
+        .for("update");
+      if (!dispute) return { ok: false, reason: "not_found", message: "No such dispute" };
+      if (!OPEN_STATUSES.includes(dispute.status)) {
+        return {
+          ok: false,
+          reason: "already_decided",
+          message: `This dispute was already decided (${dispute.status})`,
+          dispute,
+          outcome: toDisputeOutcome(dispute),
+        };
+      }
 
-    if (!input.accept) {
+      if (!input.accept) {
+        return save(tx, dispute.id, {
+          status: "rejected_by_publisher",
+          message: "The publisher reviewed the dispute and declined the refund",
+          decidedAt: now,
+          decidedBy: "publisher",
+        });
+      }
+
+      const refund = await refundReceipt(tx, {
+        receiptId: dispute.receiptId,
+        siteId: dispute.siteId,
+        memo: `Fare Court refund by the publisher (dispute ${dispute.id})`,
+      });
+      if (!refund.ok) {
+        if (refund.reason !== "insufficient_earnings") {
+          throw new Error(`Receipt ${dispute.receiptId} of dispute ${dispute.id} is missing`);
+        }
+        const message =
+          "Your earnings were already paid out, so this refund cannot be made yet; it can be accepted once new earnings come in";
+        const saved = await save(tx, dispute.id, { status: "pending_publisher", message });
+        return {
+          ok: false,
+          reason: "insufficient_earnings",
+          message,
+          dispute: saved.dispute,
+          outcome: saved.outcome,
+        };
+      }
       return save(tx, dispute.id, {
-        status: "rejected_by_publisher",
-        message: "The publisher reviewed the dispute and declined the refund",
+        status: "refunded",
+        message: refund.alreadyRefunded
+          ? "The receipt had already been refunded"
+          : "Refunded by the publisher",
+        refundedCents: refund.receipt.amountCents,
+        refundTransactionId: refund.refundTransactionId,
         decidedAt: now,
         decidedBy: "publisher",
       });
-    }
-
-    const refund = await refundReceipt(tx, {
-      receiptId: dispute.receiptId,
-      siteId: dispute.siteId,
-      memo: `Fare Court refund by the publisher (dispute ${dispute.id})`,
-    });
-    if (!refund.ok) {
-      if (refund.reason !== "insufficient_earnings") {
-        throw new Error(`Receipt ${dispute.receiptId} of dispute ${dispute.id} is missing`);
-      }
-      const message =
-        "Your earnings were already paid out, so this refund cannot be made yet; it can be accepted once new earnings come in";
-      const saved = await save(tx, dispute.id, { status: "pending_publisher", message });
-      return {
-        ok: false,
-        reason: "insufficient_earnings",
-        message,
-        dispute: saved.dispute,
-        outcome: saved.outcome,
-      };
-    }
-    return save(tx, dispute.id, {
-      status: "refunded",
-      message: refund.alreadyRefunded
-        ? "The receipt had already been refunded"
-        : "Refunded by the publisher",
-      refundedCents: refund.receipt.amountCents,
-      refundTransactionId: refund.refundTransactionId,
-      decidedAt: now,
-      decidedBy: "publisher",
-    });
-  });
+    }),
+  );
 }
 
 async function save(

@@ -36,7 +36,14 @@ export interface LedgerRefusal {
 
 export type LedgerDecision = { ok: true } | LedgerRefusal;
 
-export type ChargeResult = { ok: true; transaction: string } | LedgerRefusal;
+/**
+ * A successful charge. `extra` is copied into the x402 SettleResponse `extra`, which the official
+ * SDK passes through to the agent's PAYMENT-RESPONSE header (BotFare puts its signed payment
+ * statement there as `botfareReceipt`).
+ */
+export type ChargeResult =
+  | { ok: true; transaction: string; extra?: Record<string, unknown> }
+  | LedgerRefusal;
 
 /**
  * Where balances, budgets and nonces live. BotFare implements this on Postgres; tests and the
