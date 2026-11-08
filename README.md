@@ -153,9 +153,42 @@ Claude groups the decline reasons per page and recommends price, preview or audi
 - Receipts do not record the HTTP method, so purchases, declines and citations count under the first rule that matches their path.
 - The revenue projection is a simple, labelled estimate (fixed elasticities, half of preview-related declines won back). The structured-output requests have been tested with scripted models; the live API path still needs one run with a key.
 
+## Trust and cryptography
+
+Every party signs what it is responsible for, with open standards, so nobody has to take anyone's word for it, BotFare's included.
+
+| What | Signed by | Standard | How to check it |
+| --- | --- | --- | --- |
+| A payment authorization (amount, payee, single-use nonce, 60 s expiry) | The agent's key | Ed25519 JWS (RFC 7515/8037), `typ: x402-prepaid+jwt` | The facilitator verifies it before the page is served ([protocol](docs/PROTOCOL.md#verification)) |
+| Each agent request | The agent's key | RFC 9421 HTTP Message Signatures (Web Bot Auth) | `botfare()` checks it against BotFare's key directory ([protocol](docs/PROTOCOL.md#signed-agents-web-bot-auth)) |
+| The bytes delivered for a paid response | The publisher's middleware (site auth) | RFC 9530 `Content-Digest` (SHA-256) | Fare Court, and anyone holding the bytes |
+| **Receipts**: payment, delivery and refund statements | **BotFare** | Ed25519 JWS, `typ: botfare-receipt+jwt`, public keys as a JWKS (RFC 7517) | Offline, with only the public keys: `/verify`, the SDK, the MCP server, `@botfare/contracts/receipts` |
+| PayPal capture and payout events | PayPal | PayPal webhook signature | Verified with PayPal before they touch the ledger, applied once |
+
+### Signed receipts
+
+BotFare signs a statement when something happens to a receipt, stores it, and never re-signs it:
+
+- **payment**, at settlement: receipt, payer key and its RFC 7638 thumbprint, site and origin, URL, amount, the 95/5 split in micro-dollars, time, the detection signal that made the request pay, and `offerDigest` (a digest of the title and preview the publisher declared). It travels to the agent inside the x402 `PAYMENT-RESPONSE` as `extra.botfareReceipt`, so any x402 client receives it with the content.
+- **delivery**, when the publisher's middleware attests the delivered bytes: the RFC 9530 digest, length, media type and status.
+- **refund**, when the receipt is refunded: the amount and whether it was the publisher or a Fare Court dispute (with its ID).
+
+The public keys are at [`/.well-known/botfare-receipt-keys.json`](docs/PROTOCOL.md#signed-receipts) and every statement for a receipt at `GET /api/receipts/<id>/statements` (public, no personal data). The signing key is derived from `BOTFARE_RECEIPT_KEY_SEED` and never leaves the server; rotation keeps old keys in the JWKS (`BOTFARE_RECEIPT_KEY_SEED_PREVIOUS`), so old receipts keep verifying. Signing never blocks money: if it fails, the payment still settles and the statement is issued on the first lookup.
+
+How to verify one:
+
+- **In the browser:** [`/verify`](apps/web/src/app/verify/page.tsx) takes a receipt ID, a link or pasted statements, fetches the public keys and checks every signature in the page itself, then shows the claims in plain words ("Paid 3¢ to … for /articles/burr-basics", the split, "Delivered 6,278 bytes", the refund) with the raw JWS. "Check your copy" hashes a file you hold and compares it with the signed delivery digest. Wallet receipt rows and dispute rows link to it.
+- **In code:** `verifyStatement(token, jwks, { issuer, kind })` from `@botfare/contracts/receipts` (Node and browsers, `jose` + WebCrypto); the SDK's `agent.verifyReceipt(result.receiptStatement)` fetches and caches the keys; `PaidResult.readDigest` is the digest of the bytes the agent read.
+- **From Claude:** the MCP server's `fetch_paid` returns the signed receipt with a signature check, and `verify_receipt` checks every statement BotFare holds for a receipt.
+- **The research agent's answer** carries a **sources manifest**: for each citation, the signed payment and delivery statements and the digest of the bytes the agent read. Its **Verify sources** panel checks in the browser, per source, **Paid** (BotFare's signature, for this receipt and URL), **Delivered** (signed digest) and **Bytes match** (what the agent read is what the publisher attested). This answer paid for its sources, and you can verify every one.
+
+`pnpm e2e` checks it on real servers: the paid article's `PAYMENT-RESPONSE` statement verifies against the JWKS fetched from the app, edited claims or signatures fail, the delivery digest equals the digest of the bytes the agent received, the publisher refund and the Fare Court refund each get a signed refund statement, the JWKS holds no private key members, and `/verify` renders.
+
+**Honest limit.** A signed receipt proves BotFare issued it and cannot later deny it. It does not prove BotFare never deleted or edited history: a receipt that was never shown to anyone could be dropped. A tamper-evident ledger (signed Merkle checkpoints of all receipts, so a missing or changed one is detectable) is the stretch goal.
+
 ## MCP server
 
-[`packages/mcp`](packages/mcp/README.md) lets Claude Desktop and Claude Code pay BotFare sites from a local process: `get_offer`, `fetch_paid` (capped by the key's limits and an optional `max_price_usd`), `decline_offer` (skip with a reason for the publisher), `dispute_purchase` (Fare Court, with the exact bytes it received), `wallet_balance` and `recent_receipts`. The agent key stays in that process; the wallet, receipts, decline and dispute calls authenticate with the request's own Web Bot Auth signature, with no API token ([protocol](docs/PROTOCOL.md#agent-api-signed-requests-no-tokens)). Setup for both clients is in its [README](packages/mcp/README.md).
+[`packages/mcp`](packages/mcp/README.md) lets Claude Desktop and Claude Code pay BotFare sites from a local process: `get_offer`, `fetch_paid` (capped by the key's limits and an optional `max_price_usd`), `decline_offer` (skip with a reason for the publisher), `dispute_purchase` (Fare Court, with the exact bytes it received), `verify_receipt` (checks BotFare's signed statements for a receipt), `wallet_balance` and `recent_receipts`; `fetch_paid` also returns BotFare's signed payment statement with a signature check. The agent key stays in that process; the wallet, receipts, decline and dispute calls authenticate with the request's own Web Bot Auth signature, with no API token ([protocol](docs/PROTOCOL.md#agent-api-signed-requests-no-tokens)). Setup for both clients is in its [README](packages/mcp/README.md).
 
 ## Judge mode and Log in with PayPal
 
@@ -269,6 +302,7 @@ Everything runs in the PayPal **sandbox only**.
 | `/judge` tour and judge mode | ✅ Built |
 | Fare Court: declared offers, attested `Content-Digest`, signed disputes, Claude judge with policy in code, publisher Disputes page, SDK/MCP/research agent disputes, the Crema Notes stub case | ✅ Built; `pnpm e2e` checks it on real servers without an AI key (the publisher decides); a live verdict needs `ANTHROPIC_API_KEY` |
 | Fare Advisor: offer telemetry, decline notes, citations, funnel per rule, checked Claude recommendations, Apply, citations in analytics | ✅ Built; `pnpm e2e` checks the funnel and Apply → middleware → next agent buys; live recommendations need `ANTHROPIC_API_KEY` |
+| Signed receipts: payment, delivery and refund statements (Ed25519 JWS), JWKS, public statements endpoint, `/verify`, SDK `verifyReceipt`, MCP `verify_receipt`, research agent sources manifest and Verify sources | ✅ Built; `pnpm e2e` verifies payment, delivery and refund statements against the published keys |
 | Log in with PayPal | ✅ Code done and tested against a mock PayPal; off until the sandbox app has it enabled |
 | One-command Docker stack ([`docker-compose.full.yml`](docker-compose.full.yml)) | ✅ Built and checked |
 | Deploy to Render | ⏳ Next |
@@ -316,7 +350,7 @@ pnpm install
 cp .env.example .env    # PayPal sandbox keys: top-ups, Withdraw now and the spikes need them
 pnpm db:up              # Postgres 17 in Docker (botfare and botfare_test databases)
 pnpm db:migrate         # apply the Drizzle migrations to DATABASE_URL
-pnpm seed               # judge personas, Crema Notes site, $5.00 wallet, agent key -> .env
+pnpm seed               # judge personas, Crema Notes site, $5.00 wallet, agent key (and a receipt seed) -> .env
 pnpm seed:traffic       # ~150 paid requests over the last 14 days, plus the Fare Court and Advisor story
 pnpm e2e                # start the app and the demo, pay for content, check every ledger movement
 ```
@@ -343,6 +377,7 @@ It then checks:
 - the SDK's signed requests are recognised as `signed-agent` and pay;
 - a headless browser gets the Turnstile page, Cloudflare's test token sets the human pass, and its next read is free (an agent with the same cookie still pays);
 - each receipt records the right detection signal;
+- signed receipts: the JWKS fetched from the app holds only public Ed25519 keys; the paid article's `PAYMENT-RESPONSE` carries a payment statement that verifies against it (receipt, amount, 95/5 split, payee, payer, URL, signal), and the SDK's verifier agrees; an edited amount, receipt or signature fails; after the publisher attests, a signed delivery statement's digest equals the digest of the bytes the agent received (Paid ✓ Delivered ✓ Bytes match ✓, as the Verify sources panel checks); the facilitator refund and the Fare Court refund each get a signed refund statement (`via: publisher`, `via: dispute` with the dispute ID); `/verify` renders;
 - Fare Court: the paid stub article declares its offer and the demo attests the digest of exactly the bytes the agent received; a dispute with tampered bytes is `invalid`; a dispute with the real bytes is accepted and, with no AI judge, waits for the publisher; the publisher's accept through the API refunds 3¢ exactly once, and a second accept or dispute is refused;
 - Fare Advisor: a decline note and a citation report are recorded, the middleware's offer telemetry reaches BotFare, the advisor returns the funnel per rule with `aiAvailable: false`, and Apply 50¢ → 8¢ on the premium rule shows in the site config, reaches the middleware within 30 seconds, and the 10¢-capped agent then buys it (the price is put back to 50¢ afterwards);
 - the ledger sums to zero.
@@ -433,7 +468,9 @@ To fill the dashboards, run `pnpm seed:traffic` in the same Shell. The `botfare-
 
 Then point PayPal at the app: in the sandbox app's Webhooks section, add `https://<botfare-web>.onrender.com/api/paypal/webhook` for `PAYMENT.CAPTURE.*`, `PAYMENT.PAYOUTS-ITEM.*` and `PAYMENT.PAYOUTSBATCH.*`, and put its webhook ID in `botfare-web`'s `PAYPAL_WEBHOOK_ID`. Until then the route answers 503 and PayPal retries later.
 
-`botfare-web` also takes `BOTFARE_URL` (its public `https://` URL: PayPal return URLs, the agent API's host check, the publisher snippet), `DEMO_PUBLIC_URL` (the demo's URL for `/judge`), optional `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD`, `PAYPAL_LOGIN_ENABLED` and, for the research agent, `BOTFARE_AGENT_KEY` from the seed. Session cookies are `Secure` whenever the request arrived over https, which Render's proxy reports with `X-Forwarded-Proto`.
+`botfare-web` generates `BOTFARE_RECEIPT_KEY_SEED`, the seed of BotFare's receipt-signing key, on the first apply, and the `botfare-demo-refresh` cron reads the same value (its demo receipts are signed too). Never edit it in place: to rotate, copy the old value into `BOTFARE_RECEIPT_KEY_SEED_PREVIOUS` first, so receipts signed before keep verifying. Without it (or without `BOTFARE_URL`) payments still settle but carry no signed receipt, and the app logs `[receipts] signing disabled`.
+
+`botfare-web` also takes `BOTFARE_URL` (its public `https://` URL: PayPal return URLs, the agent API's host check, the publisher snippet, the `iss` of signed receipts), `DEMO_PUBLIC_URL` (the demo's URL for `/judge`), optional `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD`, `PAYPAL_LOGIN_ENABLED` and, for the research agent, `BOTFARE_AGENT_KEY` from the seed. Session cookies are `Secure` whenever the request arrived over https, which Render's proxy reports with `X-Forwarded-Proto`.
 
 Judge mode is public: anyone who opens the app can sign in as a persona. The personas cannot rotate the demo site's secret, change the payout email or revoke the seeded agent keys, and each publisher sign-in restores Crema Notes' prices, the payout email, enough earnings to try Withdraw, and one Fare Court dispute waiting for review (once a judge decides it, the next sign-in plays that case again: the persona's research key buys the stub again with demo money and disputes it, so every judge can try Accept and Decline); the agent owner's wallet is kept at $5.00 of demo money for the shared research key ($10.00 a day). Rerunning `pnpm seed` raises an older demo key's caps in place, keeping its secret. That shared key also gets Fare Court limits for many users (200 disputes a day, no dispute-rate rule), and any publisher sign-in puts back prices a judge changed with the Fare Advisor's Apply. The analytics assistant runs on `ANTHROPIC_API_KEY` with a server-side prompt, a 512 KB request cap, a per-visitor turn limit and a shared budget (3M input-token equivalents an hour, 15M a day; see `apps/web/src/lib/server/ai-budget.ts`). The Fare Court judge and the Fare Advisor each have their own budget (1M an hour, 5M a day), and the Advisor allows 12 fresh generations per visitor per 10 minutes. Also set a monthly spend limit on the Anthropic workspace that holds the key.
 

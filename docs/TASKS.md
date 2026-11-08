@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Sun 8 Nov 2026, 11:15 pm IST (Fare Court and Fare Advisor review: 10 confirmed findings fixed; e2e 25/25, 601 unit and DB tests) · previously 10:30 pm (Phase 3b done)
+**Last updated:** Sun 8 Nov 2026, 11:55 pm IST (Phase 3c done: signed receipts end to end; e2e 30/30, 642 unit and DB tests) · previously 11:15 pm (Fare Court and Fare Advisor review)
 
 ## Overview
 
@@ -15,11 +15,11 @@
 | 2. Real money and dashboards | Tue 10 | ✅ Done (one optional item needs you) | 10 / 11 |
 | 3. Agent detection, AI and polish | Wed 11 | 🔄 Built two days early; Log in with PayPal needs you | 8 / 9 |
 | 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 8 / 8 |
-| 3c. Signed receipts (proof of payment, delivery, sourcing) | Mon 9 | 🔄 In progress | 0 / 5 |
+| 3c. Signed receipts (proof of payment, delivery, sourcing) | Mon 9 | ✅ Done (a day early) | 5 / 5 |
 | 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
 | 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
 
-**Overall: about 68% done** (45 of 66 items); ahead of the plan. Next: deploy to Render, then run one live Fare Court verdict and one Fare Advisor recommendation with `ANTHROPIC_API_KEY` set.
+**Overall: about 76% done** (50 of 66 items); ahead of the plan. Next: deploy to Render, then run one live Fare Court verdict and one Fare Advisor recommendation with `ANTHROPIC_API_KEY` set.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -100,17 +100,17 @@ Why: micropayments fail on the *decision* cost, not the technology (Szabo 1999, 
 | ✅ | Integration, e2e coverage, review and fixes | `pnpm seed:traffic` tells the Advisor story (premium roundup declined as "Thin listicle, not worth 50¢", burr-basics and dialing-in cited); e2e 25/25 on 3100/4100 (9 new Fare checks, optional AI check with `E2E_AI=1`); 575 unit and DB tests; build and spike 05 pass |
 | ✅ | Fare review: 10 confirmed findings fixed, each with a regression test | Dispute HTML-to-text is one linear, capped pass and runs only after the window, attestation and digest checks (1 MB of unclosed `<a` took minutes, now ms); attested `Content-Type` stored as its media type and given to the judge inside `<case>`; decline notes need a price the page really has, one per key and page (no query strings), three per owner, page and day; telemetry drops control-character events one by one and keeps 20,000 per publisher per day; the funnel counts each rule at its current price only (no AI advice until agents see a new price); "Disputed · refunded" totals Fare Court refunds only; the SDK and the research agent return a paid redirect with its receipt instead of following it; each publisher persona sign-in puts one dispute back in review; weekly Render cron `botfare-demo-refresh` (`pnpm seed:traffic --weekly`) keeps the story inside the 14-day window, and offers and citations count each run's own purchases once |
 
-## Phase 3c: Signed receipts 🔄 (0 / 5)
+## Phase 3c: Signed receipts ✅ (5 / 5)
 
 Why: everything else proves agents and publishers are honest; signed receipts let anyone check BotFare too. See [`docs/PLAN.md`](PLAN.md), decision 18.
 
 | | Task | Notes |
 | --- | --- | --- |
-| ⏳ | Contract: payment, delivery and refund statements, receipt key directory (JWKS), browser-safe verifier | `@botfare/contracts/receipts` |
-| ⏳ | BotFare signs statements (Ed25519 JWS): payment at settle (in `PAYMENT-RESPONSE` `extra.botfareReceipt`), delivery at attestation, refund at refund; key from a secret seed; JWKS endpoint | Key rotation by `kid` |
-| ⏳ | Agent side: SDK `verifyReceipt()`, signed receipts in MCP results, research agent sources manifest | |
-| ⏳ | ⭐ Public `/verify` page and "Verify sources" panel on the research agent's answer (verification runs in the browser) | Demo: three green checks per source |
-| ⏳ | Integration, e2e, review, "Trust and cryptography" write-up (README, landing) | |
+| ✅ | Contract: payment, delivery and refund statements, receipt key directory (JWKS), browser-safe verifier | `@botfare/contracts/receipts`; one append-only addition: the `offerDigest` rule (`canonicalJson`, `declaredOfferDigest`) so browsers can recompute it |
+| ✅ | BotFare signs statements (Ed25519 JWS): payment at settle (in `PAYMENT-RESPONSE` `extra.botfareReceipt`), delivery at attestation, refund at refund; key from a secret seed; JWKS endpoint | HKDF from `BOTFARE_RECEIPT_KEY_SEED`, `kid` = RFC 7638 thumbprint, rotation via `BOTFARE_RECEIPT_KEY_SEED_PREVIOUS`; `receipt_statements` table (migration 0005), first statement per kind kept forever; issuing never blocks money, missing ones issued on read; `GET /api/receipts/:id/statements` (public, 120/min per IP). Seed in `.env` (`pnpm seed` writes one), `.env.example`, Render (generated on botfare-web, shared with the demo refresh cron) and the judge Docker stack; Render hosts never sign with the dev seed |
+| ✅ | Agent side: SDK `verifyReceipt()`, signed receipts in MCP results, research agent sources manifest | `PaidResult.receiptStatement` and `readDigest`; `agent.verifyReceipt`/`fetchStatements` (cached JWKS, refetch on rotation); MCP `fetch_paid` shows the statement and its check, new `verify_receipt`; the answer event carries an `AnswerManifest` |
+| ✅ | ⭐ Public `/verify` page and "Verify sources" panel on the research agent's answer (verification runs in the browser) | `/verify?receipt=…` or pasted JWS, claims in plain words, raw JWS, "Check your copy" digest; Verify links on wallet receipts and disputes; Paid ✓ Delivered ✓ Bytes match ✓ per source from the answer's manifest (falls back to the public statements) |
+| ✅ | Integration, e2e, review, "Trust and cryptography" write-up (README, landing) | Field names from the contract everywhere; manifest wired into the answer card; 5 new e2e checks (JWKS public only, payment statement in `PAYMENT-RESPONSE` verifies, tampering fails, delivery digest = bytes received with three green checks, `/verify`) and refund statements asserted in the facilitator and Fare Court refund checks; README "Trust and cryptography", PROTOCOL "Signed receipts", landing Trust section. Honest limit: proves issuance, not that history is never edited (tamper-evident ledger is the stretch) |
 
 ## Phase 4: Deploy to Render ⏳
 

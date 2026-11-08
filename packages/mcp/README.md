@@ -61,7 +61,7 @@ refund gets a **refund statement**. `fetch_paid` prints the payment statement an
 ```text
 Paid $0.03 to site site_… for http://localhost:4000/articles/burr-basics. Receipt: rcpt_…
 Signed receipt (BotFare payment statement, Ed25519 JWS): eyJhbGciOiJFZERTQSIs…
-Signature check: verified, signed by BotFare key rk_…: $0.03 paid to site_… for http://… by ak_… at … (publisher $0.0285, BotFare fee $0.0015)
+Signature check: verified, signed by BotFare key gNmiJcS5CZdo…: $0.03 paid to site_… for http://… by ak_… at … (publisher $0.0285, BotFare fee $0.0015)
 ```
 
 `verify_receipt` fetches the public keys once (`GET /.well-known/botfare-receipt-keys.json`, a
@@ -72,8 +72,14 @@ a moment after the purchase, so "delivery: none yet" right after `fetch_paid` is
 signature proves BotFare issued the statement and cannot deny it; it does not prove BotFare never
 changed its own history.
 
+The key ID (`kid`) is the RFC 7638 thumbprint of BotFare's public key. People can check the same
+receipt in a browser at `<BOTFARE_URL>/verify?receipt=rcpt_…`, which verifies the signatures in
+the page with the same public keys.
+
 The same checks are in the SDK: `agent.verifyReceipt(token)`, `agent.fetchStatements(receiptId)`
-and the standalone `verifyReceipt(token, { botfareUrl })` (`@botfare/sdk`).
+and the standalone `verifyReceipt(token, { botfareUrl })` (`@botfare/sdk`); the verifier itself is
+`verifyStatement` in `@botfare/contracts/receipts`. Protocol details: [`docs/PROTOCOL.md`,
+"Signed receipts"](../../docs/PROTOCOL.md#signed-receipts).
 
 ## Setup
 

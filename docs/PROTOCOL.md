@@ -134,7 +134,7 @@ The resource server settles only after its handler has succeeded, because `Prepa
 
 3. writes a receipt `rcpt_…` that is unique on (key, nonce).
 
-It returns `{success: true, transaction: "rcpt_…", network, payer: <key ID>, amount}`, and the resource server sends that back to the client as `PAYMENT-RESPONSE`.
+It returns `{success: true, transaction: "rcpt_…", network, payer: <key ID>, amount, extra: {botfareReceipt: "<signed payment statement>"}}`, and the resource server sends that back to the client as `PAYMENT-RESPONSE`. The official SDK carries `extra` through unchanged (`HTTPFacilitatorClient` → `x402ResourceServer.settlePayment` → `encodePaymentResponseHeader`), so any x402 client finds the statement there; see [Signed receipts](#signed-receipts). `extra` is absent if signing is disabled or failed; the payment is settled either way.
 
 **Replay.** A nonce can be used once per key, for good. A reused nonce is refused with `invalid_prepaid_nonce_used`. The refusal carries `extra.originalTransaction`, the receipt the nonce was first charged under, so a client whose settle response was lost can reconcile without paying twice. At the publisher, a replayed `PAYMENT-SIGNATURE` gets a 402 whose `error` is `invalid_prepaid_nonce_used`.
 
@@ -259,6 +259,39 @@ BotFare extension: what agents did with an offer, so publishers can price for AI
 
 The publisher reads these per pricing rule and per path at `GET /api/publisher/advisor?siteId=…` (session): offers, paid, declined, cited and disputed with the top reasons, each counted at the rule's current price only (signals at an earlier price are in the rule's `earlier`, and a rule nobody has seen at its new price has `awaitingSignals: true` and gets no AI recommendation), plus Claude's recommendations when `ANTHROPIC_API_KEY` is set (`aiAvailable: false` otherwise). Applying one is a separate, explicit `POST /api/publisher/advisor/apply {siteId, pattern, priceCents?, audience?}`.
 
+## Signed receipts
+
+BotFare extension: statements BotFare signs when something happens to a receipt, so anyone can check a payment, a delivery or a refund with BotFare's public keys alone, without asking BotFare's database. Schemas, constants and the verifier are in `@botfare/contracts/receipts` (Node and browsers: `jose` + WebCrypto).
+
+**Format.** A compact JWS (RFC 7515), `alg: EdDSA` (Ed25519, RFC 8037), protected header `{alg, typ: "botfare-receipt+jwt", kid}`. Claims common to every statement:
+
+| Claim | Meaning |
+| --- | --- |
+| `iss` | BotFare's origin (`BOTFARE_URL`), e.g. `https://botfare-web.onrender.com` |
+| `sub` | The receipt ID, `rcpt_…` |
+| `iat` | Signing time (seconds) |
+| `v` | Format version, `1` |
+| `kind` | `payment`, `delivery` or `refund`, with the matching object below |
+
+- `payment` (signed at settle): `{scheme: "prepaid", network, asset: "USD", amount (integer cents, as in the requirements), amountMicros, publisherMicros, feeMicros, payTo (site_…), siteOrigin, resource (URL or null), payer (ak_…), payerThumbprint (RFC 7638 of the agent's public key), signal (detection signal or null), offerDigest, settledAt}`. `offerDigest` is `contentDigestSha256(canonicalJson(declaredOffer))`, where `declaredOffer` is the 402's `extra.botfareOffer` and `canonicalJson` sorts object keys at every level with no whitespace (JCS for this shape); both are exported by the contract. Null when no offer was declared.
+- `delivery` (signed when the paid site first attests, see [Fare Court](#fare-court-proof-of-delivery-and-disputes)): `{contentDigest (RFC 9530 sha-256), contentLength, contentType (media type), status, attestedAt}`.
+- `refund` (signed when the receipt is refunded): `{refundedMicros, via: "publisher" | "dispute", disputeId, refundedAt}`.
+
+Statements do not expire: they record what happened when it happened. The first statement of each kind for a receipt is stored and returned forever; history is never re-signed, not even after a key rotation.
+
+**Where they travel.**
+
+- The payment statement is in the settle response's `extra.botfareReceipt` (`SETTLE_EXTRA_RECEIPT_KEY`), so the agent receives it in the base64 `PAYMENT-RESPONSE` header of the paid response: `decodePaymentResponseHeader(header).extra.botfareReceipt`. The SDK exposes it as `PaidResult.receiptStatement`.
+- `GET /api/receipts/<receiptId>/statements` (`receiptStatementsPath`) returns `{receiptId, payment, delivery, refund}`, each a JWS or null. Public, `Access-Control-Allow-Origin: *`, `Cache-Control: no-store`, 120 lookups per minute per client IP (429 with `Retry-After: 60`), 404 for an unknown or malformed ID. A statement the receipt qualifies for but that was never stored (a signing failure) is issued on this read. Only pseudonymous IDs appear (receipt, site, agent key); no email, IP address or user agent.
+
+**Keys.** `GET /.well-known/botfare-receipt-keys.json` (`RECEIPT_KEYS_PATH`) is a JWKS (RFC 7517), `Content-Type: application/jwk-set+json`, `Cache-Control: public, max-age=300`, CORS-open. Each key is `{kty: "OKP", crv: "Ed25519", x, kid, alg: "EdDSA", use: "sig"}`; `kid` is the RFC 7638 thumbprint, and no private member (`d`) is ever published (`publicJwk`). The active key comes first, then retired keys. The signing key is derived on the server: 32-byte seed = HKDF-SHA256(`BOTFARE_RECEIPT_KEY_SEED`, empty salt, info `botfare-receipt-key-v1`). Retired seeds in `BOTFARE_RECEIPT_KEY_SEED_PREVIOUS` stay published but never sign. In production (`NODE_ENV=production` or on Render) without a seed of at least 32 characters, nothing is signed (payments still settle) and the JWKS is empty; in development a public development seed signs, which proves nothing.
+
+**Verifying.** `verifyStatement(token, jwks, {issuer?, kind?})` checks the header (`typ`, `kid`), the Ed25519 signature against the key with that `kid`, the claims against the schema, and optionally `iss` and `kind`. It never throws; failures are `malformed`, `unknown_key`, `bad_signature`, `wrong_issuer` or `invalid_claims`. A verifier should also check that `sub` is the receipt it expects. The SDK's `agent.verifyReceipt` caches the JWKS for 10 minutes and refetches it on an unknown `kid` (a rotation), at most every 30 s.
+
+**Sources manifest.** The research agent's answer carries `AnswerManifest` `{answerId, createdAt, sources: [{url, receiptId, claim, payment, delivery, readDigest}]}`, where `readDigest` is the `Content-Digest` of the bytes the agent actually read. `checkAnswerSource(source, jwks, {issuer})` returns three checks: **paid** (a valid payment statement for this receipt and URL), **delivered** (a valid delivery statement for the same receipt) and **bytes match** (`readDigest` equals the signed `contentDigest`).
+
+**What it proves.** A valid statement proves BotFare issued it and cannot later deny it. It does not prove that BotFare never dropped or changed a receipt nobody holds a statement for; a tamper-evident log (signed Merkle checkpoints over all receipts) would, and is future work.
+
 ## Security notes
 
 - The signature covers every field that decides who pays whom and how much. The resource URL is not signed: the price, payee and nonce bind the payment, and `resource.url` is recorded on the receipt only for display.
@@ -266,6 +299,7 @@ The publisher reads these per pricing rule and per path at `GET /api/publisher/a
 - Spend limits are checked twice: by the SDK's spend controls before signing (`BotFareSpendLimitError`, so nothing is signed or sent) and by the facilitator inside the settle transaction.
 - A signed-agent signature proves which BotFare key sent a request, not that it will pay: the payment is still the separate `prepaid` authorization above.
 - No personal data travels in headers. The payer is identified only by its agent key ID, and the agent header `x-botfare-agent` carries the constant `1`.
+- Receipt-signing private keys exist only in the web app's process memory, derived from a secret seed; the database stores only signed statements and the `kid` that signed them.
 
 ## Precedent
 
