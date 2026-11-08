@@ -71,31 +71,82 @@ export class TokenBudget {
   }
 }
 
-/** Sliding-window turn counter per key. */
+/** Most keys a limiter remembers; past this, expired keys are swept and then the oldest dropped. */
+export const MAX_LIMITER_KEYS = 10_000;
+/** Longest key a limiter stores (longer keys are cut). */
+const MAX_KEY_LENGTH = 200;
+
+/**
+ * Sliding-window turn counter per key. Memory is bounded: keys whose turns have all left the window
+ * are swept once per window, and at most `maxKeys` keys are kept (least recently used go first).
+ */
 export class TurnLimiter {
   private log = new Map<string, number[]>();
+  private lastSweep: number;
 
   constructor(
     private readonly limit = AI_TURN_LIMIT,
     private readonly windowMs = AI_TURN_WINDOW_MS,
     private readonly now: () => number = Date.now,
-  ) {}
+    private readonly maxKeys = MAX_LIMITER_KEYS,
+  ) {
+    this.lastSweep = this.now();
+  }
 
-  allow(key: string): boolean {
+  allow(rawKey: string): boolean {
+    const key = rawKey.slice(0, MAX_KEY_LENGTH);
     const now = this.now();
+    if (now - this.lastSweep >= this.windowMs) this.sweep(now);
     const recent = (this.log.get(key) ?? []).filter((at) => now - at < this.windowMs);
+    // Re-insert so the Map's order is least recently used first.
+    this.log.delete(key);
     if (recent.length >= this.limit) {
       this.log.set(key, recent);
       return false;
     }
     recent.push(now);
+    if (this.log.size >= this.maxKeys) {
+      this.sweep(now);
+      for (const oldest of this.log.keys()) {
+        if (this.log.size < this.maxKeys) break;
+        this.log.delete(oldest);
+      }
+    }
     this.log.set(key, recent);
     return true;
   }
+
+  /** How many keys are remembered (tests). */
+  get size(): number {
+    return this.log.size;
+  }
+
+  private sweep(now: number): void {
+    this.lastSweep = now;
+    for (const [key, times] of this.log) {
+      if (times.every((at) => now - at >= this.windowMs)) this.log.delete(key);
+    }
+  }
 }
 
-/** The caller's IP as Render's proxy reports it (first X-Forwarded-For entry). */
+const IP_PATTERN = /^[0-9A-Fa-f:.]{2,45}$/;
+
+function ipOrNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed && IP_PATTERN.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * The caller's IP, from headers the caller cannot choose on Render: True-Client-IP (set by the
+ * Cloudflare edge in front of Render, replacing any sent by the client), else the LAST
+ * X-Forwarded-For entry (the hop our own proxy appended; earlier entries are whatever the client
+ * sent), else X-Real-IP. Only IP-shaped values count, so a key is never longer than 45 characters.
+ */
 export function clientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || request.headers.get("x-real-ip") || "local";
+  return (
+    ipOrNull(request.headers.get("true-client-ip")) ??
+    ipOrNull(request.headers.get("x-forwarded-for")?.split(",").at(-1)) ??
+    ipOrNull(request.headers.get("x-real-ip")) ??
+    "local"
+  );
 }

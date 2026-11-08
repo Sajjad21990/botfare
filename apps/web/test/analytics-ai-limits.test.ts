@@ -8,6 +8,7 @@ vi.mock("../src/lib/server/session", () => ({
 
 import { POST as aiTurn } from "../src/app/api/publisher/analytics/ai/route";
 import {
+  clientIp,
   estimateTokens,
   TokenBudget,
   TurnLimiter,
@@ -166,5 +167,37 @@ describe("analytics assistant limits", () => {
     expect(limiter.allow("usr_publisher:203.0.113.5")).toBe(true);
     expect(limiter.allow("usr_publisher:203.0.113.5")).toBe(false);
     expect(limiter.allow("usr_publisher:198.51.100.7")).toBe(true);
+  });
+
+  it("keeps a bounded number of keys: expired ones are swept, then the least recently used go", () => {
+    let now = 0;
+    const limiter = new TurnLimiter(2, 60_000, () => now, 100);
+    for (let i = 0; i < 1_000; i++) limiter.allow(`spoofed-${i}`);
+    expect(limiter.size).toBeLessThanOrEqual(100);
+    // A heavy user stays limited while new keys arrive (it was used most recently).
+    limiter.allow("busy");
+    limiter.allow("busy");
+    expect(limiter.allow("busy")).toBe(false);
+    for (let i = 0; i < 50; i++) limiter.allow(`fresh-${i}`);
+    expect(limiter.allow("busy")).toBe(false);
+    // Once the window has passed, the next call sweeps every expired key.
+    now = 60_000;
+    limiter.allow("later");
+    expect(limiter.size).toBe(1);
+    // Keys are cut to a fixed length, so a huge header cannot make one key huge.
+    expect(limiter.allow("x".repeat(100_000))).toBe(true);
+  });
+
+  it("reads the client IP from headers the client cannot choose", () => {
+    const ip = (headers: Record<string, string>) =>
+      clientIp(new Request("https://botfare.example/", { headers }));
+    expect(ip({ "x-forwarded-for": "1.2.3.4, 203.0.113.5" })).toBe("203.0.113.5");
+    expect(ip({ "true-client-ip": "198.51.100.7", "x-forwarded-for": "1.2.3.4" })).toBe(
+      "198.51.100.7",
+    );
+    expect(ip({ "x-forwarded-for": "2001:db8::1" })).toBe("2001:db8::1");
+    expect(ip({ "x-forwarded-for": `1.2.3.4, ${"a".repeat(8000)}` })).toBe("local");
+    expect(ip({ "x-real-ip": "192.0.2.1" })).toBe("192.0.2.1");
+    expect(ip({})).toBe("local");
   });
 });

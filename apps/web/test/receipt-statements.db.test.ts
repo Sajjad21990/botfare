@@ -331,4 +331,14 @@ describe("receipt key directory and statements endpoint", () => {
     expect(limited.headers.get("retry-after")).toBe("60");
     expect((await getStatements("bad", "198.51.100.10")).status).toBe(404);
   });
+
+  it("keys the limit on the proxy's hop, not on X-Forwarded-For entries the client sent", async () => {
+    // Render's edge appends the real address; a client rotating its own first entry gains nothing.
+    for (let i = 0; i < STATEMENT_LOOKUPS_PER_MINUTE; i++) {
+      expect((await getStatements("bad", `10.0.${i >> 8}.${i & 255}, 198.51.100.11`)).status).toBe(
+        404,
+      );
+    }
+    expect((await getStatements("bad", "10.9.9.9, 198.51.100.11")).status).toBe(429);
+  });
 });
