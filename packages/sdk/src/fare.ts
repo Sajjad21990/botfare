@@ -57,6 +57,17 @@ export interface FareApiOptions {
   botfareUrl: string | null;
   signer: RequestSigner;
   fetch: typeof fetch;
+  /** Waits before re-filing a dispute BotFare refused as "not_attested" (tests). */
+  notAttestedRetryMs?: number[];
+}
+
+/** Re-file a dispute refused because the publisher's attestation has not landed yet. */
+const NOT_ATTESTED_RETRY_MS = [1_000, 2_000];
+
+function isNotAttested(body: unknown): boolean {
+  if (!body || typeof body !== "object") return false;
+  const { error, reason } = body as { error?: unknown; reason?: unknown };
+  return error === "not_attested" || reason === "not_attested";
 }
 
 /** Base64 of bytes, in chunks (no Buffer, so it also runs in the browser). */
@@ -142,7 +153,14 @@ export function createFareApi(options: FareApiOptions) {
         ...(input.note ? { note: input.note.slice(0, 500) } : {}),
         contentBase64: bytesToBase64(bytes),
       });
-      const { status, body } = await post(DISPUTES_PATH, request);
+      let { status, body } = await post(DISPUTES_PATH, request);
+      // The publisher attests its digest just after the response is sent; a dispute filed within
+      // the same moment can arrive first. Wait briefly for it (each retry is freshly signed).
+      for (const delay of options.notAttestedRetryMs ?? NOT_ATTESTED_RETRY_MS) {
+        if (!isNotAttested(body)) break;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        ({ status, body } = await post(DISPUTES_PATH, request));
+      }
       // An outcome is an answer even when the status is 4xx (e.g. an invalid dispute).
       const outcome = disputeOutcomeSchema.safeParse(body);
       if (outcome.success) return outcome.data;

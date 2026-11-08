@@ -215,6 +215,36 @@ describe("agent.dispute()", () => {
     expect(outcome.status).toBe("invalid");
   });
 
+  it("re-files a dispute that arrived before the publisher's attestation", async () => {
+    const agent = createBotFareAgent({ agentKey: stack.agentKey, botfareUrl: botfare.url });
+    const outcome = {
+      disputeId: "dsp_3",
+      receiptId: "rcpt_0123456789abcdef",
+      status: "pending_publisher",
+      refundedCents: 0,
+      verdict: null,
+      message: "The publisher will review it",
+    };
+    const replies = [
+      { status: 409, body: { error: "not_attested", message: "Not attested yet" } },
+      { status: 200, body: outcome },
+    ];
+    disputeReply = replies[0] as typeof disputeReply;
+    const from = received.length;
+    const pending = agent.dispute({
+      receiptId: "rcpt_0123456789abcdef",
+      reason: "truncated",
+      content: "x",
+    });
+    // Switch the reply once the first attempt has landed.
+    while (received.length === from) await new Promise((resolve) => setTimeout(resolve, 10));
+    disputeReply = replies[1] as typeof disputeReply;
+    expect(await pending).toEqual(outcome);
+    const attempts = received.slice(from);
+    expect(attempts).toHaveLength(2);
+    expect(attempts.every((attempt) => attempt.verified)).toBe(true);
+  });
+
   it("throws BotFareApiError on a refusal without an outcome", async () => {
     const agent = createBotFareAgent({ agentKey: stack.agentKey, botfareUrl: botfare.url });
     disputeReply = {
