@@ -8,13 +8,15 @@
  * | HTTP client library user agent (curl, python-requests, …)    | 80     |
  * | Headless / automation browser (HeadlessChrome, Puppeteer, …)  | 80     |
  * | Empty or missing user agent                                  | 70     |
- * | Desktop-browser user agent without Accept-Language           | 30     |
- * | Desktop-browser user agent without any Sec-Fetch-* header    | 30     |
+ * | Desktop-browser user agent without a real Accept-Language    | 30     |
+ * | Desktop-browser user agent without Sec-Fetch-Site and -Dest  | 30     |
  *
- * A real desktop browser always sends Accept-Language, and Chrome, Edge, Firefox and Safari 16.4+
- * send Sec-Fetch-* to HTTPS and localhost origins, so a person in a normal browser scores 0
- * (30 at most over plain HTTP to a LAN address, below every default threshold). A script that
- * fakes a browser user agent but sends neither header scores 60. No IP reputation lists are used.
+ * A real desktop browser always sends a language list in Accept-Language, and Chrome, Edge,
+ * Firefox and Safari 16.4+ send Sec-Fetch-Site, -Mode and -Dest together to HTTPS and localhost
+ * origins, so a person in a normal browser scores 0 (30 at most over plain HTTP to a LAN address,
+ * below every default threshold). A script that fakes a browser user agent scores 60: Node's
+ * fetch, for one, sends `Accept-Language: *` and only `Sec-Fetch-Mode: cors`, which count as
+ * missing. No IP reputation lists are used.
  */
 import type { DetectionRequest } from "./types";
 
@@ -80,11 +82,11 @@ export function automationScore(req: DetectionRequest): { score: number; reasons
     const headless = HEADLESS.find(([pattern]) => pattern.test(ua));
     if (headless) add(AUTOMATION_WEIGHTS.headless, `automation browser (${headless[1]})`);
     if (claimsDesktopBrowser(ua)) {
-      if (!req.get("accept-language")) {
+      const language = req.get("accept-language")?.trim() ?? "";
+      if (!language || language === "*") {
         add(AUTOMATION_WEIGHTS.noAcceptLanguage, "browser user agent without Accept-Language");
       }
-      const secFetch = ["sec-fetch-mode", "sec-fetch-site", "sec-fetch-dest", "sec-fetch-user"];
-      if (!secFetch.some((name) => req.get(name))) {
+      if (!req.get("sec-fetch-site") || !req.get("sec-fetch-dest")) {
         add(AUTOMATION_WEIGHTS.noSecFetch, "browser user agent without Sec-Fetch-*");
       }
     }

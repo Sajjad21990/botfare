@@ -1,5 +1,9 @@
 import { AGENT_HEADER } from "@botfare/contracts";
-import { decodePaymentRequiredHeader, decodePaymentResponseHeader } from "@x402/core/http";
+import {
+  decodePaymentRequiredHeader,
+  decodePaymentResponseHeader,
+  encodePaymentRequiredHeader,
+} from "@x402/core/http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createAgent,
@@ -80,6 +84,32 @@ describe("botfare() with BotFare up", () => {
     expect(before - agent.wallet()).toBe(30_000);
     expect(botfare.ledger.balanceMicros(`earnings:${SITE_ID}`)).toBe(28_500);
     expect(botfare.ledger.totalMicros()).toBe(0);
+    // The detection signal travels in the requirements to the facilitator.
+    expect(botfare.settled.at(-1)?.extra).toMatchObject({ botfareSignal: "agent-header" });
+  });
+
+  it("puts the detection signal in the 402's requirements", async () => {
+    const res = await agent.fetch(`${site.url}/articles/burr-basics`);
+    const required = decodePaymentRequiredHeader(res.headers.get("payment-required") ?? "");
+    expect(required.accepts[0]?.extra).toEqual({ botfareSignal: "agent-header" });
+  });
+
+  it("accepts a payment whose echoed signal differs, and settles with its own", async () => {
+    // A client that echoes a different botfareSignal in `accepted` still matches the requirements.
+    const tampering: typeof fetch = async (input, init) => {
+      const res = await agent.fetch(input, init);
+      const header = res.headers.get("payment-required");
+      if (!header) return res;
+      const required = decodePaymentRequiredHeader(header);
+      for (const accept of required.accepts) accept.extra = { botfareSignal: "automation" };
+      const headers = new Headers(res.headers);
+      headers.set("payment-required", encodePaymentRequiredHeader(required));
+      return new Response(await res.arrayBuffer(), { status: res.status, headers });
+    };
+    const paying = agent.payingFetchWith(tampering);
+    const res = await paying(`${site.url}/articles/burr-basics`);
+    expect(res.status).toBe(200);
+    expect(botfare.settled.at(-1)?.extra).toMatchObject({ botfareSignal: "agent-header" });
   });
 
   it("sends the site's Basic auth to verify and settle", () => {
@@ -116,7 +146,7 @@ describe("botfare() with BotFare up", () => {
     }
   });
 
-  it("does not charge a known AI bot unless the site opts in", async () => {
+  it("does not charge a known AI bot when detection is off", async () => {
     const res = await fetch(`${site.url}/articles/burr-basics`, {
       headers: { "user-agent": GPTBOT_UA },
     });

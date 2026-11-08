@@ -209,6 +209,8 @@ export async function createAgent(ledger: InMemoryLedger, balanceCents = 100) {
     fetch: agentFetch,
     /** Pays the 402 and retries. */
     payingFetch: wrapFetchWithPayment(agentFetch, client),
+    /** Pays through a custom underlying fetch (e.g. one that rewrites the 402). */
+    payingFetchWith: (base: typeof fetch) => wrapFetchWithPayment(base, client),
     wallet: () => ledger.balanceMicros("wallet:owner"),
   };
 }
