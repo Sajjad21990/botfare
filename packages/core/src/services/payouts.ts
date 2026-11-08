@@ -9,7 +9,7 @@
 import { IdPrefix, newId } from "@botfare/contracts";
 import type { PayoutItem, PayPalClient } from "@botfare/paypal";
 import { centsToMicros } from "@botfare/x402-paypal";
-import { and, asc, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { Accounts } from "../accounts";
 import type { Db, DbOrTx, Tx } from "../db";
@@ -60,7 +60,7 @@ export async function setPayoutEmail(
   return user;
 }
 
-/** The publisher's payout email, falling back to the payout email of their first site. */
+/** The publisher's payout email, falling back to the oldest of their sites that has one. */
 export async function getPayoutEmail(db: DbOrTx, userId: string): Promise<string | null> {
   const [user] = await db
     .select({ payoutEmail: users.payoutEmail })
@@ -70,8 +70,9 @@ export async function getPayoutEmail(db: DbOrTx, userId: string): Promise<string
   const [site] = await db
     .select({ payoutEmail: sites.payoutEmail })
     .from(sites)
-    .where(eq(sites.ownerUserId, userId))
-    .orderBy(asc(sites.createdAt), asc(sites.id));
+    .where(and(eq(sites.ownerUserId, userId), isNotNull(sites.payoutEmail)))
+    .orderBy(asc(sites.createdAt), asc(sites.id))
+    .limit(1);
   return site?.payoutEmail ?? null;
 }
 
