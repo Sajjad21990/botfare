@@ -11,6 +11,7 @@ import {
   revokeAgentKey,
   rotateSiteSecret,
   updateSitePricing,
+  updateSiteProfile,
 } from "../src";
 import {
   chargeRequest,
@@ -83,6 +84,31 @@ describe("sites", () => {
     });
     await expect(
       updateSitePricing(db, { siteId: site.id, pricing: [{ pattern: "nope", priceCents: 0 }] }),
+    ).rejects.toThrow();
+  });
+
+  it("updates origin and payout email, only for the owner", async () => {
+    const { site, owner } = await makePublisher(db);
+    const other = await makeUser(db);
+    expect(
+      await updateSiteProfile(db, { siteId: site.id, ownerUserId: other.id, name: "Stolen" }),
+    ).toBeNull();
+    const updated = await updateSiteProfile(db, {
+      siteId: site.id,
+      ownerUserId: owner.id,
+      origin: "http://localhost:4000/ignored/path",
+      payoutEmail: "payee@example.test",
+    });
+    expect(updated).toMatchObject({
+      name: site.name,
+      origin: "http://localhost:4000",
+      payoutEmail: "payee@example.test",
+    });
+    expect(updated?.version).not.toBe(site.version);
+    const cleared = await updateSiteProfile(db, { siteId: site.id, payoutEmail: null });
+    expect(cleared?.payoutEmail).toBeNull();
+    await expect(
+      updateSiteProfile(db, { siteId: site.id, payoutEmail: "not-an-email" }),
     ).rejects.toThrow();
   });
 });

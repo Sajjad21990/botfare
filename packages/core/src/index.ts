@@ -56,5 +56,6 @@ export {
   rotateSiteSecret,
   toSiteConfig,
   updateSitePricing,
+  updateSiteProfile,
 } from "./services/sites";
 export { createUser, getUserByEmail, getUserById } from "./services/users";

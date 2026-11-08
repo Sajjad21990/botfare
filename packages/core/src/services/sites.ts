@@ -140,6 +140,36 @@ export async function updateSitePricing(
   return site ?? null;
 }
 
+/** Updates the site's name, origin or payout email; bumps the config version. */
+export async function updateSiteProfile(
+  db: DbOrTx,
+  input: {
+    siteId: string;
+    ownerUserId?: string;
+    name?: string;
+    origin?: string;
+    /** null clears it. */
+    payoutEmail?: string | null;
+  },
+): Promise<Site | null> {
+  const [site] = await db
+    .update(sites)
+    .set({
+      ...(input.name !== undefined
+        ? { name: z.string().trim().min(1).max(200).parse(input.name) }
+        : {}),
+      ...(input.origin !== undefined ? { origin: originSchema.parse(input.origin) } : {}),
+      ...(input.payoutEmail !== undefined
+        ? { payoutEmail: input.payoutEmail ? z.email().parse(input.payoutEmail) : null }
+        : {}),
+      version: newVersion(),
+      updatedAt: new Date(),
+    })
+    .where(siteWhere(input.siteId, input.ownerUserId))
+    .returning();
+  return site ?? null;
+}
+
 /** Issues a new site secret; the old one stops working immediately. */
 export async function rotateSiteSecret(
   db: DbOrTx,
