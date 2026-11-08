@@ -1,6 +1,8 @@
+import { isLockedDemoKey } from "@botfare/contracts";
 import {
   type AgentKey,
   type Db,
+  getUserById,
   listAgentKeys,
   listReceipts,
   MoneyFlowError,
@@ -28,10 +30,15 @@ export async function listSiteDirectory(db: Db): Promise<WalletSite[]> {
     .orderBy(schema.sites.createdAt, schema.sites.id);
 }
 
-export function toWalletAgentKey(key: AgentKey, spentTodayMicros = 0): WalletAgentKey {
+export function toWalletAgentKey(
+  key: AgentKey,
+  spentTodayMicros = 0,
+  viewerEmail?: string,
+): WalletAgentKey {
   return {
     id: key.id,
     name: key.name,
+    demoLocked: isLockedDemoKey(viewerEmail, key.name),
     status: key.status,
     perRequestMaxCents: key.perRequestMaxCents,
     dailyCapCents: key.dailyCapCents,
@@ -58,13 +65,14 @@ function startOfUtcDay(now = new Date()): Date {
 
 /** Everything the wallet page shows, for the signed-in agent owner only. */
 export async function getWalletView(db: Db, userId: string): Promise<WalletView> {
-  const [summary, keys, receipts, sites, todays] = await Promise.all([
+  const [summary, keys, receipts, sites, todays, user] = await Promise.all([
     walletSummary(db, userId),
     listAgentKeys(db, userId),
     listReceipts(db, { ownerUserId: userId, limit: WALLET_RECEIPT_LIMIT }),
     listSiteDirectory(db),
     // Per-key spend today, the way the facilitator counts the daily cap (settled, UTC day).
     listReceipts(db, { ownerUserId: userId, limit: 500 }),
+    getUserById(db, userId),
   ]);
   const dayStart = startOfUtcDay().getTime();
   const spentToday = new Map<string, number>();
@@ -87,7 +95,7 @@ export async function getWalletView(db: Db, userId: string): Promise<WalletView>
       grossCents: topup.grossCents,
       feeCents: topup.feeCents,
     })),
-    keys: keys.map((key) => toWalletAgentKey(key, spentToday.get(key.id) ?? 0)),
+    keys: keys.map((key) => toWalletAgentKey(key, spentToday.get(key.id) ?? 0, user?.email)),
     receipts: receipts.map(
       (receipt): WalletReceipt => ({
         id: receipt.id,

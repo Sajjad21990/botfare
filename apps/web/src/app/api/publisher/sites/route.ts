@@ -41,7 +41,7 @@ export async function POST(request: Request): Promise<Response> {
       pricing: [],
     });
     return Response.json(
-      { site: toSiteView(site), siteSecret },
+      { site: toSiteView(site, undefined, auth.user.email), siteSecret },
       { status: 201, headers: NO_STORE },
     );
   } catch (err) {

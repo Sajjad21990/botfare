@@ -64,7 +64,10 @@ export async function PUT(
       chargeKnownBots: body.data.chargeKnownBots,
     });
     if (!site) return jsonError(404, "not_found", "Site not found");
-    return Response.json({ site: toSiteView(site) }, { headers: NO_STORE });
+    return Response.json(
+      { site: toSiteView(site, undefined, auth.user.email) },
+      { headers: NO_STORE },
+    );
   } catch (err) {
     return moneyErrorResponse(err);
   }

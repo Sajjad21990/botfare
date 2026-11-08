@@ -9,6 +9,8 @@ export interface WalletSite {
 export interface WalletAgentKey {
   id: string;
   name: string;
+  /** A seeded demo key seen in judge mode: it cannot be revoked. */
+  demoLocked: boolean;
   status: "active" | "revoked";
   /** null = no per-request limit. */
   perRequestMaxCents: number | null;

@@ -59,6 +59,11 @@ export {
   walletSummary,
 } from "./services/dashboards";
 export {
+  DEMO_EARNINGS_FLOOR_CENTS,
+  type DemoPublisherReset,
+  resetDemoPublisher,
+} from "./services/demo";
+export {
   centsToPayPalAmount,
   isDefinitivePayPalFailure,
   MoneyFlowError,

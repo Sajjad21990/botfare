@@ -1,6 +1,6 @@
 "use client";
 
-import { Code2, ExternalLink, KeyRound, Loader2, RefreshCw, Tags } from "lucide-react";
+import { Code2, ExternalLink, KeyRound, Loader2, Lock, RefreshCw, Tags } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -207,8 +207,20 @@ function SecretPanel({
           Your middleware signs every call to BotFare with it. Rotate it if it leaked; the old
           secret stops working at once, so update your server&apos;s environment straight away.
         </p>
+        {site.demoLocked && (
+          <p className="flex items-start gap-1.5 pt-1 text-xs text-muted-foreground">
+            <Lock className="mt-px size-3.5 shrink-0" />
+            Judge mode: the live {site.name} demo runs with this secret, so it stays as it is. Add a
+            site of your own to try rotation.
+          </p>
+        )}
       </div>
-      <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setConfirming(true)}
+        disabled={site.demoLocked}
+      >
         <RefreshCw />
         Rotate secret
       </Button>

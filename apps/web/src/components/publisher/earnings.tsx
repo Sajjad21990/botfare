@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Banknote, Check, Info, Loader2, Mail, RefreshCw } from "lucide-react";
+import { ArrowUpRight, Banknote, Check, Info, Loader2, Lock, Mail, RefreshCw } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -191,22 +191,32 @@ export function PayoutEmailCard({
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 aria-invalid={error ? true : undefined}
+                readOnly={data.judgeMode}
                 className="pl-8"
               />
             </div>
             <p className={cn("text-xs", error ? "text-destructive" : "text-muted-foreground")}>
               {error ??
-                (inherited
-                  ? "Using your first site's payout email. Save to keep it on your profile."
-                  : data.payoutEmail
-                    ? "Payouts and the daily run send here."
-                    : "Use a PayPal sandbox personal account.")}
+                (data.judgeMode
+                  ? "Judge mode: demo payouts always go to the demo's PayPal sandbox account."
+                  : inherited
+                    ? "Using your first site's payout email. Save to keep it on your profile."
+                    : data.payoutEmail
+                      ? "Payouts and the daily run send here."
+                      : "Use a PayPal sandbox personal account.")}
             </p>
           </div>
-          <Button type="submit" variant="outline" size="sm" disabled={saving || unchanged}>
-            {saving ? <Loader2 className="animate-spin" /> : unchanged ? <Check /> : null}
-            {unchanged ? "Saved" : "Save email"}
-          </Button>
+          {data.judgeMode ? (
+            <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Lock className="size-3.5" />
+              Fixed for the shared demo
+            </p>
+          ) : (
+            <Button type="submit" variant="outline" size="sm" disabled={saving || unchanged}>
+              {saving ? <Loader2 className="animate-spin" /> : unchanged ? <Check /> : null}
+              {unchanged ? "Saved" : "Save email"}
+            </Button>
+          )}
         </form>
       </CardContent>
     </Card>

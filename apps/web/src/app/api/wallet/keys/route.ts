@@ -73,7 +73,7 @@ export async function POST(request: Request): Promise<Response> {
       dailyCapCents: body.data.dailyCapCents,
       allowedSiteIds,
     });
-    return Response.json({ key: toWalletAgentKey(key) }, { status: 201 });
+    return Response.json({ key: toWalletAgentKey(key, 0, auth.user.email) }, { status: 201 });
   } catch (err) {
     return walletErrorResponse(err, "create agent key");
   }

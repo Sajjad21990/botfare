@@ -32,6 +32,8 @@ export interface PayoutView {
 export interface SiteView {
   id: string;
   name: string;
+  /** The shared demo site seen in judge mode: its secret cannot be rotated. */
+  demoLocked: boolean;
   origin: string;
   payoutEmail: string | null;
   pricing: PricingRule[];
@@ -54,6 +56,8 @@ export interface PublisherDashboard {
   /** True when payoutEmail is set on the user, not inherited from a site. */
   payoutEmailOnProfile: boolean;
   minimumPayoutCents: number;
+  /** Signed in as a shared demo persona: the payout email is fixed. */
+  judgeMode: boolean;
   payouts: PayoutView[];
   /** Newest first. */
   sites: SiteView[];

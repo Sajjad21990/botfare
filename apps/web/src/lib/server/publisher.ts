@@ -1,3 +1,4 @@
+import { isDemoPersonaEmail, isLockedDemoSite } from "@botfare/contracts";
 import {
   type Db,
   DEFAULT_PAYOUT_MINIMUM_CENTS,
@@ -33,10 +34,12 @@ export function toPayoutView(payout: Payout): PayoutView {
 export function toSiteView(
   site: Site,
   stats: { paidRequests: number; earningsMicros: number } = { paidRequests: 0, earningsMicros: 0 },
+  viewerEmail?: string,
 ): SiteView {
   return {
     id: site.id,
     name: site.name,
+    demoLocked: isLockedDemoSite(viewerEmail, site.name),
     origin: site.origin,
     payoutEmail: site.payoutEmail,
     pricing: site.pricing,
@@ -64,8 +67,9 @@ export async function getPublisherDashboard(db: Db, userId: string): Promise<Pub
     payoutEmail: summary.payoutEmail,
     payoutEmailOnProfile: Boolean(user?.payoutEmail),
     minimumPayoutCents: MINIMUM_PAYOUT_CENTS,
+    judgeMode: isDemoPersonaEmail(user?.email),
     payouts: summary.payouts.map(toPayoutView),
-    sites: sites.map((site) => toSiteView(site, stats.get(site.id))),
+    sites: sites.map((site) => toSiteView(site, stats.get(site.id), user?.email)),
   };
 }
 

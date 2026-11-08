@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, KeyRound, Loader2 } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -171,7 +171,17 @@ function KeyRow({
         <LocalTime iso={key.createdAt} dateOnly />
       </TableCell>
       <TableCell className="text-right">
-        {revoked ? null : <RevokeButton agentKey={key} />}
+        {revoked ? null : key.demoLocked ? (
+          <span
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+            title="The demo agent pays with this key, so judge mode keeps it active."
+          >
+            <Lock className="size-3" />
+            Demo key
+          </span>
+        ) : (
+          <RevokeButton agentKey={key} />
+        )}
       </TableCell>
     </TableRow>
   );

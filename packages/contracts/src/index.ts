@@ -227,3 +227,82 @@ export const DEMO_PERSONAS = {
 } as const;
 
 export type DemoPersona = keyof typeof DEMO_PERSONAS;
+
+// ---------------------------------------------------------------------------------------------
+// The shared demo (judge mode). Every judge signs in as the same two persona users, so anything
+// that would break the demo for the next judge is locked or reset for them.
+
+/** The demo publisher's site, as `pnpm seed` registers it and apps/demo serves it. */
+export const DEMO_SITE_NAME = "Crema Notes";
+
+/** Crema Notes' prices. First match wins, so the specific article rules come first. */
+export const DEMO_SITE_PRICING: PricingRule[] = [
+  {
+    pattern: "/articles/premium-*",
+    method: "GET",
+    priceCents: 50,
+    audience: "agents",
+    description: "Premium article (full text)",
+    mimeType: "text/html",
+  },
+  {
+    pattern: "/articles/dialing-in-espresso",
+    method: "GET",
+    priceCents: 5,
+    audience: "agents",
+    description: "Full article: Dialing in espresso at home",
+    mimeType: "text/html",
+  },
+  {
+    pattern: "/articles/*",
+    method: "GET",
+    priceCents: 3,
+    audience: "agents",
+    description: "Full article (text)",
+    mimeType: "text/html",
+  },
+  {
+    pattern: "/api/brew-ratio",
+    method: "GET",
+    priceCents: 1,
+    audience: "everyone",
+    description: "Brew ratio API: water, grind and time for a dose of coffee",
+    mimeType: "application/json",
+  },
+];
+
+/** Always free on Crema Notes, even for agents. */
+export const DEMO_SITE_FREE_PATHS: string[] = [
+  "/",
+  "/catalog.json",
+  "/health",
+  "/static/*",
+  "/favicon.ico",
+];
+
+/** Agent keys `pnpm seed` and `pnpm seed:traffic` issue to the agent-owner persona. */
+export const DEMO_AGENT_KEY_NAMES: readonly string[] = [
+  "Demo research agent",
+  "Research agent",
+  "Price watcher",
+  "Newsletter bot",
+];
+
+/** True for the shared judge-mode users. */
+export function isDemoPersonaEmail(email: string | null | undefined): boolean {
+  const normalized = email?.trim().toLowerCase();
+  return Object.values(DEMO_PERSONAS).some((persona) => persona.email === normalized);
+}
+
+/** The seeded demo site, seen by a persona: its secret cannot be rotated. */
+export function isLockedDemoSite(
+  viewerEmail: string | null | undefined,
+  siteName: string,
+): boolean {
+  return isDemoPersonaEmail(viewerEmail) && siteName === DEMO_SITE_NAME;
+}
+
+/** A seeded demo agent key, seen by a persona: it cannot be revoked. */
+export function isLockedDemoKey(viewerEmail: string | null | undefined, keyName: string): boolean {
+  return isDemoPersonaEmail(viewerEmail) && DEMO_AGENT_KEY_NAMES.includes(keyName);
+}

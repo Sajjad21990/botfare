@@ -10,6 +10,10 @@ export default function SignInPage() {
         <p className="text-muted-foreground">
           This is a PayPal sandbox demo. Pick a role to explore; no password needed.
         </p>
+        <p className="text-sm text-muted-foreground">
+          Everyone shares these demo accounts, so the demo site&apos;s prices reset when you sign
+          in, and its secret, payout account and seeded agent keys stay locked.
+        </p>
       </div>
       <PersonaButtons />
     </main>
