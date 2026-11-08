@@ -10,6 +10,10 @@
  * - settles each request through PostgresPrepaidLedger with a clock set to the request's time,
  *   so every per-request max, daily cap, allowed-site and balance rule applies as it would live;
  * - refunds two receipts, as a publisher would after a duplicate fetch;
+ * - adds the Fare Court and Fare Advisor story around that traffic (scripts/lib/fare-story.ts):
+ *   offers shown, decline notes on the 50¢ premium roundup, citations, and stub purchases of the
+ *   grinder-maintenance article that are attested and disputed (three refunded by policy, one
+ *   waiting for the publisher);
  * - checks the ledger invariants at the end.
  *
  * Idempotent per run key: nonces, the wallet top-up and the refunds are all keyed by it, and the
@@ -28,6 +32,7 @@ import {
 } from "@botfare/core";
 import { SITE_NAME } from "../apps/demo/src/pricing";
 import { loadRootEnv, requireEnv } from "./lib/env-file";
+import { runFareStory } from "./lib/fare-story";
 import { runTraffic } from "./lib/traffic";
 
 const usd = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`;
@@ -71,6 +76,25 @@ async function main(): Promise<void> {
     }
     if (run.refunds > 0)
       console.log(`Refunds      ${run.refunds} receipts refunded by the publisher`);
+
+    const story = await runFareStory(db, {
+      runKey,
+      ownerUserId: owner.id,
+      site,
+      anchor: run.anchor,
+    });
+    const { stub, declines, offers, citations } = story;
+    console.log(
+      `Fare Court   ${stub.purchased} stub purchases (${stub.alreadyPurchased} from an earlier run), ${stub.attested} attested`,
+    );
+    for (const reason of stub.refused)
+      console.log(`             stub purchase refused (${reason})`);
+    console.log(
+      `             disputes: ${stub.disputes.refunded} refunded by policy, ${stub.disputes.pending} waiting for the publisher, ${stub.disputes.alreadyFiled} already filed`,
+    );
+    console.log(
+      `Advisor      ${offers.skipped ? "offers already recorded" : `${offers.inserted} offers shown`}; ${declines.recorded} decline notes (${declines.duplicates} already there); ${citations.cited} citations in ${citations.answers} answers`,
+    );
 
     const balance = await walletBalanceMicros(db, owner.id);
     console.log(`Wallet       balance ${usd(balance)}`);
