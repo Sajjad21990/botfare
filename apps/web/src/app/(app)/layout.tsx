@@ -11,18 +11,18 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-6 px-6">
-          <Link href="/" className="font-semibold tracking-tight">
+        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
+          <Link href="/" className="shrink-0 font-semibold tracking-tight">
             BotFare
           </Link>
           <NavLinks />
-          <div className="ml-auto flex items-center gap-3 text-sm text-muted-foreground">
-            <span className="hidden sm:inline">{user.name ?? user.email}</span>
+          <div className="ml-auto flex shrink-0 items-center gap-3 text-sm text-muted-foreground">
+            <span className="hidden md:inline">{user.name ?? user.email}</span>
             <SignOutButton />
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
     </div>
   );
 }

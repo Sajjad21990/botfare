@@ -14,7 +14,7 @@ const LINKS = [
 export function NavLinks() {
   const pathname = usePathname();
   return (
-    <nav className="flex items-center gap-1">
+    <nav className="-mx-1 flex min-w-0 items-center gap-0.5 overflow-x-auto px-1 [scrollbar-width:none] sm:gap-1">
       {LINKS.map((link) => {
         const active =
           link.href === "/publisher" ? pathname === link.href : pathname.startsWith(link.href);
@@ -23,7 +23,7 @@ export function NavLinks() {
             key={link.href}
             href={link.href}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-muted",
+              "shrink-0 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted sm:px-3",
               active ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
             )}
           >
