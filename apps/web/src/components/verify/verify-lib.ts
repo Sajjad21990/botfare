@@ -3,7 +3,6 @@
  * viewer's browser: it fetches the public statements and the public JWKS from this origin, then
  * verifies the Ed25519 signatures locally with `@botfare/contracts/receipts`.
  */
-import { IdPrefix } from "@botfare/contracts";
 import {
   type BotFareStatement,
   decodeStatement,
@@ -15,18 +14,11 @@ import {
   verifyStatement,
 } from "@botfare/contracts/receipts";
 import { decodeProtectedHeader, type JSONWebKeySet } from "jose";
+import { isReceiptId } from "./verify-href";
 
-const RECEIPT_ID = new RegExp(`^${IdPrefix.receipt}_[A-Za-z0-9]{4,64}$`);
+export { isReceiptId, verifyHref } from "./verify-href";
+
 const COMPACT_JWS = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
-
-export function isReceiptId(value: string): boolean {
-  return RECEIPT_ID.test(value);
-}
-
-/** Where a receipt can be checked by anyone. */
-export function verifyHref(receiptId: string): string {
-  return `/verify?receipt=${encodeURIComponent(receiptId)}`;
-}
 
 export type VerifyInput =
   | { kind: "receipt"; receiptId: string }

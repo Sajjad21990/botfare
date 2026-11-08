@@ -1,4 +1,5 @@
-import { ReceiptText } from "lucide-react";
+import { ReceiptText, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -9,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { verifyHref } from "@/components/verify/verify-href";
 import { formatMicros } from "./format";
 import { LocalTime } from "./local-time";
 import type { WalletReceipt } from "./types";
@@ -83,8 +85,19 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                       <Badge variant="outline">Settled</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {receipt.id}
+                  <TableCell className="text-xs text-muted-foreground">
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono">{receipt.id}</span>
+                      <Link
+                        href={verifyHref(receipt.id)}
+                        className="inline-flex items-center gap-1 rounded font-medium text-foreground underline-offset-4 hover:underline"
+                        title="Check BotFare's signed statements for this receipt"
+                      >
+                        <ShieldCheck aria-hidden className="size-3.5" />
+                        Verify
+                        <span className="sr-only"> receipt {receipt.id}</span>
+                      </Link>
+                    </span>
                   </TableCell>
                 </TableRow>
               ))}

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { HowVerifyWorks } from "@/components/verify/how-verify-works";
 import { ReceiptVerifier } from "@/components/verify/receipt-verifier";
-import { isReceiptId } from "@/components/verify/verify-lib";
+import { isReceiptId } from "@/components/verify/verify-href";
 
 export const metadata: Metadata = {
   title: "Verify a receipt · BotFare",

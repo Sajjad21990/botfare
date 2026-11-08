@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { verifyHref } from "@/components/verify/verify-href";
 import { api, errorText } from "./api";
 import {
   decidedByLabel,
@@ -438,7 +439,14 @@ function DisputeDialog({
 
             <p className="text-xs text-muted-foreground">
               Receipt <span className="font-mono">{dispute.receiptId}</span> · purchased{" "}
-              {formatDateTime(dispute.purchasedAt)}
+              {formatDateTime(dispute.purchasedAt)} ·{" "}
+              <Link
+                href={verifyHref(dispute.receiptId)}
+                className="font-medium text-foreground underline underline-offset-4"
+              >
+                Verify
+                <span className="sr-only"> receipt {dispute.receiptId}</span>
+              </Link>
             </p>
 
             {error && (

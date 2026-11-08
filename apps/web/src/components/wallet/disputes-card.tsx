@@ -1,4 +1,5 @@
 import { Scale } from "lucide-react";
+import Link from "next/link";
 import {
   decidedByLabel,
   formatFare,
@@ -8,6 +9,7 @@ import {
 import type { DisputeView } from "@/components/publisher/disputes-types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { verifyHref } from "@/components/verify/verify-href";
 import { LocalTime } from "./local-time";
 
 /** Fare Court disputes filed by the owner's agents, with the outcome and the AI's reasoning. */
@@ -71,7 +73,13 @@ export function DisputesCard({ disputes, limit }: { disputes: DisputeView[]; lim
                   <p className="text-sm text-muted-foreground">
                     <span className="text-foreground">{reasonLabel(dispute.reason)}</span> ·{" "}
                     {dispute.agentKeyName} · <LocalTime iso={dispute.createdAt} />
-                    {by ? ` · decided ${by}` : ""}
+                    {by ? ` · decided ${by}` : ""} ·{" "}
+                    <Link
+                      href={verifyHref(dispute.receiptId)}
+                      className="font-medium text-foreground underline-offset-4 hover:underline"
+                    >
+                      Verify receipt
+                    </Link>
                   </p>
                   <p className="text-sm">{dispute.verdict?.rationale ?? dispute.message}</p>
                 </li>
