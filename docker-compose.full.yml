@@ -1,0 +1,136 @@
+# The whole BotFare stack in Docker, for judges: Postgres, a one-shot setup (migrations, seed, demo
+# traffic), the BotFare web app and the Crema Notes demo publisher. See docker/README.md.
+#
+#   docker compose -f docker-compose.full.yml -p botfare-judge up --build
+#
+# Then open http://localhost:3300 (BotFare) and http://localhost:4300 (Crema Notes).
+#
+# Self-contained on purpose: its own Postgres service, volumes and network under the project name
+# "botfare-judge", and host ports 3300/4300, so it never touches the development database of
+# docker-compose.yml (project "botfare", volume pgdata, port 5432).
+#
+# PayPal and Anthropic keys come from the repo's .env when it exists (compose reads it for the
+# ${...} values below; nothing else from it is used). Browsing, the dashboards and paid agent
+# requests work without them; PayPal top-ups and payouts need PAYPAL_CLIENT_ID/SECRET.
+
+name: botfare-judge
+
+x-paypal-env: &paypal-env
+  PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+  PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+  PUBLISHER_PAYPAL_EMAIL: ${PUBLISHER_PAYPAL_EMAIL:-}
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: botfare
+      POSTGRES_PASSWORD: botfare
+      POSTGRES_DB: botfare
+    # Not published to the host. To look inside:
+    #   docker compose -f docker-compose.full.yml -p botfare-judge exec db psql -U botfare
+    volumes:
+      - judge-pgdata:/var/lib/postgresql/data
+    networks: [judge]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U botfare -d botfare"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Migrations, pnpm seed and pnpm seed:traffic; writes judge.env to the shared volume and exits.
+  setup:
+    build:
+      context: .
+      dockerfile: Dockerfile.demo
+    image: botfare-judge/demo:local
+    user: root
+    entrypoint: ["/usr/local/bin/setup.sh"]
+    environment:
+      <<: *paypal-env
+      DATABASE_URL: postgres://botfare:botfare@db:5432/botfare
+      # Public URLs as a browser or an agent on the host sees them.
+      BOTFARE_URL: http://localhost:3300
+      DEMO_ORIGIN: http://localhost:4300
+    volumes:
+      - judge-shared:/run/botfare
+    networks: [judge]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY: ${NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY:-}
+    image: botfare-judge/web:local
+    init: true
+    environment:
+      <<: *paypal-env
+      DATABASE_URL: postgres://botfare:botfare@db:5432/botfare
+      # Public URL: PayPal return URLs and the publisher snippet.
+      BOTFARE_URL: http://localhost:3300
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+    ports:
+      - "3300:3000"
+    volumes:
+      - judge-shared:/run/botfare:ro
+    networks: [judge]
+    depends_on:
+      db:
+        condition: service_healthy
+      setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>r.json()).then(j=>process.exit(j.ok&&j.db?0:1),()=>process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 20
+    restart: unless-stopped
+
+  demo:
+    image: botfare-judge/demo:local
+    pull_policy: never
+    init: true
+    environment:
+      # The facilitator on the compose network; the demo's public origin for catalog URLs.
+      BOTFARE_URL: http://web:3000
+      DEMO_ORIGIN: http://localhost:4300
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
+    ports:
+      - "4300:4000"
+    volumes:
+      - judge-shared:/run/botfare:ro
+    networks: [judge]
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      web:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      start_period: 15s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  judge-pgdata:
+  judge-shared:
+
+networks:
+  judge:

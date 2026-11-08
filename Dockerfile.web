@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1
+# BotFare web app (apps/web, Next.js) for docker-compose.full.yml.
+# Workspace packages ship TypeScript source that Next transpiles, so the runtime keeps the
+# workspace and its node_modules next to the build output.
+
+FROM node:24-bookworm-slim AS base
+ENV COREPACK_HOME=/usr/local/share/corepack \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    PNPM_STORE_DIR=/pnpm/store
+RUN corepack enable
+WORKDIR /app
+# pnpm at the version in package.json's packageManager, cached in the image for every user.
+COPY package.json ./
+RUN corepack install && chmod -R a+rX "$COREPACK_HOME"
+
+FROM base AS deps
+# Download every package in the lockfile first: this layer only changes with pnpm-lock.yaml.
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN --mount=type=cache,id=botfare-pnpm,target=/pnpm/store \
+    pnpm fetch --store-dir /pnpm/store
+COPY . .
+RUN --mount=type=cache,id=botfare-pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --offline --store-dir /pnpm/store
+
+FROM deps AS build
+# Optional AG Studio licence key; Next inlines NEXT_PUBLIC_* values at build time.
+ARG NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY=""
+ENV NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY=${NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY} \
+    NEXT_TELEMETRY_DISABLED=1
+RUN pnpm --filter @botfare/web build
+
+FROM base AS runtime
+COPY --from=build /app /app
+COPY --chmod=755 docker/env-entrypoint.sh /usr/local/bin/
+# next start writes its cache under .next; /run/botfare is the shared volume with judge.env.
+RUN chown -R node:node /app/apps/web/.next && mkdir -p /run/botfare && chown node:node /run/botfare
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
+WORKDIR /app/apps/web
+USER node
+EXPOSE 3000
+ENTRYPOINT ["/usr/local/bin/env-entrypoint.sh"]
+CMD ["/app/apps/web/node_modules/.bin/next", "start", "--hostname", "0.0.0.0", "--port", "3000"]

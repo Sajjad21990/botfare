@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+# Crema Notes demo publisher (apps/demo, run with tsx) for docker-compose.full.yml. The same image
+# runs the one-shot "setup" service (migrations, pnpm seed, pnpm seed:traffic), which needs the
+# whole workspace and the root dev tools (tsx), so it keeps the full install.
+
+FROM node:24-bookworm-slim AS base
+ENV COREPACK_HOME=/usr/local/share/corepack \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    PNPM_STORE_DIR=/pnpm/store
+RUN corepack enable
+WORKDIR /app
+# pnpm at the version in package.json's packageManager, cached in the image for every user.
+COPY package.json ./
+RUN corepack install && chmod -R a+rX "$COREPACK_HOME"
+
+FROM base AS deps
+# Download every package in the lockfile first: this layer only changes with pnpm-lock.yaml.
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN --mount=type=cache,id=botfare-pnpm,target=/pnpm/store \
+    pnpm fetch --store-dir /pnpm/store
+COPY . .
+RUN --mount=type=cache,id=botfare-pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --offline --store-dir /pnpm/store
+
+FROM deps AS runtime
+COPY --chmod=755 docker/env-entrypoint.sh docker/setup.sh /usr/local/bin/
+# /run/botfare is the shared volume that setup writes judge.env into.
+RUN mkdir -p /run/botfare && chown node:node /run/botfare
+ENV NODE_ENV=production \
+    PORT=4000 \
+    HOST=0.0.0.0
+WORKDIR /app/apps/demo
+USER node
+EXPOSE 4000
+ENTRYPOINT ["/usr/local/bin/env-entrypoint.sh"]
+CMD ["/app/node_modules/.bin/tsx", "src/server.ts"]

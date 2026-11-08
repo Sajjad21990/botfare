@@ -1,0 +1,13 @@
+# Build context for Dockerfile.web and Dockerfile.demo (docker-compose.full.yml).
+# Dependencies are installed inside the image from pnpm-lock.yaml, and secrets never enter it.
+**/node_modules
+**/.next
+**/*.tsbuildinfo
+**/coverage
+**/*.log
+**/.DS_Store
+.git
+.claude
+.env
+.env.*
+!.env.example
