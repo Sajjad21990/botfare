@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import styles from "./landing.module.css";
 import { type PillarId, pillars } from "./pillar-data";
@@ -10,11 +11,13 @@ type PillarProps = {
   children: ReactNode;
   /** The worked example, drawn on the right on wide screens. */
   example: ReactNode;
+  /** Where the judge tour shows this part, e.g. "Step 1: the Fare Advisor card". */
+  tour: string;
   tinted?: boolean;
 };
 
 /** One of the three parts: name, the question it answers, who it is for, and a worked example. */
-export function Pillar({ id, forWhom, children, example, tinted }: PillarProps) {
+export function Pillar({ id, forWhom, children, example, tour, tinted }: PillarProps) {
   const pillar = pillars.find((p) => p.id === id);
   if (!pillar) return null;
   const titleId = `${id}-title`;
@@ -22,7 +25,7 @@ export function Pillar({ id, forWhom, children, example, tinted }: PillarProps) 
     <section
       id={id}
       aria-labelledby={titleId}
-      className={`${styles.anchor} border-b ${tinted ? "bg-muted/40" : ""}`}
+      className={`${styles.anchor} border-b ${tinted ? `${styles.tinted} bg-muted/40` : ""}`}
     >
       <div className="mx-auto grid w-full max-w-6xl gap-12 px-4 py-20 sm:px-6 sm:py-24 lg:grid-cols-[minmax(0,1fr)_minmax(0,32rem)] lg:gap-16">
         <div className="min-w-0">
@@ -40,6 +43,15 @@ export function Pillar({ id, forWhom, children, example, tinted }: PillarProps) 
             <span className="font-semibold">{forWhom}</span>
           </p>
           <div className="mt-6 max-w-[62ch] space-y-4 leading-relaxed">{children}</div>
+          <p className="mt-8 max-w-[62ch] text-sm leading-relaxed">
+            <Link
+              href="/judge"
+              className={`${styles.focusRing} rounded-sm font-semibold underline underline-offset-4`}
+            >
+              See it in the tour
+            </Link>
+            <span className="text-muted-foreground"> · {tour}</span>
+          </p>
         </div>
         <div className="min-w-0 self-start lg:pt-2">{example}</div>
       </div>
@@ -47,17 +59,16 @@ export function Pillar({ id, forWhom, children, example, tinted }: PillarProps) 
   );
 }
 
-/** A short list of facts inside a pillar. */
-export function PillarPoints({ points }: { points: ReactNode[] }) {
+/** A short list of facts inside a pillar, each with a bold lead-in so the list can be skimmed. */
+export function PillarPoints({ points }: { points: { lead: string; text: ReactNode }[] }) {
   return (
     <ul className="space-y-3">
-      {points.map((point, i) => (
+      {points.map((point) => (
         <li
-          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed, static list
-          key={i}
+          key={point.lead}
           className="relative pl-5 text-muted-foreground before:absolute before:top-[0.7em] before:left-0 before:h-0.5 before:w-2.5 before:bg-foreground/50"
         >
-          {point}
+          <strong className="font-semibold text-foreground">{point.lead}</strong> {point.text}
         </li>
       ))}
     </ul>

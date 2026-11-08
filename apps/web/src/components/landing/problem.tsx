@@ -1,7 +1,22 @@
-const problems = [
+import type { ReactNode } from "react";
+import styles from "./landing.module.css";
+
+const problems: { title: string; body: ReactNode }[] = [
   {
     title: "AI reads for free.",
-    body: "Agents answer questions from publishers' pages and call their APIs without paying. With an AI summary at the top of search results, people click through on 8% of visits instead of 15%.",
+    body: (
+      <>
+        Agents answer questions from publishers&apos; pages and call their APIs without paying. With
+        a Google AI Overview on the page, people click a result on 8% of visits instead of 15% (
+        <a
+          href="https://www.seroundtable.com/pew-google-ai-overviews-39808.html"
+          className={`${styles.focusRing} rounded-sm text-foreground underline underline-offset-4`}
+        >
+          Pew Research Center, 2025
+        </a>
+        ).
+      </>
+    ),
   },
   {
     title: "Paying per request needs crypto.",

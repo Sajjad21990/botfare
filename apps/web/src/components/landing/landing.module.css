@@ -12,9 +12,16 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Ticket stock: a faint cool tint so the ticket reads as a separate object on white. */
+/* Ticket stock: a faint cool tint so the ticket reads as a separate object on white. Muted text
+   is a step darker on the stock so it keeps 4.5:1 contrast (oklch 0.5 on the stock is about 6:1). */
 .ticket {
   background-color: oklch(0.975 0.008 250);
+  --muted-foreground: oklch(0.5 0 0);
+}
+
+/* Tinted sections (bg-muted/40) tell the ticket notches which colour to take. */
+.tinted {
+  --section-bg: color-mix(in oklab, var(--muted) 40%, var(--background));
 }
 
 /* A perforated edge: the stub side of a ticket, drawn with a dotted border. */
@@ -22,7 +29,7 @@
   border-left: 2px dashed var(--border);
 }
 
-/* Half-circle notches where the stub tears off. They take the page colour. */
+/* Half-circle notches where the stub tears off. They take the section's colour. */
 .notch {
   position: absolute;
   top: 50%;
@@ -30,7 +37,7 @@
   height: 1.5rem;
   border-radius: 9999px;
   transform: translateY(-50%);
-  background-color: var(--background);
+  background-color: var(--section-bg, var(--background));
   border: 1px solid var(--border);
 }
 
@@ -79,8 +86,9 @@
   }
 }
 
-/* Visible focus on links that are not buttons (pillar tickets, inline links). */
+/* Visible focus on links that are not buttons (header, pillar tickets, inline links): a solid
+   foreground outline, well above the 3:1 asked of focus indicators. */
 .focusRing:focus-visible {
-  outline: 3px solid color-mix(in oklch, var(--ring) 60%, transparent);
+  outline: 2px solid var(--foreground);
   outline-offset: 3px;
 }

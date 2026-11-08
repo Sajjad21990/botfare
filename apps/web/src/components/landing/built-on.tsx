@@ -1,7 +1,7 @@
 const parts = [
   {
     name: "x402 V2",
-    role: "The open HTTP 402 standard. BotFare adds the prepaid scheme on paypal:sandbox as a plug-in for the official SDK.",
+    role: "The open HTTP 402 standard for agent payments. BotFare adds a PayPal payment type to the official SDK.",
   },
   {
     name: "PayPal Orders v2 and JS SDK v6",
@@ -13,11 +13,11 @@ const parts = [
   },
   {
     name: "PayPal Webhooks",
-    role: "Signature-verified events keep captures and payouts in sync with the ledger.",
+    role: "Captures and payouts kept in sync with the ledger: each event's signature is verified with PayPal and each event is applied once.",
   },
   {
     name: "Log in with PayPal",
-    role: "Publishers sign in with their verified PayPal email, which becomes their payout email.",
+    role: "Publishers can sign in with their verified PayPal email, which becomes their payout email (sandbox; turned on per deployment).",
   },
   {
     name: "Claude",

@@ -31,8 +31,8 @@ export function Thesis() {
             Micropayments failed on the decision, not the technology.
           </h2>
           <p className="mt-4 max-w-[60ch] leading-relaxed text-muted-foreground">
-            For 25 years, every tiny payment has asked for a decision that costs more attention than
-            the payment is worth: Nick Szabo,{" "}
+            For more than 25 years, every tiny payment has asked for a decision that costs more
+            attention than the payment is worth: Nick Szabo,{" "}
             <a
               href="https://nakamotoinstitute.org/micropayments-and-mental-transaction-costs/"
               className={`${styles.focusRing} rounded-sm text-foreground underline underline-offset-4`}

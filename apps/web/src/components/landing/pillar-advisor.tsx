@@ -2,9 +2,14 @@ import { LightbulbIcon } from "lucide-react";
 import styles from "./landing.module.css";
 import { Pillar, PillarPoints } from "./pillar";
 
-/** Illustrative funnel for the demo's premium roundup over 14 days. */
+/**
+ * Illustrative funnel for the demo's premium roundup over 14 days at 50¢. The declines are the two
+ * notes below (8 "too expensive", 5 "low-quality preview"). Fed through projectWeeklyRevenue in
+ * lib/server/fare-advisor.ts, these inputs give $0.75 a week now and $1.78 at 8¢.
+ */
 const funnel = [
   { label: "Offers shown", count: 64 },
+  { label: "Declined, with a note", count: 13 },
   { label: "Paid", count: 3 },
   { label: "Cited in an answer", count: 1 },
 ];
@@ -57,7 +62,7 @@ function AdvisorCard() {
               >
                 <q className="min-w-0">{n.reason}</q>
                 <span className={`${styles.tabular} shrink-0 text-muted-foreground`}>
-                  {n.count} agents
+                  {n.count}×
                 </span>
               </li>
             ))}
@@ -86,18 +91,19 @@ function AdvisorCard() {
                 8¢
               </p>
               <p className={`${styles.tabular} mt-2 text-xs text-muted-foreground`}>
-                Projected: $0.75 a week now, $1.20 at 8¢
+                Projected: $0.75 a week now, $1.78 at 8¢
               </p>
             </div>
-            <span className="inline-flex h-9 items-center rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground">
+            <span className="inline-flex h-9 items-center rounded-lg border border-foreground/30 bg-background px-3.5 text-sm font-medium text-foreground">
               Apply 8¢
             </span>
           </div>
         </div>
       </div>
       <figcaption className="mt-4 text-sm leading-relaxed text-muted-foreground">
-        Illustrative figures for the demo&apos;s premium roundup. In the demo, applying 8¢ reaches
-        the middleware within 30 seconds, and the next agent run buys the page.
+        Illustrative figures for the demo&apos;s premium roundup. With an Anthropic key, Claude
+        suggests the price; applying it reaches the middleware within 30 seconds, and an agent
+        capped at 10¢ can then buy the page.
       </figcaption>
     </figure>
   );
@@ -110,6 +116,7 @@ export function PillarAdvisor() {
       forWhom="publishers pricing their pages for AI readers"
       tinted
       example={<AdvisorCard />}
+      tour="Step 1: the Fare Advisor card on the publisher dashboard."
     >
       <p className="text-lg">
         A person who leaves a page doesn&apos;t say why. An agent can. Fare Advisor turns what
@@ -117,11 +124,26 @@ export function PillarAdvisor() {
       </p>
       <PillarPoints
         points={[
-          "Agents leave free decline notes when they skip a page: a category and one sentence, such as “Preview lists names only”.",
-          "Answers report which paid pages they cited. Citations are the new clicks: they replace the clicks AI summaries took away.",
-          "BotFare shows the funnel for each pricing rule: offers shown, paid, declined, cited and disputed.",
-          "Claude groups the reasons and recommends a price, preview or audience change. The evidence is checked against the real counts, and the projected revenue comes from BotFare’s own model, not the AI.",
-          "Nothing changes until the publisher clicks Apply and confirms.",
+          {
+            lead: "Decline notes.",
+            text: "An agent that skips a page leaves a free note: a category and one sentence, such as “Preview lists names only”.",
+          },
+          {
+            lead: "Citations.",
+            text: "Answers report which paid pages they cited. Citations are the new clicks, replacing the ones AI summaries took away.",
+          },
+          {
+            lead: "A funnel per pricing rule.",
+            text: "Offers shown, paid, declined, cited and disputed, at the rule’s current price.",
+          },
+          {
+            lead: "Checked advice.",
+            text: "Claude groups the reasons and suggests a price, preview or audience change. Its evidence is checked against the real counts, and the projection comes from BotFare’s own model, not the AI.",
+          },
+          {
+            lead: "The publisher decides.",
+            text: "Nothing changes until the publisher clicks Apply and confirms.",
+          },
         ]}
       />
     </Pillar>

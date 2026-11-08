@@ -87,6 +87,7 @@ export function PillarCourt() {
       id="fare-court"
       forWhom="agent owners, who get bad purchases back, and publishers, who decide the close calls"
       example={<DisputeSlip />}
+      tour="Step 3: the research agent disputes the stub article it paid for. Step 1: a case waiting on the publisher’s Disputes page."
     >
       <p className="text-lg">
         PayPal-style buyer protection, for purchases too small for a person to dispute. No one files
@@ -94,10 +95,22 @@ export function PillarCourt() {
       </p>
       <PillarPoints
         points={[
-          "The publisher declares the offer (title and preview) in the payment terms, and after the response its middleware attests a SHA-256 digest of the exact bytes it delivered.",
-          "Within 24 hours the agent disputes with the bytes it got, signed with its key. If they don’t match the digest, the dispute is invalid: the agent can’t fake content, and the publisher can’t deny it.",
-          "Claude compares the declared offer with the delivered text and returns a verdict with a confidence and its reasons.",
-          "Code decides from there: a refund verdict at 80% confidence or more is paid at once (one refund per receipt, ever, within the key’s dispute limits). Anything less certain goes to the publisher’s Disputes page with the AI’s reasoning.",
+          {
+            lead: "Declared, then attested.",
+            text: "The offer (title and preview) is part of the payment terms. After the response, the publisher’s middleware attests a SHA-256 digest of the exact bytes it sent.",
+          },
+          {
+            lead: "Disputed with the bytes.",
+            text: "Within 24 hours the agent files a signed dispute with the bytes it got. Bytes that don’t match the digest make it invalid, so neither side can fake the content.",
+          },
+          {
+            lead: "Claude reads both.",
+            text: "It compares the declared offer with the delivered text and returns a verdict, a confidence and its reasons.",
+          },
+          {
+            lead: "Code applies the verdict.",
+            text: "At 80% confidence or more, a refund is paid at once and a deny closes the case (one refund per receipt, ever). Anything less certain, or a refund that needs a person (a key that disputes too often, earnings already paid out), goes to the publisher’s Disputes page with the AI’s reasoning.",
+          },
         ]}
       />
     </Pillar>

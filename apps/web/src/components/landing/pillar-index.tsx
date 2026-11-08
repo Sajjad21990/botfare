@@ -6,7 +6,7 @@ import { pillars } from "./pillar-data";
 export function PillarIndex() {
   return (
     <section aria-labelledby="pillars-title" className="border-b">
-      <div className="mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-24">
+      <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
         <h2
           id="pillars-title"
           className="max-w-2xl text-3xl leading-tight font-bold tracking-tight text-balance sm:text-4xl"
@@ -15,9 +15,10 @@ export function PillarIndex() {
         </h2>
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-muted-foreground">
           The fare moves the money. Fare Court and Fare Advisor put Claude on the two questions that
-          come after every fare, and nothing Claude says moves money by itself.
+          come after every fare. Claude only returns a verdict or a recommendation; code checks it
+          against fixed limits before any money moves.
         </p>
-        <ul className="mt-12 grid gap-4 md:grid-cols-3">
+        <ul className="mt-10 grid gap-4 md:grid-cols-3">
           {pillars.map((p) => (
             <li key={p.id}>
               <a

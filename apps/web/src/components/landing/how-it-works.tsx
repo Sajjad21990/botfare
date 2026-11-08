@@ -20,7 +20,7 @@ const steps: Step[] = [
     wire: [
       { text: "402 Payment Required", tone: "required" },
       {
-        text: 'PAYMENT-REQUIRED: {"scheme":"prepaid","network":"paypal:sandbox","asset":"USD","amount":"3","extra":{"botfareOffer":{"title":"Burr grinders, explained",…}}}',
+        text: 'PAYMENT-REQUIRED (decoded): {"x402Version":2,"accepts":[{"scheme":"prepaid","network":"paypal:sandbox","asset":"USD","amount":"3","extra":{"botfareOffer":{"title":"Burr grinders, explained",…}}}]}',
       },
     ],
   },
@@ -29,7 +29,9 @@ const steps: Step[] = [
     body: "It checks the price against its budget, then signs a single-use Ed25519 authorization with a fresh nonce. The authorization expires within 60 seconds.",
     wire: [
       { text: "GET /articles/burr-basics" },
-      { text: 'PAYMENT-SIGNATURE: {"payload":{"authorization":"eyJhbGciOiJFZERTQSIs…"}}' },
+      {
+        text: 'PAYMENT-SIGNATURE (decoded): {"x402Version":2,"accepted":{"scheme":"prepaid",…},"payload":{"authorization":"eyJhbGciOiJFZERTQSIs…"}}',
+      },
     ],
   },
   {
@@ -47,7 +49,7 @@ const steps: Step[] = [
     wire: [
       { text: "200 OK", tone: "paid" },
       {
-        text: 'PAYMENT-RESPONSE: {"success":true,"transaction":"rcpt_9d2e41b7","network":"paypal:sandbox"}',
+        text: 'PAYMENT-RESPONSE (decoded): {"success":true,"transaction":"rcpt_9d2e41b7","network":"paypal:sandbox"}',
       },
       { text: "then, to BotFare: POST /api/x402/receipts/rcpt_9d2e41b7/attest" },
       { text: '{"contentDigest":"sha-256=:+oWVrNYqTwN…=:"}' },
@@ -75,7 +77,8 @@ export function HowItWorks() {
             Standard x402 V2, with a new payment type: scheme{" "}
             <code className={styles.mono}>prepaid</code> on network{" "}
             <code className={styles.mono}>paypal:sandbox</code>. Publishers and agents use the
-            official x402 SDK with the BotFare plug-in.
+            official x402 SDK with the BotFare plug-in. The headers are base64 JSON, shown decoded
+            here.
           </p>
         </div>
 

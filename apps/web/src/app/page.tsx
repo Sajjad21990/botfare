@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Audiences } from "@/components/landing/audiences";
 import { BuiltOn } from "@/components/landing/built-on";
 import { landingMono, landingSans } from "@/components/landing/fonts";
 import { Hero } from "@/components/landing/hero";
@@ -28,14 +27,13 @@ export default function Home() {
       <SiteHeader />
       <main className="flex-1">
         <Hero />
+        <PillarIndex />
         <Problem />
         <Thesis />
-        <PillarIndex />
         <PillarFares />
         <PillarCourt />
         <PillarAdvisor />
         <HowItWorks />
-        <Audiences />
         <BuiltOn />
       </main>
       <SiteFooter />

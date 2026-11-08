@@ -9,6 +9,7 @@ export function PillarFares() {
       forWhom="publishers and API owners, agent owners, and their agents"
       tinted
       example={<FeeTable />}
+      tour="Steps 2 and 3: top up with PayPal, then run the research agent and watch it pay."
     >
       <p className="text-lg">
         Publishers add one line of middleware,{" "}
@@ -20,10 +21,18 @@ export function PillarFares() {
       </p>
       <PillarPoints
         points={[
-          "Standard x402 V2 with a new payment type, scheme prepaid on network paypal:sandbox, as a plug-in for the official SDK.",
-          "Signed agents and known AI crawlers pay. Anything else that only looks automated gets a human check (“Reading as a human? Continue free.”), never a block.",
-          "Each agent key has a daily cap, a per-request maximum and a list of allowed sites, enforced again by BotFare.",
-          "Publishers keep 95% of each fare and are paid in PayPal Payouts batches, not one payment per read.",
+          {
+            lead: "Agents pay, people don’t.",
+            text: "Signed agents pay. Each site sets how far detection goes: known AI crawlers can be charged too, and at stricter levels anything that looks automated gets a human check (“Reading as a human? Continue free.”), never a block.",
+          },
+          {
+            lead: "A budget per key.",
+            text: "Each agent key has a daily cap, a per-request maximum and a list of allowed sites, enforced again by BotFare.",
+          },
+          {
+            lead: "Paid out in batches.",
+            text: "Publishers keep 95% of each fare and are paid through PayPal Payouts batches, not one payment per read.",
+          },
         ]}
       />
     </Pillar>

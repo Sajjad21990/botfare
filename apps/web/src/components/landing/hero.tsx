@@ -16,8 +16,13 @@ export function Hero() {
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
             Pay-per-request for AI agents, settled on PayPal — x402 for PayPal&apos;s 440 million
-            accounts. Bots pay a few cents a page, people read free, and Claude handles the
-            decisions too small for anyone to make by hand.
+            accounts. Bots pay a few cents a page with{" "}
+            <strong className="font-semibold text-foreground">Fares</strong>, get their money back
+            when a page isn&apos;t what was promised through{" "}
+            <strong className="font-semibold text-foreground">Fare Court</strong>, and tell
+            publishers why they passed through{" "}
+            <strong className="font-semibold text-foreground">Fare Advisor</strong>. People read
+            free.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-3">
             <Link
