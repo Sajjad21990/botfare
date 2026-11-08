@@ -54,7 +54,7 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
-      # Optional: model for the analytics assistant and the research agent (the app has a default).
+      # Optional: model for the analytics assistant, research agent, Fare Court and Fare Advisor (the app has a default).
       - key: ANTHROPIC_MODEL
         sync: false
       # Optional: AG Studio licence key; read at build time, removes the watermark.

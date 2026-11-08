@@ -41,6 +41,13 @@ them with `dispute_purchase`; nothing is written to disk, and purchases made by 
 cannot be disputed from here. BotFare allows at most 10 disputes per key per day, and a key that
 disputes a large share of its purchases has its disputes reviewed by the publisher.
 
+What comes back is the outcome: `refunded` (the 3¢ is back in the wallet; with an AI judge this
+takes a few seconds), `denied` (the AI found the page matched its offer), `pending_publisher`
+(the AI was not sure, or the BotFare app has no `ANTHROPIC_API_KEY`: the publisher decides on
+their Disputes page), or `invalid` (filed after 24 hours, or the bytes do not match the
+publisher's digest). A refund always goes through BotFare's ledger, once per receipt; the tool
+never moves money by itself.
+
 ## Setup
 
 1. Run BotFare (`pnpm dev:web`, port 3000) or use the deployed app.
@@ -127,7 +134,8 @@ API:
 - `POST /api/disputes` with `{ receiptId, reason, note?, contentBase64 }` returns the dispute
   outcome `{ disputeId, receiptId, status, refundedCents, verdict, message }`
   (`@botfare/contracts/fare`).
-- `POST /api/offers/decline` with `{ url, priceCents, category, reason }`.
+- `POST /api/offers/decline` with `{ url, priceCents, category, reason }`: one note per key,
+  URL and day is kept. The URL must be on a site registered with BotFare.
 
 There is no API token. Each request carries the agent's Web Bot Auth signature
 (`Signature-Input`, `Signature`, `Signature-Agent`). BotFare looks the `keyid` (the key's JWK
@@ -144,6 +152,14 @@ URL. Unsigned, expired, revoked or foreign-key requests get `401` with a message
 - **"not an active BotFare agent key"** or **"revoked"**: create a new key on the Wallet page.
 - **"Refused: ... costs $X, above ..."**: the message names the limit that applied. Raise
   `max_price_usd`, the key's limits, or top up.
+- **`dispute_purchase` says the publisher has not attested the receipt** (`not_attested`): the
+  publisher's middleware sends its digest just after the response; the server already re-files
+  twice. If it persists, the publisher runs an older `botfare()` without proof of delivery, and
+  that purchase cannot be disputed.
+- **`dispute_purchase` says "No content is held for receipt …"**: this process did not make that purchase (or
+  restarted since), so it does not hold the delivered bytes.
+- **"At most 10 disputes per agent key per day"**: the key's daily dispute limit; try again the
+  next UTC day.
 
 ## Tests
 

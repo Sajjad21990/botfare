@@ -34,7 +34,7 @@ A resource server answers an unpaid request with HTTP 402 and a `PAYMENT-REQUIRE
 | `amount` | Price in integer cents as a string, e.g. `"3"` |
 | `payTo` | The publisher's BotFare site ID (`site_…`). The ledger credits that site owner's earnings. |
 | `maxTimeoutSeconds` | At most 60. `PrepaidPayPalServer.enhancePaymentRequirements` clamps larger values. |
-| `extra` | `{"botfareSignal": "<signal>"}` from BotFare's middleware (see below); the scheme itself needs no fields. |
+| `extra` | `{"botfareSignal": "<signal>", "botfareOffer": {title, preview, wordCount?}}` from BotFare's middleware (see below); the scheme itself needs no fields. |
 
 A decoded example, as the demo publisher sends it:
 
@@ -54,12 +54,21 @@ A decoded example, as the demo publisher sends it:
     "asset": "USD",
     "payTo": "site_22a19e75551c4c2c",
     "maxTimeoutSeconds": 60,
-    "extra": { "botfareSignal": "signed-agent" }
+    "extra": {
+      "botfareSignal": "signed-agent",
+      "botfareOffer": {
+        "title": "Burr grinders, explained",
+        "preview": "Ask ten people what upgrade made the biggest difference to…",
+        "wordCount": 835
+      }
+    }
   }]
 }
 ```
 
 **Detection signal (BotFare extension).** `extra.botfareSignal` says why the publisher asked this request to pay. It is one of `signed-agent`, `agent-header`, `known-bot`, `bot-impostor`, `edge-score`, `automation`, `payment-signature` or `everyone` (`detectionSignalSchema` in `@botfare/contracts`). The resource server (a `PrepaidPayPalServer` subclass in `@botfare/express`, `src/payment-gate.ts`) declares it in `dynamicExtraFields`, so `@x402/core` leaves it out when it matches a payment's `accepted` terms: a client that echoes a different signal still matches, and verify and settle always receive the server's own value. The facilitator passes `requirements.extra` to the ledger, which stores a known signal on the receipt (`receipts.detection_signal`; an unknown or missing one is stored as null). The signal decides nothing about money; it feeds "revenue by detection signal" in the publisher's analytics.
+
+**Declared offer (BotFare extension, Fare Court).** `extra.botfareOffer` is what the publisher promises for the price: `{title (1–200 chars), preview (≤ 600 chars), wordCount?}` (`declaredOfferSchema` in `@botfare/contracts/fare`). `botfare()` builds it from the site's `preview(req)` option, or from the pricing rule's description when there is no preview. Like the signal it is a dynamic extra field: the server always settles with its own declaration, whatever a client echoes. Settle stores it on the receipt (`receipts.declared_offer`; a missing or invalid one is stored as null), and Fare Court compares it with what was delivered.
 
 **Preview (BotFare extension).** The 402 body is `{"preview": {"title", "excerpt", "wordCount"?} | null}`, where `excerpt` is at most 600 characters. The publisher middleware sends it as the SDK's `unpaidResponseBody`, and agents read it free before deciding to pay. `getOffer()` in `@botfare/sdk` returns it.
 
@@ -163,6 +172,8 @@ The base URL is `${BOTFARE_URL}/api/x402`. All bodies are JSON.
 | `POST /verify` | site | `{x402Version, paymentPayload, paymentRequirements}` | `VerifyResponse` |
 | `POST /settle` | site | same as verify | `SettleResponse` |
 | `POST /refund` | site | `{transaction: "rcpt_…"}` | `{ok, transaction, status, amountCents, refundTransaction, alreadyRefunded}` |
+| `POST /receipts/<receiptId>/attest` | site | `{contentDigest, contentLength, contentType, status}` | `{ok, receiptId, contentDigest, alreadyAttested}` ([proof of delivery](#fare-court-proof-of-delivery-and-disputes)) |
+| `POST /telemetry` | site | `{events: [{path, method, priceCents, signal, at}]}`, 1 to 500 events | `{ok, accepted, dropped}` ([offer telemetry](#fare-advisor-signals)) |
 
 **Site auth.** Requests carry `Authorization: Basic base64(siteId:siteSecret)`. The secret is 32 random bytes in base64url, shown to the publisher once. BotFare stores only its SHA-256 and compares it in constant time. A missing or wrong secret gets `401 {error: "unauthorized"}` with `WWW-Authenticate: Basic realm="BotFare"`.
 
@@ -170,7 +181,7 @@ The base URL is `${BOTFARE_URL}/api/x402`. All bodies are JSON.
 
 **Refunds (BotFare extension, not part of the x402 handshake).** A publisher can refund one of its own receipts. The refund posts the charge in reverse (wallet +amount, earnings −(amount − fee), fees −fee) under the idempotency key `refund:<receiptId>` and marks the receipt `refunded`. A repeat call returns `alreadyRefunded: true` and moves nothing. A receipt belonging to another site gets 404 `not_found`. If the publisher's earnings have already been paid out, the call gets 409 `insufficient_earnings`.
 
-**Site config.** `GET ${BOTFARE_URL}/api/sites/<siteId>/config` uses the same site auth and returns the `SiteConfig` (pricing rules, free paths, `chargeKnownBots`, version) that the `botfare()` middleware caches for 30 s.
+**Site config.** `GET ${BOTFARE_URL}/api/sites/<siteId>/config` uses the same site auth and returns the `SiteConfig` (pricing rules, free paths, `chargeKnownBots`, version) that the `botfare()` middleware caches for 30 s. A price the publisher applies from the Fare Advisor changes `version` and reaches the middleware within those 30 s.
 
 ## Signed agents (Web Bot Auth)
 
@@ -191,10 +202,13 @@ Signature: sig1=:<base64 Ed25519 signature>:
 
 ## Agent API (signed requests, no tokens)
 
-Besides paying publishers, an agent can ask BotFare about its own budget. The MCP server's `wallet_balance` and `recent_receipts` tools use these endpoints ([`packages/mcp/README.md`](../packages/mcp/README.md)).
+Besides paying publishers, an agent can ask BotFare about its own budget, dispute a purchase, and leave signals for publishers. The MCP server's `wallet_balance`, `recent_receipts`, `dispute_purchase` and `decline_offer` tools and the SDK's `dispute()`, `decline()` and `reportCitations()` use these endpoints ([`packages/mcp/README.md`](../packages/mcp/README.md)).
 
 | Endpoint | Response |
 | --- | --- |
+| `POST ${BOTFARE_URL}/api/disputes` | Body `{receiptId, reason, note?, contentBase64}`; answers a `DisputeOutcome` ([Fare Court](#fare-court-proof-of-delivery-and-disputes)) |
+| `POST ${BOTFARE_URL}/api/offers/decline` | Body `{url, priceCents, category, reason}`; `{ok, recorded, path}` ([signals](#fare-advisor-signals)) |
+| `POST ${BOTFARE_URL}/api/citations` | Body `{answerId, citations: [{receiptId, claim?}]}`; `{ok, recorded, rejected}` |
 | `GET ${BOTFARE_URL}/api/agent/wallet` | `{keyId, keyName, balanceUsd, spentTodayUsd, dailyCapUsd, perRequestMaxUsd, allowedSiteIds}`; `balanceUsd` is the owner's wallet, `spentTodayUsd` this key's settled spend in the current UTC day; `null` limits mean none |
 | `GET ${BOTFARE_URL}/api/agent/receipts?limit=N` | `{keyId, receipts: [{receiptId, time, site, siteId, url, amountUsd, status}]}`, newest first; `limit` 1 to 100, default 10 |
 
@@ -205,7 +219,45 @@ Besides paying publishers, an agent can ask BotFare about its own budget. The MC
 - `created` and `expires` are required; the signature may live at most 5 minutes, with 30 s of clock skew.
 - Each `nonce` is accepted once while its signature is valid (in memory, per app instance).
 
-A missing, expired, reused or foreign signature, or a revoked or unknown key, gets `401 {error: "unauthorized", message}` with `WWW-Authenticate: Signature realm="botfare-agent-api"` and `Cache-Control: no-store`; the message says which check failed. The API only reads: it never moves money.
+A missing, expired, reused or foreign signature, or a revoked or unknown key, gets `401 {error: "unauthorized", message}` with `WWW-Authenticate: Signature realm="botfare-agent-api"` and `Cache-Control: no-store`; the message says which check failed. The wallet and receipts endpoints only read. A dispute is the one call that can move money, and only back to the agent's owner: a refund decided by Fare Court's policy in code (below), never by the agent. Decline notes and citations move nothing.
+
+## Fare Court: proof of delivery and disputes
+
+BotFare extension: buyer protection for purchases too small for a person to dispute. The contracts are in `@botfare/contracts/fare`; policy lives in `@botfare/core` (`openDispute`, `applyVerdict`, `publisherDecide`).
+
+**Content digest.** `contentDigestSha256(body)` is RFC 9530's `Content-Digest` value for SHA-256 over the exact bytes delivered: `sha-256=:<base64 of the 32-byte hash>:` (e.g. `sha-256=:+oWVrNYqTwN…=:`). For a paid response, `botfare()` hashes the body bytes as they pass through `res.write`/`res.end` (installed before `@x402/express` buffers the response, so the hash covers exactly what is replayed to the agent after settle). Mount `compression()` before `botfare()`: the digest is over the decoded body an agent's `fetch` sees.
+
+**Attestation.** After the response is finished, and only for status < 400 with a successful `PAYMENT-RESPONSE`, the middleware posts to `POST /api/x402/receipts/<receiptId>/attest` (site auth) the `ReceiptAttestation` `{contentDigest, contentLength, contentType, status}`. It never delays the response; it retries after 0.5, 2 and 5 s on 5xx, 408, 429 or a network error. Only the site that was paid may attest, and the first attestation wins: 200 for the first and for an identical repeat (`alreadyAttested: true`), 409 for a different digest, 404 for another site's receipt, 400 for an invalid body.
+
+**Dispute.** `POST /api/disputes`, signed with the agent key (Web Bot Auth, as above):
+
+```json
+{ "receiptId": "rcpt_…", "reason": "stub_or_paywall", "note": "Got a subscribe wall", "contentBase64": "<the exact bytes received>" }
+```
+
+`reason` is one of `not_as_described`, `stub_or_paywall`, `error_page`, `truncated`, `unrelated`, `other`; `note` is at most 500 characters; the content is at most 1,000,000 bytes before base64. BotFare checks, in order: the receipt belongs to this agent key and is still settled; no other dispute on it is open or decided; the key's daily limit (10 per UTC day; invalid disputes count); the 24-hour window; a publisher attestation exists; and the content hashes to the attested digest. A late dispute or a digest mismatch is stored with status `invalid` (after a mismatch the agent may file again with the right bytes).
+
+**Verdict and policy.** The AI judge (Claude, structured output) receives the declared offer, the agent's reason and note, and up to 12,000 characters of the delivered text, all as untrusted data, and returns a `DisputeVerdict` `{decision: refund | deny | unsure, confidence 0–1, category, rationale, evidence[]}`, validated with zod (one retry, then `unsure`). An empty body, under 20 characters of text, or a delivered status of 400 or above skips the judge. Then `DISPUTE_POLICY` decides:
+
+| Verdict | Outcome `status` |
+| --- | --- |
+| `refund`, confidence ≥ 0.8, key within the dispute-rate rule | `refunded`: the ledger's refund for the receipt (idempotency key `refund:<receiptId>`, so one refund per receipt ever) |
+| `deny`, confidence ≥ 0.8 | `denied` |
+| anything else, no verdict (no `ANTHROPIC_API_KEY`, model error, budget), or a refund the publisher's paid-out earnings cannot cover | `pending_publisher`: the publisher accepts (`refunded`) or declines (`rejected_by_publisher`) on the Disputes page or `POST /api/publisher/disputes {disputeId, decision}` |
+
+The dispute-rate rule: once a key has 10 or more purchases in 7 days, a confident refund verdict refunds automatically only while (its valid disputes in 7 days + 1) / purchases ≤ 0.2. The shared demo research key (the server's `BOTFARE_AGENT_KEY`, owned by a demo persona) has 200 disputes a day and no rate rule, because every judge's run uses it.
+
+**Answer.** `DisputeOutcome` `{disputeId, receiptId, status, refundedCents, verdict, message}` whenever a dispute row exists: 200 for a new dispute, 422 for an `invalid` one, 409 when one was already open or decided. Other refusals answer `{error, reason, message}`: 400 invalid body, 401 bad signature, 404 not this key's receipt, 409 `already_refunded` or `not_attested`, 413 content too large, 429 daily limit. The SDK re-files a `not_attested` dispute after 1 s and 2 s, freshly signed, since the attestation is sent just after the response.
+
+## Fare Advisor signals
+
+BotFare extension: what agents did with an offer, so publishers can price for AI readers. No personal data: no IP addresses or user agents are stored, and telemetry drops query strings.
+
+- **Offers shown** (`POST /api/x402/telemetry`, site auth). `botfare()` counts each 402 that carries a price as `{path (no query string), method, priceCents, signal, at}` and sends batches every 15 s or at 200 events (at most 2,000 waiting, oldest dropped first; fire and forget). BotFare drops events stamped more than 5 minutes ahead or older than 2 days. Best effort by design: the counts are a floor.
+- **Decline notes** (`POST /api/offers/decline`, signed). `{url, priceCents, category, reason}`, where `category` is `too_expensive`, `irrelevant`, `low_quality_preview`, `already_have`, `over_budget` or `other`, and `reason` is one sentence (≤ 300 characters). The URL must be on a registered site's origin (422 otherwise). One note per key, URL and UTC day is kept (`recorded: false` for a repeat), at most 500 per key per day.
+- **Citations** (`POST /api/citations`, signed). `{answerId (8–64 chars), citations: [{receiptId, claim?}]}`, 1 to 20 per report. Only receipts paid by the key owner count (others come back in `rejected`); a report with the same `answerId` replaces the earlier one.
+
+The publisher reads these per pricing rule and per path at `GET /api/publisher/advisor?siteId=…` (session): offers, paid, declined, cited and disputed with the top reasons, plus Claude's recommendations when `ANTHROPIC_API_KEY` is set (`aiAvailable: false` otherwise). Applying one is a separate, explicit `POST /api/publisher/advisor/apply {siteId, pattern, priceCents?, audience?}`.
 
 ## Security notes
 
