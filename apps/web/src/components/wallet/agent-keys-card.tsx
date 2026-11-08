@@ -24,6 +24,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -37,9 +38,16 @@ import { LocalTime } from "./local-time";
 import { NewKeyDialog } from "./new-key-dialog";
 import type { WalletAgentKey, WalletSite } from "./types";
 
-/** The signed-in owner's agent keys with their budgets, today's spend, and revoke. */
+/**
+ * The signed-in owner's agent keys with their budgets, today's spend, and revoke. Revoked keys
+ * stay in the database (receipts point at them) but are hidden until "Show revoked" is on.
+ */
 export function AgentKeysCard({ keys, sites }: { keys: WalletAgentKey[]; sites: WalletSite[] }) {
   const siteNames = new Map(sites.map((site) => [site.id, site.name]));
+  const [showRevoked, setShowRevoked] = useState(false);
+  const revokedCount = keys.filter((key) => key.status === "revoked").length;
+  const activeCount = keys.length - revokedCount;
+  const visible = showRevoked ? keys : keys.filter((key) => key.status !== "revoked");
   return (
     <Card>
       <CardHeader>
@@ -47,20 +55,42 @@ export function AgentKeysCard({ keys, sites }: { keys: WalletAgentKey[]; sites: 
         <CardDescription>
           One key per agent. BotFare checks its budget and allowed sites on every payment.
         </CardDescription>
-        {keys.length ? (
+        {visible.length ? (
           <CardAction>
             <NewKeyDialog sites={sites} />
           </CardAction>
         ) : null}
       </CardHeader>
       <CardContent>
-        {keys.length === 0 ? (
+        {revokedCount > 0 ? (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+            <span>
+              {activeCount} active
+              {showRevoked ? "" : ` · ${revokedCount} revoked hidden`}
+            </span>
+            <label
+              htmlFor="show-revoked-keys"
+              className="inline-flex cursor-pointer items-center gap-2"
+            >
+              <Switch
+                id="show-revoked-keys"
+                size="sm"
+                checked={showRevoked}
+                onCheckedChange={(checked) => setShowRevoked(checked)}
+              />
+              Show revoked
+            </label>
+          </div>
+        ) : null}
+        {visible.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-10 text-center">
             <div className="flex size-10 items-center justify-center rounded-full bg-muted">
               <KeyRound className="size-5 text-muted-foreground" />
             </div>
             <div className="space-y-1">
-              <p className="font-medium">No agent keys yet</p>
+              <p className="font-medium">
+                {keys.length === 0 ? "No agent keys yet" : "No active agent keys"}
+              </p>
               <p className="max-w-sm text-sm text-muted-foreground">
                 Create a key for each agent and set its budget. You get a{" "}
                 <code className="font-mono text-xs">BOTFARE_AGENT_KEY</code> to put in its
@@ -85,7 +115,7 @@ export function AgentKeysCard({ keys, sites }: { keys: WalletAgentKey[]; sites: 
               </TableRow>
             </TableHeader>
             <TableBody>
-              {keys.map((key) => (
+              {visible.map((key) => (
                 <KeyRow key={key.id} agentKey={key} siteNames={siteNames} />
               ))}
             </TableBody>

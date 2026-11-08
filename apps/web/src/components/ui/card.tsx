@@ -59,7 +59,11 @@ function CardAction({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-action"
-      className={cn("col-start-2 row-span-2 row-start-1 self-start justify-self-end", className)}
+      className={cn(
+        // In a narrow header (phones), the action moves under the description instead of squeezing it.
+        "col-start-2 row-span-2 row-start-1 self-start justify-self-end @max-sm/card-header:col-start-1 @max-sm/card-header:row-span-1 @max-sm/card-header:row-start-auto @max-sm/card-header:mt-2 @max-sm/card-header:justify-self-start",
+        className,
+      )}
       {...props}
     />
   );
