@@ -4,7 +4,7 @@ import { DEMO_PERSONAS, type DemoPersona } from "@botfare/contracts";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /** Judge mode: one click signs in as a demo persona. */
@@ -52,5 +52,31 @@ export function PersonaButtons() {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Log in with PayPal (sandbox), for publishers who want their own account. Shown only when
+ * PAYPAL_LOGIN_ENABLED=true; a full-page navigation, since the route redirects to PayPal.
+ */
+export function PayPalLoginButton() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Your own publisher account</CardTitle>
+        <CardDescription>
+          Log in with a PayPal sandbox account. BotFare uses its verified email as your account and
+          sends your Payouts there.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <a
+          href="/api/auth/paypal/start"
+          className={buttonVariants({ variant: "outline", size: "lg", className: "w-full" })}
+        >
+          Log in with PayPal
+        </a>
+      </CardContent>
+    </Card>
   );
 }
