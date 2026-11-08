@@ -31,6 +31,10 @@ export interface SeenRequest {
   path: string;
   agentHeader: string | undefined;
   paymentSignature: boolean;
+  /** Host, URL and headers as the publisher received them (for signature checks). */
+  host: string;
+  url: string;
+  headers: Record<string, string | string[] | undefined>;
 }
 
 function listen(app: express.Express): Promise<{ url: string; close: () => Promise<void> }> {
@@ -100,6 +104,9 @@ export async function startStack() {
       path: req.path,
       agentHeader: req.header(AGENT_HEADER),
       paymentSignature: Boolean(req.header("PAYMENT-SIGNATURE")),
+      host: req.headers.host ?? "",
+      url: req.originalUrl,
+      headers: { ...req.headers },
     });
     next();
   });
@@ -138,6 +145,7 @@ export async function startStack() {
   return {
     ledger,
     agentKey,
+    publicJwk,
     seen,
     siteUrl: siteServer.url,
     wallet: () => ledger.balanceMicros(WALLET),

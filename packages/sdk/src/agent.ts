@@ -1,4 +1,5 @@
 import { AGENT_HEADER, decodeAgentKey } from "@botfare/contracts";
+import { createRequestSigner, type RequestSigner } from "@botfare/contracts/web-bot-auth";
 import { PAYPAL_SANDBOX, PrepaidPayPalClient } from "@botfare/x402-paypal";
 import { MAX_CONTROL_PLANE_RESPONSE_BYTES, readLimitedText } from "@x402/core/http";
 import type { SettleResponse } from "@x402/core/types";
@@ -23,6 +24,17 @@ export interface BotFareAgentOptions {
   fetch?: typeof fetch;
   /** Called for each step of the x402 handshake, in order. */
   onWire?: WireListener;
+  /**
+   * BotFare app URL, sent as `Signature-Agent` so publishers can find this key in BotFare's
+   * directory (`/.well-known/http-message-signatures-directory`). Default `process.env.BOTFARE_URL`;
+   * without one, requests are still signed but carry no Signature-Agent.
+   */
+  botfareUrl?: string;
+  /**
+   * Sign every request (including paid retries) with an RFC 9421 HTTP Message Signature, Web Bot
+   * Auth style, so publishers can tell a BotFare agent from an impostor. Default true.
+   */
+  signRequests?: boolean;
 }
 
 export interface PaidResult {
@@ -39,6 +51,8 @@ export interface PaidResult {
 
 export interface BotFareAgent {
   keyId: string;
+  /** JWK thumbprint of the agent's public key: the `keyid` in its request signatures; null if unsigned. */
+  signatureKeyId(): Promise<string | null>;
   maxPerRequestCents: number;
   /** One unpaid request: the offer behind a 402, or null if the URL did not ask for payment. Never pays. */
   getOffer(url: string, init?: RequestInit): Promise<Offer | null>;
@@ -56,6 +70,13 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
   const maxPerRequestCents = toCapCents(options.maxPerRequestUsd ?? DEFAULT_MAX_PER_REQUEST_USD);
   const baseFetch = options.fetch ?? globalThis.fetch;
   const onWire = options.onWire;
+  const signer =
+    options.signRequests === false
+      ? null
+      : createRequestSigner({
+          privateJwk: privateJwk as Parameters<typeof createRequestSigner>[0]["privateJwk"],
+          signatureAgent: readBotFareUrl(options.botfareUrl),
+        });
 
   // The official x402 client with BotFare's scheme; spend controls run before the plug-in signs.
   const client = new x402Client()
@@ -63,7 +84,7 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
     .setSpendControls({ maxAmountPerPayment: `$${(maxPerRequestCents / 100).toFixed(2)}` });
 
   async function getOffer(url: string, init?: RequestInit): Promise<Offer | null> {
-    const response = await baseFetch(url, withAgentHeader(init));
+    const response = await baseFetch(await sign(signer, new Request(url, withAgentHeader(init))));
     if (response.status !== 402) {
       await response.body?.cancel();
       return null;
@@ -78,7 +99,7 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
 
     // Sits under @x402/fetch so the wire inspector sees exactly what was sent and received.
     const observedFetch: typeof fetch = async (input, innerInit) => {
-      const request = new Request(input, innerInit);
+      const request = await sign(signer, new Request(input, innerInit));
       emitPaymentSignature(onWire, request);
       const response = await baseFetch(request);
       if (response.status === 402) {
@@ -118,7 +139,35 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
     };
   }
 
-  return { keyId, maxPerRequestCents, getOffer, fetch: fetchPaid };
+  return {
+    keyId,
+    maxPerRequestCents,
+    signatureKeyId: async () => (signer ? signer.keyid() : null),
+    getOffer,
+    fetch: fetchPaid,
+  };
+}
+
+/** The request with Signature-Agent, Signature-Input and Signature set (unchanged without a signer). */
+async function sign(signer: RequestSigner | null, request: Request): Promise<Request> {
+  if (!signer) return request;
+  const signed = await signer.sign({ url: request.url, headers: request.headers });
+  const headers = new Headers(request.headers);
+  for (const [name, value] of Object.entries(signed)) headers.set(name, value);
+  return new Request(request, { headers });
+}
+
+function readBotFareUrl(explicit: string | undefined): string | null {
+  const value =
+    explicit ??
+    (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+      ?.BOTFARE_URL;
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    throw new TypeError(`botfareUrl must be an absolute URL, got ${JSON.stringify(value)}`);
+  }
 }
 
 function withAgentHeader(init: RequestInit | undefined): RequestInit {
