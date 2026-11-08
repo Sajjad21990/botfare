@@ -22,6 +22,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -513,6 +514,33 @@ export const citations = pgTable(
   ],
 );
 
+/** Kinds of signed statement BotFare issues about a receipt (StatementKind in contracts/receipts). */
+export const receiptStatementKinds = ["payment", "delivery", "refund"] as const;
+export type ReceiptStatementKind = (typeof receiptStatementKinds)[number];
+
+/**
+ * Signed receipts: the Ed25519 JWS BotFare issued about a receipt, one per kind. The first statement
+ * of a kind is the one forever (records are signed when things happen, never re-signed).
+ */
+export const receiptStatements = pgTable(
+  "receipt_statements",
+  {
+    receiptId: text("receipt_id")
+      .notNull()
+      .references(() => receipts.id),
+    kind: text("kind", { enum: receiptStatementKinds }).notNull(),
+    /** Compact JWS, `typ: botfare-receipt+jwt`. */
+    jws: text("jws").notNull(),
+    /** RFC 7638 thumbprint of the signing key (the JWS `kid`). */
+    kid: text("kid").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ name: "receipt_statements_pk", columns: [t.receiptId, t.kind] }),
+    check("receipt_statements_kind_ck", sql`${t.kind} in ('payment', 'delivery', 'refund')`),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Site = typeof sites.$inferSelect;
 export type AgentKey = typeof agentKeys.$inferSelect;
@@ -528,3 +556,4 @@ export type Dispute = typeof disputes.$inferSelect;
 export type OfferEvent = typeof offerEvents.$inferSelect;
 export type OfferDecline = typeof offerDeclines.$inferSelect;
 export type Citation = typeof citations.$inferSelect;
+export type ReceiptStatementRow = typeof receiptStatements.$inferSelect;
