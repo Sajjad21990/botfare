@@ -192,6 +192,7 @@ export default function StudioDashboard({ initial, mode }: StudioDashboardProps)
 
   // Studio does not re-measure its canvas when the mode (and so the set of panels) changes;
   // a resize event makes it fill the space the panels left or took.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on purpose whenever `mode` changes
   useEffect(() => {
     const frame = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
     const later = setTimeout(() => window.dispatchEvent(new Event("resize")), 250);
