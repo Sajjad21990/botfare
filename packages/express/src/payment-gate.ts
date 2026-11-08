@@ -1,4 +1,5 @@
 import {
+  type DetectionSignal,
   FACILITATOR_PATH,
   type OfferPreview,
   offerPreviewSchema,
@@ -20,6 +21,19 @@ import {
 } from "@x402/core/server";
 import { paymentMiddlewareFromHTTPServer } from "@x402/express";
 import type { NextFunction, Request, Response } from "express";
+import { escapeHtml } from "./human-check";
+
+/**
+ * Requirements carry the detection signal as `extra.botfareSignal`, so the facilitator can store
+ * why each request paid. It is a dynamic field: the SDK leaves it out when matching a payment's
+ * `accepted` against the requirements, so a paid retry matches even if its signal differs from
+ * the 402's, and the requirements sent to verify/settle carry the server's own signal.
+ */
+export const BOTFARE_SIGNAL_EXTRA = "botfareSignal";
+
+class SignalRecordingPrepaidServer extends PrepaidPayPalServer {
+  readonly dynamicExtraFields = [BOTFARE_SIGNAL_EXTRA];
+}
 
 /** Per-call timeout for /supported, /verify and /settle. */
 const FACILITATOR_TIMEOUT_MS = 15_000;
@@ -65,7 +79,7 @@ export class PaymentGate {
     });
     this.resourceServer = new x402ResourceServer(facilitator).register(
       PAYPAL_SANDBOX,
-      new PrepaidPayPalServer(),
+      new SignalRecordingPrepaidServer(),
     );
   }
 
@@ -94,14 +108,25 @@ export class PaymentGate {
     return this.ready;
   }
 
-  /** Runs the x402 flow for one request: 402, or verify → `next()` → settle. */
-  charge(rule: PricingRule, req: Request, res: Response, next: NextFunction): Promise<void> {
-    const httpServer = new x402HTTPResourceServer(this.resourceServer, this.routeFor(rule, req));
-    const middleware = paymentMiddlewareFromHTTPServer(httpServer, undefined, paywall, false);
+  /**
+   * Runs the x402 flow for one request: 402, or verify → `next()` → settle. `signal` goes into
+   * the requirements; `browserPaywall` replaces the plain HTML paywall (the human check).
+   */
+  charge(
+    rule: PricingRule,
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    charge: { signal: DetectionSignal; browserPaywall?: PaywallProvider },
+  ): Promise<void> {
+    const route = this.routeFor(rule, req, charge.signal);
+    const httpServer = new x402HTTPResourceServer(this.resourceServer, route);
+    const provider = charge.browserPaywall ?? paywall;
+    const middleware = paymentMiddlewareFromHTTPServer(httpServer, undefined, provider, false);
     return middleware(req, res, next);
   }
 
-  private routeFor(rule: PricingRule, req: Request): RouteConfig {
+  private routeFor(rule: PricingRule, req: Request, signal: DetectionSignal): RouteConfig {
     return {
       accepts: {
         scheme: PREPAID_SCHEME,
@@ -110,6 +135,7 @@ export class PaymentGate {
         // Integer cents as the asset amount; no float formatting on the way.
         price: { asset: USD.asset, amount: String(rule.priceCents) },
         maxTimeoutSeconds: MAX_AUTHORIZATION_SECONDS,
+        extra: { [BOTFARE_SIGNAL_EXTRA]: signal },
       },
       description: rule.description ?? `${rule.method} ${rule.pattern}`,
       mimeType: rule.mimeType ?? "",
@@ -148,7 +174,3 @@ const paywall: PaywallProvider = {
     return `<!doctype html><html><head><meta charset="utf-8"><title>Payment required</title></head><body style="font-family:system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem"><h1>Payment required</h1><p>${what} costs ${price} per request, paid by AI agents through BotFare.</p></body></html>`;
   },
 };
-
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}

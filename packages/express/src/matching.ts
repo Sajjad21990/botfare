@@ -8,16 +8,20 @@ import {
 import type { Request } from "express";
 
 /**
- * True when the request comes from an agent: it says so (`x-botfare-agent`), it carries an x402
- * payment, or the site charges known AI crawlers and the user agent is one of them.
+ * Quick synchronous check: true when the request says it is an agent (`x-botfare-agent`), carries
+ * an x402 payment, or is a known AI crawler by user agent on a site charging known bots
+ * (`chargeKnownBots` or detection level "known-bots" and up). botfare() itself uses the full
+ * detection engine (`detectAgent`), which also verifies signatures, crawler IPs and scores.
  */
 export function isAgentRequest(
   req: Pick<Request, "get">,
-  config: Pick<SiteConfig, "chargeKnownBots">,
+  config: Pick<SiteConfig, "chargeKnownBots"> & { detection?: SiteConfig["detection"] },
 ): boolean {
   if (req.get(AGENT_HEADER) !== undefined) return true;
   if (req.get("payment-signature")) return true;
-  return config.chargeKnownBots && isKnownAiBot(req.get("user-agent"));
+  const level = config.detection?.level ?? "off";
+  const chargesKnownBots = config.chargeKnownBots || level !== "off";
+  return chargesKnownBots && isKnownAiBot(req.get("user-agent"));
 }
 
 /**

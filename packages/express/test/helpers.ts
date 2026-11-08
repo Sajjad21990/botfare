@@ -2,8 +2,10 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   AGENT_HEADER,
+  DEFAULT_DETECTION,
   FACILITATOR_PATH,
   parseSiteAuthHeader,
+  SIGNATURE_DIRECTORY_PATH,
   type SiteConfig,
 } from "@botfare/contracts";
 import {
@@ -47,9 +49,19 @@ export function siteConfig(overrides: Partial<SiteConfig> = {}): SiteConfig {
     ],
     freePaths: ["/articles/free-*"],
     chargeKnownBots: false,
+    // Detection off unless a test turns it on, so the classic flows stay simple.
+    detection: { ...DEFAULT_DETECTION, level: "off" },
     version: "v1",
     ...overrides,
   };
+}
+
+/** A site config with the given detection settings merged over the defaults. */
+export function detectionConfig(
+  detection: Partial<SiteConfig["detection"]>,
+  overrides: Partial<SiteConfig> = {},
+): SiteConfig {
+  return siteConfig({ detection: { ...DEFAULT_DETECTION, ...detection }, ...overrides });
 }
 
 export interface Listening {
@@ -77,6 +89,10 @@ export function listen(app: express.Express): Promise<Listening> {
 export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
   let config = initial;
   const calls: string[] = [];
+  /** Requirements the facilitator was asked to settle (to check extra.botfareSignal). */
+  const settled: Array<{ extra?: Record<string, unknown> }> = [];
+  /** Public JWKs served at the signature directory. */
+  let directoryKeys: object[] = [];
   const ledger = new InMemoryLedger();
   const facilitator = new x402Facilitator().register(
     PAYPAL_SANDBOX,
@@ -100,6 +116,9 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
     }
     res.json(config);
   });
+  app.get(SIGNATURE_DIRECTORY_PATH, (_req, res) => {
+    res.type("application/http-message-signatures-directory+json").send({ keys: directoryKeys });
+  });
   app.get(`${FACILITATOR_PATH}/supported`, (_req, res) => {
     res.json(facilitator.getSupported());
   });
@@ -112,6 +131,7 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
     if (req.params.op === "verify") {
       res.json(await facilitator.verify(paymentPayload, paymentRequirements));
     } else if (req.params.op === "settle") {
+      settled.push(paymentRequirements);
       res.json(await facilitator.settle(paymentPayload, paymentRequirements));
     } else {
       res.status(404).end();
@@ -123,16 +143,25 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
     ...server,
     ledger,
     calls,
+    settled,
     setConfig(next: SiteConfig) {
       config = next;
+    },
+    setDirectoryKeys(keys: object[]) {
+      directoryKeys = keys;
     },
   };
 }
 
 /** Publisher site behind botfare(): articles, a free page and a paid API. */
-export async function startPublisher(options: Partial<BotFareOptions> & { botfareUrl: string }) {
+export async function startPublisher(
+  options: Partial<BotFareOptions> & { botfareUrl: string; trustProxy?: boolean },
+) {
+  const { trustProxy, ...botfareOptions } = options;
   const logs: string[] = [];
   const app = express();
+  // Lets tests choose the client IP with X-Forwarded-For (known-crawler checks).
+  if (trustProxy) app.set("trust proxy", true);
   app.use(
     botfare({
       siteId: SITE_ID,
@@ -143,7 +172,7 @@ export async function startPublisher(options: Partial<BotFareOptions> & { botfar
         excerpt: "Burr grinders crush beans between two abrasive surfaces...",
         wordCount: 1200,
       }),
-      ...options,
+      ...botfareOptions,
     }),
   );
   app.get("/articles/:slug", (req, res) => {
@@ -182,6 +211,23 @@ export async function createAgent(ledger: InMemoryLedger, balanceCents = 100) {
     payingFetch: wrapFetchWithPayment(agentFetch, client),
     wallet: () => ledger.balanceMicros("wallet:owner"),
   };
+}
+
+/** A stand-in for Cloudflare siteverify: passes exactly the token "pass-token". */
+export async function startFakeTurnstile() {
+  const requests: Record<string, string>[] = [];
+  const app = express().use(express.urlencoded({ extended: false }));
+  app.post("/siteverify", (req, res) => {
+    requests.push(req.body);
+    const success = req.body.response === "pass-token" && req.body.secret === "test-secret";
+    res.json(
+      success
+        ? { success: true, "error-codes": [], hostname: "example.com" }
+        : { success: false, "error-codes": ["invalid-input-response"] },
+    );
+  });
+  const server = await listen(app);
+  return { ...server, verifyUrl: `${server.url}/siteverify`, requests };
 }
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
