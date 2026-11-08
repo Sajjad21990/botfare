@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 /** Top-level sections of the signed-in app. Each phase adds its pages under src/app/(app). */
 const LINKS = [
   { href: "/wallet", label: "Wallet" },
+  { href: "/agent", label: "Agent" },
   { href: "/publisher", label: "Publisher" },
   { href: "/publisher/analytics", label: "Analytics" },
 ];
