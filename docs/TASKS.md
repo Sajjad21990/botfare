@@ -12,12 +12,12 @@
 | --- | --- | --- | --- |
 | 0. Setup and proof | Sun 8 | ✅ Done | 10 / 10 |
 | 1. Protocol end to end | Mon 9 | ✅ Done (a day early) | 9 / 9 |
-| 2. Real money and dashboards | Tue 10 | 🔄 In progress | 5 / 11 |
+| 2. Real money and dashboards | Tue 10 | ✅ Done (two items need you) | 9 / 11 |
 | 3. Agent detection, AI and polish | Wed 11 | ⏳ Not started | 0 / 9 |
 | 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
 | 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
 
-**Overall: about 45% done** (24 of 53 items), and ahead of the plan by roughly one day.
+**Overall: about 53% done** (28 of 53 items), and ahead of the plan by about two days.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -52,7 +52,7 @@
 | ✅ | Render Blueprint and protocol spec | [`render.yaml`](../render.yaml), [`docs/PROTOCOL.md`](PROTOCOL.md) |
 | ✅ | Phase 1 review: Node 24 pin for Render, provisionable demo site, trademark clean-up | commit history |
 
-## Phase 2: Real money and dashboards 🔄
+## Phase 2: Real money and dashboards ✅
 
 | | Task | Notes |
 | --- | --- | --- |
@@ -60,11 +60,11 @@
 | ✅ | Core money services: top-up order → capture → credit, Withdraw now, daily Payouts batch, reversals, webhook handling, dashboard read models | Tested against a mock PayPal |
 | ✅ | Landing page: hero, fee maths, x402 request walkthrough | `/` |
 | ✅ | ⭐ AG Studio analytics: BotFare theme, KPI layout, "Live paid requests" and "Earnings & payout" custom widgets, Claude assistant | `/publisher/analytics` |
-| 🔄 | Wallet: balance, PayPal JS SDK v6 top-up button, agent keys generated in the browser, receipts | API done; page in progress |
-| 🔄 | Publisher dashboard: sites, pricing editor, one-time secrets, integration snippet, earnings, Withdraw now, payout history | API done; page in progress |
+| ✅ | Wallet: balance, PayPal JS SDK v6 top-up button, agent keys generated in the browser, receipts | `/wallet`; live sandbox order creation checked |
+| ✅ | Publisher dashboard: sites, pricing editor, one-time secrets, integration snippet, earnings, Withdraw now, payout history | `/publisher` |
 | ✅ | PayPal webhook endpoint and `pnpm payouts:run` | `/api/paypal/webhook` |
-| ⏳ | Demo traffic (~150 paid requests over 14 days), real sandbox Withdraw now, docs, Render cron | Integration step |
-| ⏳ | Phase 2 review and fixes | Money, authorization, flows, ops |
+| ✅ | Demo traffic (~150 paid requests over 14 days), real sandbox Withdraw now, docs, Render cron | `pnpm seed:traffic`; $11.72 Payout batch VLJ8N6ZZVWKQE reached SUCCESS; `botfare-payouts` cron |
+| ✅ | Phase 2 review and fixes | Every route exercised over HTTP; app font and phone header fixed |
 | ⏳ | 👤 Approve one wallet top-up in the browser with the sandbox agent-owner account | Needed to prove the v6 button end to end |
 | ⏳ | 👤 Optional: AG Studio 45-day trial key in `.env` as `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` | Removes the watermark |
 

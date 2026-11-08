@@ -125,9 +125,13 @@ Everything runs in the PayPal **sandbox only**.
 | `botfare()` publisher middleware, agent SDK (`getOffer`, paid `fetch`, spend cap, wire events) | ✅ Built |
 | Crema Notes demo publisher (articles + brew-ratio API) | ✅ Built |
 | `pnpm seed` + `pnpm e2e`: Phase 1 on real processes and Postgres | ✅ All checks pass |
-| Render Blueprint ([`render.yaml`](render.yaml)) | ✅ Written, not yet deployed |
-| Wallet and publisher dashboards, PayPal top-up and Payouts UI, webhooks | ⏳ Next |
-| Research agent, MCP server, judge mode, deployment | ⏳ Planned |
+| Render Blueprint ([`render.yaml`](render.yaml)): app, demo, daily payouts cron, Postgres | ✅ Written, not yet deployed |
+| Wallet: balance, PayPal JS SDK v6 top-up, agent keys made in the browser, receipts | ✅ Built; sandbox order creation checked live, approval needs a sandbox buyer login |
+| Publisher dashboard: sites, pricing editor, one-time secrets, earnings, Withdraw now, payout history | ✅ Built; a real sandbox Payout ($11.72) reached `SUCCESS` |
+| PayPal webhooks (`/api/paypal/webhook`, verified, deduped) and `pnpm payouts:run` | ✅ Built and tested against a mock PayPal |
+| Publisher analytics in AG Studio, with a Claude assistant | ✅ Built |
+| `pnpm seed:traffic`: ~150 paid requests over 14 days for the dashboards | ✅ Built |
+| Agent detection, research agent, MCP server, judge mode, deployment | ⏳ Planned |
 
 The full proposal, decisions and day-by-day plan are in [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -140,13 +144,16 @@ packages/core          Drizzle schema and migrations, Postgres double-entry ledg
 packages/express       botfare({ siteId, siteSecret }): one-line publisher middleware on @x402/express
 packages/sdk           createBotFareAgent(): getOffer() and a paying fetch on @x402/fetch
 packages/paypal        typed PayPal REST client (sandbox only)
-apps/web               Next.js: x402 facilitator API (/api/x402/*), site config, health; dashboards next
+apps/web               Next.js: landing page, wallet, publisher dashboard and analytics, x402 facilitator
+                       API (/api/x402/*), PayPal webhook, site config, health
 apps/demo              Crema Notes: fictional coffee site and brew-ratio API behind botfare()
-scripts/seed.ts        demo publisher, site, $5 wallet and agent key, written to .env
+scripts/seed.ts        demo personas, site, $5 wallet and agent key, written to .env
+scripts/traffic.ts     demo traffic: three more agent keys and ~150 paid requests over 14 days
+scripts/payouts.ts     daily PayPal Payouts batch and status sync (a Render cron runs it)
 scripts/e2e.ts         Phase 1 end to end: web app + demo + Postgres, PASS/FAIL per check
 scripts/spike          Day-0 PayPal and x402 spikes
 docs                   plan, protocol spec, spike results
-render.yaml            Render Blueprint: botfare-web, botfare-demo, Postgres 17
+render.yaml            Render Blueprint: botfare-web, botfare-demo, botfare-payouts (cron), Postgres 17
 ```
 
 ## Run it locally
@@ -155,10 +162,11 @@ You need Node 22+ (the repo pins 24 LTS in `.node-version`; Render uses it too, 
 
 ```bash
 pnpm install
-cp .env.example .env    # PayPal sandbox keys are only needed for the PayPal spikes for now
+cp .env.example .env    # PayPal sandbox keys: top-ups, Withdraw now and the spikes need them
 pnpm db:up              # Postgres 17 in Docker (botfare and botfare_test databases)
 pnpm db:migrate         # apply the Drizzle migrations to DATABASE_URL
-pnpm seed               # demo publisher, Crema Notes site, $5.00 wallet, agent key -> .env
+pnpm seed               # judge personas, Crema Notes site, $5.00 wallet, agent key -> .env
+pnpm seed:traffic       # three more agent keys and ~150 paid requests over the last 14 days
 pnpm e2e                # start the app and the demo, pay for content, check every ledger movement
 ```
 
@@ -182,6 +190,15 @@ To click around yourself:
 pnpm dev:web            # BotFare app on http://localhost:3000 (GET /api/health)
 pnpm dev:demo           # Crema Notes on http://localhost:4000, payments on with the seeded site
 ```
+
+Open http://localhost:3000/signin and pick a persona:
+
+- **Agent owner** (`/wallet`): balance, a PayPal top-up button ($5, $10 or $20, approved with a sandbox buyer account), agent keys generated in the browser with their budgets, and receipts.
+- **Publisher** (`/publisher`, `/publisher/analytics`): earnings, Withdraw now to `PUBLISHER_PAYPAL_EMAIL` through PayPal Payouts, payout history with "Refresh status", the pricing editor, and the AG Studio analytics dashboard.
+
+`pnpm seed:traffic` is safe to run again: nonces, the wallet funding and two publisher refunds are keyed by its run key, so a rerun moves no money. `pnpm seed:traffic --run-key <name>` adds a fresh batch. It settles every request through `PostgresPrepaidLedger` with a clock set to the request's time, so per-request maxes, daily caps and allowed sites apply as they would live.
+
+`pnpm payouts:run` is the daily payout job: one Payouts batch for every publisher with $1.00 or more of earnings and a payout email, then a status sync of every open payout. It is idempotent (`sender_batch_id` and `PayPal-Request-Id` per batch), and on Render it runs as the `botfare-payouts` cron job.
 
 Then open http://localhost:4000 in a browser, where humans read free. Agents get a 402 with a price and a preview:
 
@@ -209,10 +226,11 @@ pnpm spike:03           # $0.25 Payouts batch to PUBLISHER_PAYPAL_EMAIL
 
 ## Deploy
 
-[`render.yaml`](render.yaml) is a Render Blueprint for three resources:
+[`render.yaml`](render.yaml) is a Render Blueprint for four resources:
 
 - `botfare-web`: builds the Next.js app and runs `pnpm db:migrate` before each deploy;
 - `botfare-demo`: reaches the app over Render's private network;
+- `botfare-payouts`: a cron job that runs `pnpm payouts:run` at 09:00 UTC every day;
 - `botfare-db`: Postgres 17.
 
 Node comes from `.node-version` (24 LTS, which still bundles the Corepack the build commands enable).
@@ -228,6 +246,10 @@ DEMO_ORIGIN=https://<botfare-demo>.onrender.com pnpm seed --print-secrets
 1. Copy the printed `BOTFARE_SITE_ID` and `BOTFARE_SITE_SECRET` into `botfare-demo` > Environment and save; Render redeploys the demo with payments on.
 2. Copy `BOTFARE_AGENT_KEY` into the `.env` of the machine that runs the agent.
 3. Check `https://<botfare-demo>.onrender.com/health` reports payments on, then `curl -i -H 'x-botfare-agent: 1' https://<botfare-demo>.onrender.com/articles/burr-basics` returns a 402.
+
+To fill the dashboards, run `pnpm seed:traffic` in the same Shell.
+
+Then point PayPal at the app: in the sandbox app's Webhooks section, add `https://<botfare-web>.onrender.com/api/paypal/webhook` for `PAYMENT.CAPTURE.*`, `PAYMENT.PAYOUTS-ITEM.*` and `PAYMENT.PAYOUTSBATCH.*`, and put its webhook ID in `botfare-web`'s `PAYPAL_WEBHOOK_ID`. Until then the route answers 503 and PayPal retries later.
 
 Running the seed again keeps the site secret only if it can see the current one, which the Shell's `.env` holds until the next deploy of `botfare-web`. After a redeploy, pass the values back in (`BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed`), or let it issue a new secret and repeat step 1.
 

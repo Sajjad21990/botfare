@@ -28,7 +28,9 @@ packages/mcp         MCP server: get_offer, fetch_paid, wallet_balance, recent_r
 packages/paypal      typed PayPal REST client (sandbox only)
 packages/core        Drizzle schema, Postgres ledger implementing the ledger port, services (payouts next)
 scripts/spike        Day-0 PayPal and x402 spikes
-scripts/seed.ts      local demo data (publisher, site, wallet, agent key) -> .env
+scripts/seed.ts      local demo data (judge personas, site, wallet, agent key) -> .env
+scripts/traffic.ts   demo traffic for the dashboards (seed:traffic)
+scripts/payouts.ts   daily Payouts batch + status sync (payouts:run; Render cron)
 scripts/e2e.ts       Phase 1 end-to-end PASS/FAIL checks on real processes
 ```
 
@@ -36,12 +38,14 @@ scripts/e2e.ts       Phase 1 end-to-end PASS/FAIL checks on real processes
 - `pnpm install` · `pnpm typecheck` · `pnpm lint` (Biome) · `pnpm format` · `pnpm test` (vitest; `*.db.test.ts` run against `botfare_test` in the "db" project)
 - `pnpm db:up` / `pnpm db:down`: Postgres 17 in Docker (`botfare` and `botfare_test` databases)
 - `pnpm db:migrate`: apply `packages/core/drizzle` to `DATABASE_URL` (regenerate with `pnpm --filter @botfare/core db:generate`)
-- `pnpm seed`: demo publisher, Crema Notes site at `DEMO_ORIGIN` (secret kept while it works; `--rotate-site-secret` forces a new one), $5 wallet, agent key; writes `BOTFARE_URL`, `BOTFARE_SITE_ID`, `BOTFARE_SITE_SECRET`, `BOTFARE_AGENT_KEY` to `.env`. On Render: `pnpm seed --print-secrets` in botfare-web's Shell (README "Deploy")
+- `pnpm seed`: judge personas (`DEMO_PERSONAS`; publisher payout email from `PUBLISHER_PAYPAL_EMAIL`), Crema Notes site at `DEMO_ORIGIN` (secret kept while it works; `--rotate-site-secret` forces a new one), $5 wallet, agent key; writes `BOTFARE_URL`, `BOTFARE_SITE_ID`, `BOTFARE_SITE_SECRET`, `BOTFARE_AGENT_KEY` to `.env`. On Render: `pnpm seed --print-secrets` in botfare-web's Shell (README "Deploy")
+- `pnpm seed:traffic`: three more agent keys ("Research agent", "Price watcher", "Newsletter bot") and ~150 paid requests over the last 14 days through `PostgresPrepaidLedger` with an injected clock; idempotent per `--run-key` (default `demo`)
+- `pnpm payouts:run`: daily PayPal Payouts batch (publishers with ≥ $1.00 and a payout email), then sync of open payouts; idempotent. Runs on Render as the `botfare-payouts` cron
 - `pnpm e2e`: starts the web app (:3000, reused if up) and the demo (:4000), runs the Phase 1 PASS/FAIL checks, stops both; `E2E_VERBOSE=1` streams their logs
 - `pnpm dev:web` / `pnpm dev:demo`: run the app or the demo (both read the root `.env`)
 - `pnpm --filter @botfare/web build`: production build of the app
 - `pnpm spike:01`…`spike:05`: Day-0 spikes; results in `docs/SPIKE_RESULTS.md`
-- `render.yaml`: Render Blueprint (botfare-web, botfare-demo, botfare-db); not deployed yet
+- `render.yaml`: Render Blueprint (botfare-web, botfare-demo, botfare-payouts cron, botfare-db); not deployed yet
 - `pnpm --filter @botfare/web dev` (Next.js on :3000) · `pnpm --filter @botfare/demo dev` (demo publisher)
 - Workspace packages export TypeScript source; Next.js transpiles them (`transpilePackages`), everything else runs on tsx.
 - `apps/web` uses TypeScript 5.9 (Next's type checker); the rest of the repo uses TypeScript 7.
