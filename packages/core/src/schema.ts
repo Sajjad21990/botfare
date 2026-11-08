@@ -257,7 +257,10 @@ export const payouts = pgTable(
   "payouts",
   {
     id: text("id").primaryKey(),
-    /** PayPal `sender_batch_id`. PayPal dedupes it for 30 days, so retries reuse it. */
+    /**
+     * PayPal `sender_batch_id`. PayPal refuses a second batch with the same ID for 30 days (400
+     * USER_BUSINESS_ERROR linking the first batch), so retries reuse it and never pay twice.
+     */
     batchKey: text("sender_batch_id").notNull(),
     publisherUserId: text("publisher_user_id")
       .notNull()
@@ -276,6 +279,18 @@ export const payouts = pgTable(
       .references(() => ledgerTransactions.id),
     /** Ledger posting that returned them (kind `payout_reversal`), at most one. */
     reversalTransactionId: text("reversal_transaction_id").references(() => ledgerTransactions.id),
+    /**
+     * Ledger posting that took the earnings again (kind `payout`) because PayPal paid the item
+     * after we had reversed it. At most one.
+     */
+    redebitTransactionId: text("redebit_transaction_id").references(() => ledgerTransactions.id),
+    /** How many times the batch was sent to PayPal. Above 1 means a retry of the same batch. */
+    submitAttempts: integer("submit_attempts").notNull().default(0),
+    /**
+     * Held while one caller sends the batch to PayPal, so "Withdraw now", "Refresh status" and the
+     * cron never POST the same batch at the same time. Cleared when the call returns.
+     */
+    submitLockedUntil: timestamp("submit_locked_until", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

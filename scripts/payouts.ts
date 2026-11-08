@@ -4,7 +4,8 @@
  * 1. runDailyPayouts: one PayPal Payouts batch with an item for every publisher whose earnings
  *    reach $1.00 and who has a payout email;
  * 2. syncPendingPayouts: refreshes every open payout from PayPal and resubmits batches PayPal
- *    never confirmed (same sender_batch_id, so PayPal dedupes them).
+ *    never confirmed (same sender_batch_id: PayPal refuses a second batch with it and links the
+ *    first, which the sync then adopts).
  *
  * Safe to run again: earnings already paid out are gone from the ledger, and every batch is
  * idempotent. Prints a summary; secrets are never printed. Exits non-zero if a step failed.

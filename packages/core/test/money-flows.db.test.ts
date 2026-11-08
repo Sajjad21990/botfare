@@ -11,8 +11,10 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   Accounts,
   accountBalanceMicros,
+  applyPayoutUpdate,
   completeTopUp,
   createSite,
+  duplicateBatch,
   earningsBalanceMicros,
   getPayout,
   getPayoutEmail,
@@ -119,6 +121,41 @@ function payPalError(status: number, name: string, issue?: string) {
     details: issue ? [{ issue }] : [],
     body: {},
   });
+}
+
+/** PayPal's real answer to a reused sender_batch_id (captured from the sandbox). */
+function duplicateBatchError(batchId: string | null) {
+  const detail = {
+    field: "SENDER_BATCH_ID",
+    location: "body",
+    issue: "Batch with given sender_batch_id already exists",
+    ...(batchId && {
+      link: [
+        {
+          href: `https://api.sandbox.paypal.com/v1/payments/payouts/${batchId}`,
+          rel: "self",
+          method: "GET",
+          encType: "application/json",
+        },
+      ],
+    }),
+  };
+  return new PayPalApiError({
+    status: 400,
+    name: "USER_BUSINESS_ERROR",
+    message: "User business error.",
+    debugId: "dbg",
+    details: [detail],
+    body: { name: "USER_BUSINESS_ERROR", details: [detail], links: [] },
+  });
+}
+
+async function redebitCount(payoutId: string) {
+  const rows = await db
+    .select()
+    .from(schema.ledgerTransactions)
+    .where(eq(schema.ledgerTransactions.idempotencyKey, `redebit:${payoutId}`));
+  return rows.length;
 }
 
 async function expectMoneyError(promise: Promise<unknown>, code: string) {
@@ -457,6 +494,110 @@ describe("requestPayout", () => {
     }
     expect(await reversalCount(payout.id)).toBe(0);
   });
+
+  it("adopts the batch PayPal already has when a retry is refused as a duplicate", async () => {
+    const paypal = mockPayPal();
+    const owner = await publisherWithEarnings(5_000_000);
+    // The first POST reaches PayPal and creates the batch, but the response is lost.
+    paypal.createPayoutBatch.mockRejectedValueOnce(new TypeError("fetch failed"));
+    const payout = await requestPayout(db, paypal, { publisherUserId: owner.id });
+    expect(payout).toMatchObject({ status: "pending", paypalBatchId: null, submitAttempts: 1 });
+
+    paypal.createPayoutBatch.mockRejectedValueOnce(duplicateBatchError("VLJ8N6ZZVWKQE"));
+    paypal.getPayoutBatch.mockImplementation(async () => ({
+      ...batchWithItem(
+        paypal.createPayoutBatch.mock.calls[0]?.[0] as CreatePayoutBatchInput,
+        "SUCCESS",
+      ),
+      batchId: "VLJ8N6ZZVWKQE",
+    }));
+    const retried = await syncPayout(db, paypal, payout.id);
+    expect(retried).toMatchObject({
+      status: "pending",
+      paypalBatchId: "VLJ8N6ZZVWKQE",
+      error: null,
+      reversalTransactionId: null,
+      submitAttempts: 2,
+      submitLockedUntil: null,
+    });
+    // The earnings stay out: PayPal is paying this batch, so Withdraw has nothing to pay again.
+    expect(await earningsBalanceMicros(db, owner.id)).toBe(0);
+    await expectMoneyError(
+      requestPayout(db, paypal, { publisherUserId: owner.id }),
+      "below_minimum",
+    );
+
+    // The next sync reads the adopted batch instead of POSTing again.
+    const synced = await syncPayout(db, paypal, payout.id);
+    expect(synced?.status).toBe("success");
+    expect(paypal.getPayoutBatch).toHaveBeenCalledWith("VLJ8N6ZZVWKQE");
+    expect(paypal.createPayoutBatch).toHaveBeenCalledTimes(2);
+    expect(await reversalCount(payout.id)).toBe(0);
+  });
+
+  it("never reverses a refused retry; it waits for review with the money in clearing", async () => {
+    const paypal = mockPayPal();
+    const owner = await publisherWithEarnings(2_000_000);
+    paypal.createPayoutBatch.mockRejectedValueOnce(payPalError(503, "SERVICE_UNAVAILABLE"));
+    const payout = await requestPayout(db, paypal, { publisherUserId: owner.id });
+
+    // A duplicate answer without a link, then another 4xx: neither proves PayPal has nothing.
+    paypal.createPayoutBatch.mockRejectedValueOnce(duplicateBatchError(null));
+    const noLink = await syncPayout(db, paypal, payout.id);
+    expect(noLink).toMatchObject({ status: "pending", paypalBatchId: null });
+    expect(noLink?.error).toMatch(/^Needs review/);
+
+    paypal.createPayoutBatch.mockRejectedValueOnce(
+      payPalError(422, "UNPROCESSABLE_ENTITY", "INSUFFICIENT_FUNDS"),
+    );
+    const refused = await syncPayout(db, paypal, payout.id);
+    expect(refused).toMatchObject({ status: "pending", reversalTransactionId: null });
+    expect(refused?.error).toMatch(/^Needs review: PayPal refused a retry/);
+    expect(await reversalCount(payout.id)).toBe(0);
+    expect(await earningsBalanceMicros(db, owner.id)).toBe(0);
+  });
+
+  it("sends a batch from one caller at a time", async () => {
+    const paypal = mockPayPal();
+    const owner = await publisherWithEarnings(1_500_000);
+    let answer: (value: CreatePayoutBatchResult) => void = () => {};
+    paypal.createPayoutBatch.mockImplementationOnce(
+      (input) =>
+        new Promise((resolve) => {
+          answer = resolve;
+          expect(input.senderBatchId).toMatch(/^botfare-withdraw-/);
+        }),
+    );
+    const withdrawing = requestPayout(db, paypal, { publisherUserId: owner.id });
+    await vi.waitFor(() => expect(paypal.createPayoutBatch).toHaveBeenCalledTimes(1));
+    const [pending] = await listPayouts(db, owner.id);
+    if (!pending) throw new Error("payout row missing");
+
+    // "Refresh status" and the cron while Withdraw still waits for PayPal: no second POST.
+    await syncPayout(db, paypal, pending.id);
+    await syncPendingPayouts(db, paypal);
+    const posts = paypal.createPayoutBatch.mock.calls.filter(
+      ([call]) => call.senderBatchId === pending.batchKey,
+    );
+    expect(posts).toHaveLength(1);
+
+    answer({ batchId: `PB-${pending.batchKey}`, batchStatus: "PENDING" });
+    const payout = await withdrawing;
+    expect(payout).toMatchObject({ paypalBatchId: `PB-${pending.batchKey}`, submitAttempts: 1 });
+    expect(payout.submitLockedUntil).toBeNull();
+  });
+});
+
+describe("duplicateBatch", () => {
+  it("reads the existing batch ID from PayPal's duplicate sender_batch_id error", () => {
+    expect(duplicateBatch(duplicateBatchError("VLJ8N6ZZVWKQE"))).toEqual({
+      batchId: "VLJ8N6ZZVWKQE",
+    });
+    expect(duplicateBatch(duplicateBatchError(null))).toEqual({ batchId: null });
+    expect(duplicateBatch(payPalError(400, "VALIDATION_ERROR", "INVALID_EMAIL"))).toBeNull();
+    expect(duplicateBatch(payPalError(503, "SERVICE_UNAVAILABLE"))).toBeNull();
+    expect(duplicateBatch(new TypeError("fetch failed"))).toBeNull();
+  });
 });
 
 describe("runDailyPayouts", () => {
@@ -496,7 +637,7 @@ describe("runDailyPayouts", () => {
 });
 
 describe("syncPayout", () => {
-  it.each(["UNCLAIMED", "RETURNED"])("reverses a %s item exactly once", async (status) => {
+  it.each(["RETURNED", "FAILED", "BLOCKED"])("reverses a %s item exactly once", async (status) => {
     const paypal = mockPayPal();
     const owner = await publisherWithEarnings(4_000_000);
     const payout = await requestPayout(db, paypal, { publisherUserId: owner.id });
@@ -505,7 +646,7 @@ describe("syncPayout", () => {
 
     const first = await syncPayout(db, paypal, payout.id);
     expect(first).toMatchObject({
-      status: status.toLowerCase(),
+      status: status === "BLOCKED" ? "failed" : status.toLowerCase(),
       paypalItemId: `ITEM-0-${payout.id}`,
     });
     expect(await earningsBalanceMicros(db, owner.id)).toBe(4_000_000);
@@ -514,6 +655,30 @@ describe("syncPayout", () => {
     await syncPendingPayouts(db, paypal);
     expect(await reversalCount(payout.id)).toBe(1);
     expect(await earningsBalanceMicros(db, owner.id)).toBe(4_000_000);
+  });
+
+  it("keeps an UNCLAIMED item open with the money in clearing until PayPal settles it", async () => {
+    const paypal = mockPayPal();
+    const owner = await publisherWithEarnings(3_000_000);
+    const payout = await requestPayout(db, paypal, { publisherUserId: owner.id });
+    const input = paypal.createPayoutBatch.mock.calls[0]?.[0] as CreatePayoutBatchInput;
+    paypal.getPayoutBatch.mockResolvedValue(batchWithItem(input, "UNCLAIMED"));
+
+    expect((await syncPayout(db, paypal, payout.id))?.status).toBe("unclaimed");
+    // Not back in earnings, so the publisher cannot withdraw the same money a second time.
+    expect(await earningsBalanceMicros(db, owner.id)).toBe(0);
+    await expectMoneyError(
+      requestPayout(db, paypal, { publisherUserId: owner.id }),
+      "below_minimum",
+    );
+
+    // Still open: the bulk sync keeps polling it and sees the receiver claim it.
+    paypal.getPayoutBatch.mockResolvedValue(batchWithItem(input, "SUCCESS"));
+    await syncPendingPayouts(db, paypal);
+    expect((await getPayout(db, payout.id))?.status).toBe("success");
+    expect(await reversalCount(payout.id)).toBe(0);
+    expect(await earningsBalanceMicros(db, owner.id)).toBe(0);
+    expect(paypal.createPayoutBatch).toHaveBeenCalledTimes(1);
   });
 
   it("marks a paid item as success without moving money", async () => {
@@ -620,12 +785,60 @@ describe("webhooks", () => {
       paypalTransactionId: `TXN-${payout.id}`,
     });
     expect(unclaimed?.error).toContain("RECEIVER_UNREGISTERED");
-    expect(await earningsBalanceMicros(db, owner.id)).toBe(2_000_000);
+    expect(unclaimed?.reversalTransactionId).toBeNull();
+    // PayPal holds unclaimed money for 30 days; it is not back in earnings yet.
+    expect(await earningsBalanceMicros(db, owner.id)).toBe(0);
+    expect(await reversalCount(payout.id)).toBe(0);
 
     await handlePayPalWebhookEvent(db, paypal, itemEvent("RETURNED"));
     expect((await getPayout(db, payout.id))?.status).toBe("returned");
     expect(await reversalCount(payout.id)).toBe(1);
     expect(await earningsBalanceMicros(db, owner.id)).toBe(2_000_000);
+  });
+
+  it("takes the earnings again when PayPal pays an item after it was reversed", async () => {
+    const paypal = mockPayPal();
+    const owner = await publisherWithEarnings(2_000_000);
+    const payout = await requestPayout(db, paypal, { publisherUserId: owner.id });
+    const itemEvent = (status: string) => ({
+      id: `WH-${crypto.randomUUID()}`,
+      event_type: `PAYMENT.PAYOUTS-ITEM.${status}`,
+      resource: {
+        payout_item_id: `ITEM-${payout.id}`,
+        transaction_status: status,
+        payout_batch_id: payout.paypalBatchId,
+        payout_item: { sender_item_id: payout.id },
+      },
+    });
+    await handlePayPalWebhookEvent(db, paypal, itemEvent("FAILED"));
+    expect(await earningsBalanceMicros(db, owner.id)).toBe(2_000_000);
+
+    await handlePayPalWebhookEvent(db, paypal, itemEvent("SUCCEEDED"));
+    await handlePayPalWebhookEvent(db, paypal, itemEvent("SUCCEEDED"));
+    const paid = await getPayout(db, payout.id);
+    expect(paid).toMatchObject({ status: "success" });
+    expect(paid?.redebitTransactionId).not.toBeNull();
+    expect(await redebitCount(payout.id)).toBe(1);
+    expect(await earningsBalanceMicros(db, owner.id)).toBe(0);
+  });
+
+  it("flags a late SUCCESS for review when the reversed earnings were already withdrawn", async () => {
+    const paypal = mockPayPal();
+    const owner = await publisherWithEarnings(2_000_000);
+    paypal.createPayoutBatch.mockRejectedValueOnce(
+      payPalError(422, "UNPROCESSABLE_ENTITY", "INSUFFICIENT_FUNDS"),
+    );
+    const refused = await requestPayout(db, paypal, { publisherUserId: owner.id });
+    expect(refused.status).toBe("failed");
+    const second = await requestPayout(db, paypal, { publisherUserId: owner.id });
+    expect(second.status).toBe("pending");
+
+    await applyPayoutUpdate(db, refused.id, { status: "success" });
+    const flagged = await getPayout(db, refused.id);
+    expect(flagged?.status).toBe("failed");
+    expect(flagged?.error).toMatch(/^Needs review/);
+    expect(await redebitCount(refused.id)).toBe(0);
+    expect(await earningsBalanceMicros(db, owner.id)).toBe(0);
   });
 
   it("reverses every open item of a denied batch", async () => {

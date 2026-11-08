@@ -15,6 +15,13 @@
       "when": 1794141391658,
       "tag": "0001_money_flows",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794145055201,
+      "tag": "0002_payout_retries",
+      "breakpoints": true
     }
   ]
 }

@@ -1,15 +1,24 @@
 /**
  * Publisher payouts through PayPal Payouts. Earnings move to `paypal:clearing` in the same
  * database transaction that creates the payout row (kind `payout`, key `payout:<id>`); PayPal is
- * called afterwards. A definitive PayPal refusal, or a later FAILED / RETURNED / UNCLAIMED /
- * BLOCKED / REFUNDED / REVERSED item, moves the money back exactly once (kind `payout_reversal`,
- * key `reversal:<id>`). An indeterminate failure (network, 5xx) leaves the row pending; the retry
- * reuses the same `sender_batch_id`, which PayPal dedupes for 30 days.
+ * called afterwards.
+ *
+ * - A refusal of the first attempt (a 4xx), or a later FAILED / RETURNED / BLOCKED / REFUNDED /
+ *   REVERSED item, moves the money back exactly once (kind `payout_reversal`, key `reversal:<id>`).
+ * - UNCLAIMED is not final: PayPal holds the money for 30 days and the receiver can still claim it
+ *   (SUCCEEDED) or it comes back (RETURNED). The money stays in clearing until then.
+ * - An indeterminate failure (network, timeout, 5xx) leaves the row pending. The retry reuses the
+ *   same `sender_batch_id`; if PayPal already has the batch it answers 400 "Batch with given
+ *   sender_batch_id already exists" with a link to it, and we adopt that batch. A retry is never
+ *   reversed automatically: PayPal may hold the first attempt, so it waits for review instead.
+ * - One caller at a time sends a batch (`submit_locked_until`), so Withdraw, Refresh and the cron
+ *   cannot POST it concurrently.
  */
 import { IdPrefix, newId } from "@botfare/contracts";
 import type { PayoutItem, PayPalClient } from "@botfare/paypal";
+import { PayPalApiError } from "@botfare/paypal";
 import { centsToMicros } from "@botfare/x402-paypal";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { Accounts } from "../accounts";
 import type { Db, DbOrTx, Tx } from "../db";
@@ -37,9 +46,15 @@ type PayoutPayPal = Pick<PayPalClient, "createPayoutBatch">;
 type SyncPayPal = Pick<PayPalClient, "createPayoutBatch" | "getPayoutBatch">;
 
 /** Statuses that mean the money did not reach the publisher; each triggers one reversal. */
-export const REVERSED_PAYOUT_STATUSES = ["failed", "returned", "unclaimed", "reversed"] as const;
-/** Statuses that may still change at PayPal. */
-export const OPEN_PAYOUT_STATUSES = ["pending", "processing"] as const;
+export const REVERSED_PAYOUT_STATUSES = ["failed", "returned", "reversed"] as const;
+/**
+ * Statuses that may still change at PayPal. `unclaimed` is one of them: the receiver has 30 days
+ * to claim the money before PayPal returns it.
+ */
+export const OPEN_PAYOUT_STATUSES = ["pending", "processing", "unclaimed"] as const;
+
+/** How long one caller may hold a batch while it waits for PayPal (the client has no timeout). */
+const SUBMIT_LOCK_MS = 2 * 60 * 1000;
 
 // ---------------------------------------------------------------------------------------------
 // Payout email
@@ -209,15 +224,37 @@ async function reservePayout(
 
 /**
  * Sends every item of a batch to PayPal (also the retry after an indeterminate failure: same
- * `sender_batch_id`, same `PayPal-Request-Id`, same items).
+ * `sender_batch_id`, same `PayPal-Request-Id`, same items). Does nothing while another caller is
+ * sending the same batch.
  */
 async function submitPayoutBatch(db: Db, paypal: PayoutPayPal, batchKey: string): Promise<void> {
+  const now = new Date();
+  // Claim the batch: a single UPDATE, so of two concurrent callers only one gets the rows.
+  const claimed = await db
+    .update(payouts)
+    .set({
+      submitAttempts: sql`${payouts.submitAttempts} + 1`,
+      submitLockedUntil: new Date(now.getTime() + SUBMIT_LOCK_MS),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(payouts.batchKey, batchKey),
+        eq(payouts.status, "pending"),
+        isNull(payouts.paypalBatchId),
+        or(isNull(payouts.submitLockedUntil), lt(payouts.submitLockedUntil, now)),
+      ),
+    )
+    .returning({ id: payouts.id, submitAttempts: payouts.submitAttempts });
+  if (claimed.length === 0) return;
+  const isRetry = claimed.some((row) => row.submitAttempts > 1);
+
   const rows = await db
     .select()
     .from(payouts)
     .where(eq(payouts.batchKey, batchKey))
     .orderBy(asc(payouts.id));
-  if (rows.length === 0) return;
+  const release = { submitLockedUntil: null, updatedAt: new Date() };
   try {
     const result = await paypal.createPayoutBatch({
       senderBatchId: batchKey,
@@ -234,20 +271,75 @@ async function submitPayoutBatch(db: Db, paypal: PayoutPayPal, batchKey: string)
     });
     await db
       .update(payouts)
-      .set({ paypalBatchId: result.batchId, error: null, updatedAt: new Date() })
+      .set({ ...release, paypalBatchId: result.batchId, error: null })
       .where(eq(payouts.batchKey, batchKey));
     await applyBatchStatus(db, batchKey, result.batchStatus);
   } catch (err) {
-    if (isDefinitivePayPalFailure(err)) {
+    const existing = duplicateBatch(err);
+    if (existing) {
+      // PayPal already has this batch (an earlier attempt went through): adopt it. Sync or the
+      // webhooks then bring the item statuses.
+      await db
+        .update(payouts)
+        .set({
+          ...release,
+          ...(existing.batchId
+            ? { paypalBatchId: existing.batchId, error: null }
+            : {
+                error:
+                  "Needs review: PayPal already has this batch but did not say which one. The money stays in clearing.",
+              }),
+        })
+        .where(eq(payouts.batchKey, batchKey));
+      return;
+    }
+    if (isDefinitivePayPalFailure(err) && !isRetry) {
       for (const row of rows) await reversePayout(db, row.id, "failed", errorMessage(err));
       return;
     }
-    // Indeterminate: PayPal may have the batch. Stay pending; syncPendingPayouts retries.
+    // Indeterminate, or a refused retry: PayPal may hold an earlier attempt, so never give the
+    // money back here. Stay pending; syncPendingPayouts retries the same batch.
+    const error = isDefinitivePayPalFailure(err)
+      ? `Needs review: PayPal refused a retry of this batch (${errorMessage(err)})`
+      : `Retrying: ${errorMessage(err)}`;
     await db
       .update(payouts)
-      .set({ error: `Retrying: ${errorMessage(err)}`, updatedAt: new Date() })
+      .set({ ...release, error: error.slice(0, 500) })
       .where(and(eq(payouts.batchKey, batchKey), eq(payouts.status, "pending")));
   }
+}
+
+const PAYOUT_BATCH_URL = /\/v1\/payments\/payouts\/([A-Za-z0-9]+)(?:[/?#]|$)/;
+
+/**
+ * PayPal's answer to a reused `sender_batch_id`: 400 USER_BUSINESS_ERROR with a detail on field
+ * SENDER_BATCH_ID ("Batch with given sender_batch_id already exists") linking the existing batch.
+ * Returns that batch's `payout_batch_id` (null when PayPal sent no link), or null for other errors.
+ */
+export function duplicateBatch(err: unknown): { batchId: string | null } | null {
+  if (!(err instanceof PayPalApiError) || err.status !== 400) return null;
+  const detail = err.details.find(
+    (d) =>
+      (typeof d.field === "string" && d.field.toUpperCase() === "SENDER_BATCH_ID") ||
+      (typeof d.issue === "string" && /sender_batch_id already exists/i.test(d.issue)),
+  );
+  if (!detail) return null;
+  const hrefs: string[] = [];
+  const collect = (links: unknown) => {
+    if (!Array.isArray(links)) return;
+    for (const link of links) {
+      const href = (link as { href?: unknown } | null)?.href;
+      if (typeof href === "string") hrefs.push(href);
+    }
+  };
+  collect(detail.link);
+  collect(detail.links);
+  collect((err.body as { links?: unknown } | null)?.links);
+  for (const href of hrefs) {
+    const match = PAYOUT_BATCH_URL.exec(href);
+    if (match?.[1]) return { batchId: match[1] };
+  }
+  return { batchId: null };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -318,14 +410,13 @@ export async function applyPayoutUpdate(
     const [row] = await tx.select().from(payouts).where(eq(payouts.id, payoutId)).for("update");
     if (!row) return null;
     if (row.reversalTransactionId) {
-      // Money already returned to earnings; never move it again automatically.
-      const note =
-        update.status === "success"
-          ? "PayPal reported SUCCESS after the payout was reversed"
-          : null;
+      if (update.status === "success" && !row.redebitTransactionId) {
+        return redebitPaidPayout(tx, row, ids);
+      }
+      // Money already returned to earnings; nothing else moves it automatically.
       const [updated] = await tx
         .update(payouts)
-        .set({ ...ids, ...(note && { error: note }), updatedAt: new Date() })
+        .set({ ...ids, updatedAt: new Date() })
         .where(eq(payouts.id, payoutId))
         .returning();
       return updated ?? row;
@@ -342,6 +433,60 @@ export async function applyPayoutUpdate(
       .returning();
     return updated ?? row;
   });
+}
+
+/**
+ * PayPal paid an item we had already reversed (the money went back to earnings). Takes the
+ * amount out of earnings again, once (kind `payout`, key `redebit:<id>`), so the ledger matches
+ * what PayPal paid. If the publisher has already withdrawn those earnings, nothing can be taken
+ * without going negative, so the row is flagged for review instead.
+ */
+async function redebitPaidPayout(
+  tx: Tx,
+  row: Payout,
+  ids: Partial<Pick<Payout, "paypalBatchId" | "paypalItemId" | "paypalTransactionId">>,
+): Promise<Payout> {
+  const earningsId = Accounts.earnings(row.publisherUserId);
+  const [account] = await tx
+    .select({ balance: ledgerAccounts.balanceMicros })
+    .from(ledgerAccounts)
+    .where(eq(ledgerAccounts.id, earningsId))
+    .for("update");
+  const amountMicros = centsToMicros(row.amountCents);
+  if ((account?.balance ?? 0) < amountMicros) {
+    const [flagged] = await tx
+      .update(payouts)
+      .set({
+        ...ids,
+        error:
+          "Needs review: PayPal paid this payout after it was reversed, and the earnings were already withdrawn",
+        updatedAt: new Date(),
+      })
+      .where(eq(payouts.id, row.id))
+      .returning();
+    return flagged ?? row;
+  }
+  const posted = await postTransaction(tx, {
+    kind: "payout",
+    idempotencyKey: `redebit:${row.id}`,
+    memo: `Payout ${row.id} paid by PayPal after its reversal`,
+    entries: [
+      { accountId: earningsId, amountMicros: -amountMicros },
+      { accountId: Accounts.paypalClearing, amountMicros },
+    ],
+  });
+  const [updated] = await tx
+    .update(payouts)
+    .set({
+      ...ids,
+      status: "success",
+      redebitTransactionId: posted.transactionId,
+      error: "PayPal paid this payout after it was reversed; the earnings were taken again",
+      updatedAt: new Date(),
+    })
+    .where(eq(payouts.id, row.id))
+    .returning();
+  return updated ?? row;
 }
 
 /** Moves a payout's amount back to earnings once and records the failure status. */

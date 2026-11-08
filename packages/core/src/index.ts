@@ -69,6 +69,7 @@ export {
   applyPayoutUpdate,
   type DailyPayoutRun,
   DEFAULT_PAYOUT_MINIMUM_CENTS,
+  duplicateBatch,
   getPayout,
   getPayoutEmail,
   listPayouts,

@@ -243,7 +243,9 @@ export function PayoutHistory({
   onSynced: (payouts: PayoutView[]) => void;
 }) {
   const [syncing, setSyncing] = useState(false);
-  const open = payouts.some((p) => p.status === "pending" || p.status === "processing");
+  const open = payouts.some(
+    (p) => p.status === "pending" || p.status === "processing" || p.status === "unclaimed",
+  );
 
   async function refresh() {
     setSyncing(true);
@@ -329,7 +331,12 @@ export function PayoutHistory({
                                 Back in earnings
                               </span>
                             )}
-                            {payout.error && !payout.reversed && (
+                            {payout.status === "unclaimed" && !payout.reversed && (
+                              <span className="max-w-56 text-[11px] text-muted-foreground">
+                                PayPal holds it for 30 days for the receiver to claim
+                              </span>
+                            )}
+                            {payout.error && !payout.reversed && payout.status !== "unclaimed" && (
                               <span
                                 className="max-w-56 truncate text-[11px] text-muted-foreground"
                                 title={payout.error}

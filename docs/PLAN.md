@@ -295,7 +295,7 @@ Money enters through PayPal top-ups and leaves through PayPal Payouts; everythin
 | Paid request | Agent owner's wallet | Publisher earnings (95%) + BotFare fees (5%) | Successful settle, after the handler succeeded |
 | Refund | Publisher earnings + BotFare fees | Agent owner's wallet | Publisher refunds a receipt from the dashboard |
 | Payout | Publisher earnings | PayPal clearing | Payouts batch sent (daily, or "Withdraw now" at $1.00 or more) |
-| Failed payout | PayPal clearing | Publisher earnings | Payout item failed, returned or unclaimed (webhook) |
+| Failed payout | PayPal clearing | Publisher earnings | Payout item failed, blocked or returned (webhook); unclaimed stays open until it is claimed or returned |
 
 **Rules that keep it correct:**
 
@@ -607,7 +607,7 @@ Phase 2: real money and the dashboards.
 1. Auth: demo personas (agent owner, publisher) for judges. If Log in with PayPal is set up, add it for publishers and store the verified PayPal email as the payout email. No magic links.
 2. /wallet: balance; PayPal top-up ($5 / $10 / $20) with JS SDK v6 buttons; the server creates the order with experience_context and captures it; credit the wallet only from the capture and the PAYMENT.CAPTURE.COMPLETED webhook, idempotent by capture ID; book seller_receivable_breakdown.paypal_fee as a paypal_fee event. Agent keys: generate the Ed25519 key pair in the browser, show the private key once with a download, store only the public key; set daily cap, per-request max and allowed sites; revoke. Receipts list per key.
 3. /publisher: add a site (origin, prices, free paths, charge-known-bots toggle); show site ID and secret once; copy-paste botfare({…}) snippet; refund a receipt; earnings balance; payout history. Revenue analytics in AG Studio (ag-studio-react): a BotFare theme via studioTheme.withParams, a responsive layout, requests, paid and revenue by day, page and agent key.
-4. Payouts: "Withdraw now" (minimum $1.00) and a daily job that pays every publisher with at least $1.00 in one PayPal Payouts batch with a sender_batch_id; round down to cents; PAYMENT.PAYOUTSBATCH.* and PAYMENT.PAYOUTS-ITEM.* webhooks update status; failed, returned or unclaimed items post payout_failed back to earnings.
+4. Payouts: "Withdraw now" (minimum $1.00) and a daily job that pays every publisher with at least $1.00 in one PayPal Payouts batch with a sender_batch_id; round down to cents; PAYMENT.PAYOUTSBATCH.* and PAYMENT.PAYOUTS-ITEM.* webhooks update status; failed, blocked or returned items post payout_reversal back to earnings (unclaimed items stay open: PayPal holds them for 30 days).
 5. /api/paypal/webhook with signature verification and an events table; test it with real sandbox transactions, not the simulator.
 6. Update render.yaml (add the daily payout cron), point PayPal return URLs and the webhook at the Render URL, and run the full money flow there.
 Stop and give me a test script for the full money flow so I can record top-up and payout B-roll.
