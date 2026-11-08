@@ -14,7 +14,9 @@
  * - issues the demo agent key (10¢ per request, $10.00 a day: every judge's research run shares
  *   it), reusing the one in .env if it is this owner's, and raising its limits in place if they
  *   changed;
- * - writes BOTFARE_URL, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET and BOTFARE_AGENT_KEY to .env.
+ * - writes BOTFARE_URL, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET and BOTFARE_AGENT_KEY to .env, and a
+ *   fresh random BOTFARE_RECEIPT_KEY_SEED when .env has none (never printed; not on Render, where
+ *   the Blueprint generates it).
  *
  * Flags:
  *   --rotate-site-secret  issue a new site secret even if the current one works
@@ -27,6 +29,7 @@
  * demo" hint: in the judge Docker stack the demo starts after the seed and reads the new secret.
  */
 
+import { randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 import {
   agentKeyPayloadSchema,
@@ -42,6 +45,7 @@ import {
   type Db,
   getAgentKeyById,
   getUserByEmail,
+  MIN_RECEIPT_SEED_LENGTH,
   migrate,
   revokeAgentKey,
   seedWallet,
@@ -177,14 +181,21 @@ async function main(): Promise<void> {
     }
     console.log("             10¢ per request max, $10.00 daily cap, any site");
 
+    // Signed receipts need a secret seed for `next start`; a local .env without one gets one.
+    const receiptSeed =
+      (process.env.BOTFARE_RECEIPT_KEY_SEED?.trim().length ?? 0) >= MIN_RECEIPT_SEED_LENGTH ||
+      process.env.RENDER === "true"
+        ? null
+        : randomBytes(36).toString("base64url");
     updateEnvFile({
       BOTFARE_URL: botfareUrl,
       BOTFARE_SITE_ID: siteId,
       BOTFARE_SITE_SECRET: siteSecret,
       BOTFARE_AGENT_KEY: agentKey,
+      ...(receiptSeed ? { BOTFARE_RECEIPT_KEY_SEED: receiptSeed } : {}),
     });
     console.log(
-      "\nWrote BOTFARE_URL, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET and BOTFARE_AGENT_KEY to .env",
+      `\nWrote BOTFARE_URL, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET${receiptSeed ? ", BOTFARE_AGENT_KEY and a new BOTFARE_RECEIPT_KEY_SEED" : " and BOTFARE_AGENT_KEY"} to .env`,
     );
     // In the judge Docker stack the demo container starts after this and loads the new secret.
     if (action !== "kept" && process.env.BOTFARE_JUDGE_DOCKER !== "1") {
