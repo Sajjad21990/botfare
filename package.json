@@ -1,0 +1,41 @@
+{
+  "name": "botfare",
+  "private": true,
+  "type": "module",
+  "description": "BotFare: pay-per-request for AI agents, settled on PayPal. Every bot pays its fare.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --parallel typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "spike:01": "tsx scripts/spike/01-oauth.ts",
+    "spike:02": "tsx scripts/spike/02-topup.ts",
+    "spike:02b": "tsx scripts/spike/02b-capture.ts",
+    "spike:03": "tsx scripts/spike/03-payout.ts",
+    "spike:04": "tsx scripts/spike/04-jws.ts",
+    "spike:05": "tsx scripts/spike/05-x402.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@botfare/paypal": "workspace:*",
+    "@botfare/x402-paypal": "workspace:*",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@x402/core": "2.30.0",
+    "@x402/express": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "express": "5.3.0",
+    "jose": "6.2.15",
+    "tsx": "^4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "^5.1.0",
+    "zod": "4.6.7"
+  }
+}

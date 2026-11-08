@@ -1,0 +1,18 @@
+{
+  "name": "@botfare/x402-paypal",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "x402 V2 plug-in: the `prepaid` scheme on PayPal networks (paypal:*), for the official @x402 SDK.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@x402/core": "2.30.0",
+    "jose": "6.2.15",
+    "zod": "4.6.7"
+  }
+}

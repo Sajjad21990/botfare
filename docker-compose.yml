@@ -1,0 +1,22 @@
+# Local infrastructure only; the apps run natively with pnpm.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: botfare
+      POSTGRES_PASSWORD: botfare
+      POSTGRES_DB: botfare
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates botfare_test for the test suite on first start
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U botfare -d botfare"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
