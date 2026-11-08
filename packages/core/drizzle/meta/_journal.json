@@ -29,6 +29,13 @@
       "when": 1794146258377,
       "tag": "0003_detection",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794153200074,
+      "tag": "0004_fare_court",
+      "breakpoints": true
     }
   ]
 }

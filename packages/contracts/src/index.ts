@@ -16,6 +16,7 @@ export const IdPrefix = {
   topup: "top",
   payout: "po",
   transaction: "txn",
+  dispute: "dsp",
 } as const;
 
 export type IdPrefix = (typeof IdPrefix)[keyof typeof IdPrefix];

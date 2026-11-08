@@ -4,11 +4,20 @@
  * PayPal records is integer cents.
  */
 import { DEFAULT_DETECTION, type DetectionConfig, type PricingRule } from "@botfare/contracts";
+import {
+  type DeclaredOffer,
+  type DeclineCategory,
+  type DisputeReason,
+  type DisputeVerdict,
+  disputeStatusSchema,
+} from "@botfare/contracts/fare";
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  bigserial,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -190,6 +199,18 @@ export const receipts = pgTable(
      * payment requirements' `extra.botfareSignal`; null when absent or unknown.
      */
     detectionSignal: text("detection_signal"),
+    /**
+     * The offer as the publisher declared it at settle (`extra.botfareOffer`, declaredOfferSchema);
+     * null when absent or invalid. Fare Court compares it with what was delivered.
+     */
+    declaredOffer: jsonb("declared_offer").$type<DeclaredOffer>(),
+    /** Proof of delivery, attested once by the paid site: RFC 9530 `sha-256=:…:` of the body. */
+    contentDigest: text("content_digest"),
+    contentLength: integer("content_length"),
+    contentType: text("content_type"),
+    /** HTTP status the publisher delivered with. */
+    deliveredStatus: integer("delivered_status"),
+    attestedAt: timestamp("attested_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -340,6 +361,158 @@ export const webhookEvents = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------------------------
+// Fare Court
+
+/**
+ * Dispute states: the contract's DisputeStatus plus `open` (filed, waiting for the AI verdict).
+ * Open and pending_publisher disputes are "open" for the one-open-dispute-per-receipt rule.
+ */
+export const disputeRowStatuses = ["open", ...disputeStatusSchema.options] as const;
+export type DisputeRowStatus = (typeof disputeRowStatuses)[number];
+export const disputeDeciders = ["ai", "publisher", "system"] as const;
+export type DisputeDecider = (typeof disputeDeciders)[number];
+
+export const disputes = pgTable(
+  "disputes",
+  {
+    id: text("id").primaryKey(),
+    receiptId: text("receipt_id")
+      .notNull()
+      .references(() => receipts.id),
+    agentKeyId: text("agent_key_id")
+      .notNull()
+      .references(() => agentKeys.id),
+    /** Agent owner whose wallet paid (and gets any refund). */
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id),
+    siteId: text("site_id")
+      .notNull()
+      .references(() => sites.id),
+    publisherUserId: text("publisher_user_id")
+      .notNull()
+      .references(() => users.id),
+    reason: text("reason").$type<DisputeReason>().notNull(),
+    note: text("note"),
+    /** The bytes the agent submitted hash to the attested Content-Digest. */
+    contentDigestOk: boolean("content_digest_ok").notNull(),
+    /** The start of the delivered text (about 4 KB), for the publisher's review. */
+    deliveredExcerpt: text("delivered_excerpt"),
+    /** The AI judge's zod-validated verdict; null until it ran (or when it could not). */
+    verdict: jsonb("verdict").$type<DisputeVerdict>(),
+    status: text("status", { enum: disputeRowStatuses }).notNull().default("open"),
+    /** False when the key's dispute rate needs publisher review: AI verdicts cannot refund. */
+    autoAllowed: boolean("auto_allowed").notNull().default(true),
+    /** Human-readable state, e.g. why a refund could not be made. */
+    message: text("message"),
+    refundedCents: integer("refunded_cents").notNull().default(0),
+    refundTransactionId: text("refund_transaction_id").references(() => ledgerTransactions.id),
+    createdAt: createdAt(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: text("decided_by", { enum: disputeDeciders }),
+  },
+  (t) => [
+    uniqueIndex("disputes_receipt_open_uq")
+      .on(t.receiptId)
+      .where(sql`${t.status} in ('open', 'pending_publisher')`),
+    index("disputes_receipt_idx").on(t.receiptId),
+    index("disputes_agent_key_created_idx").on(t.agentKeyId, t.createdAt),
+    index("disputes_owner_created_idx").on(t.ownerUserId, t.createdAt),
+    index("disputes_publisher_created_idx").on(t.publisherUserId, t.createdAt),
+    index("disputes_site_created_idx").on(t.siteId, t.createdAt),
+    check(
+      "disputes_status_ck",
+      sql`${t.status} in ('open', 'refunded', 'denied', 'pending_publisher', 'rejected_by_publisher', 'invalid')`,
+    ),
+    check(
+      "disputes_decided_by_ck",
+      sql`${t.decidedBy} is null or ${t.decidedBy} in ('ai', 'publisher', 'system')`,
+    ),
+    check("disputes_refunded_ck", sql`${t.refundedCents} >= 0`),
+  ],
+);
+
+// ---------------------------------------------------------------------------------------------
+// Fare Advisor signals (no personal data: paths, prices and agent-written reasons only)
+
+/** "Offer shown" events (402s) reported by the publisher middleware. */
+export const offerEvents = pgTable(
+  "offer_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    siteId: text("site_id")
+      .notNull()
+      .references(() => sites.id),
+    path: text("path").notNull(),
+    method: text("method").notNull(),
+    priceCents: integer("price_cents").notNull(),
+    signal: text("signal"),
+    /** When the middleware showed the offer. */
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("offer_events_site_at_idx").on(t.siteId, t.at),
+    index("offer_events_site_path_at_idx").on(t.siteId, t.path, t.at),
+  ],
+);
+
+/** An agent saw an offer and said why it did not buy. One per key, URL and UTC day. */
+export const offerDeclines = pgTable(
+  "offer_declines",
+  {
+    id: serial("id").primaryKey(),
+    agentKeyId: text("agent_key_id")
+      .notNull()
+      .references(() => agentKeys.id),
+    siteId: text("site_id")
+      .notNull()
+      .references(() => sites.id),
+    url: text("url").notNull(),
+    path: text("path").notNull(),
+    priceCents: integer("price_cents").notNull(),
+    category: text("category").$type<DeclineCategory>().notNull(),
+    reason: text("reason").notNull(),
+    /** UTC day of the decline, for the once-per-key-URL-day rule. */
+    day: date("day", { mode: "string" }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("offer_declines_key_url_day_uq").on(t.agentKeyId, t.url, t.day),
+    index("offer_declines_site_created_idx").on(t.siteId, t.createdAt),
+  ],
+);
+
+/** A paid read that an agent's answer actually used ("citations are the new clicks"). */
+export const citations = pgTable(
+  "citations",
+  {
+    id: serial("id").primaryKey(),
+    /** Client-generated answer ID; a new report with the same ID replaces the old one. */
+    answerId: text("answer_id").notNull(),
+    agentKeyId: text("agent_key_id")
+      .notNull()
+      .references(() => agentKeys.id),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id),
+    receiptId: text("receipt_id")
+      .notNull()
+      .references(() => receipts.id),
+    siteId: text("site_id")
+      .notNull()
+      .references(() => sites.id),
+    claim: text("claim").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("citations_answer_receipt_uq").on(t.answerId, t.receiptId),
+    index("citations_site_created_idx").on(t.siteId, t.createdAt),
+    index("citations_receipt_idx").on(t.receiptId),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Site = typeof sites.$inferSelect;
 export type AgentKey = typeof agentKeys.$inferSelect;
@@ -351,3 +524,7 @@ export type TopUp = typeof topups.$inferSelect;
 export type Payout = typeof payouts.$inferSelect;
 export type PayPalOrder = typeof paypalOrders.$inferSelect;
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
+export type Dispute = typeof disputes.$inferSelect;
+export type OfferEvent = typeof offerEvents.$inferSelect;
+export type OfferDecline = typeof offerDeclines.$inferSelect;
+export type Citation = typeof citations.$inferSelect;
