@@ -17,6 +17,7 @@ import { POST as citationsRoute } from "../src/app/api/citations/route";
 import { POST as declineRoute } from "../src/app/api/offers/decline/route";
 import { POST as settle } from "../src/app/api/x402/settle/route";
 import { POST as telemetryRoute } from "../src/app/api/x402/telemetry/route";
+import { getPublisherAnalytics } from "../src/lib/server/analytics-receipts";
 import { closeDb, getDb } from "../src/lib/server/db";
 import { resetFacilitator } from "../src/lib/server/facilitator";
 import {
@@ -320,6 +321,39 @@ describe("POST /api/citations", () => {
       siteId: publisher.site.id,
     });
     expect(inputs?.totals.cited).toBe(1);
+
+    // The analytics dashboard shows the citation (joined to its receipt) and decline notes,
+    // only to this publisher.
+    await declineRoute(
+      await signedPost(agent, "/api/offers/decline", {
+        url: `${publisher.origin}/articles/premium-roundup`,
+        priceCents: 50,
+        category: "too_expensive",
+        reason: "Too much for a roundup",
+      }),
+    );
+    const analytics = await getPublisherAnalytics(getDb(), publisher.owner.id);
+    expect(analytics.citations).toEqual([
+      expect.objectContaining({
+        receiptId,
+        path: "/articles/grinders",
+        agentName: "signals agent",
+        claim: "Grind finer for espresso",
+      }),
+    ]);
+    expect(analytics.rows.map((row) => row.receiptId)).toContain(receiptId);
+    expect(analytics.declines).toEqual([
+      expect.objectContaining({
+        path: "/articles/premium-roundup",
+        category: "Too expensive",
+        reason: "Too much for a roundup",
+        priceUsd: 0.5,
+      }),
+    ]);
+    const outsider = await makeSite();
+    const theirs = await getPublisherAnalytics(getDb(), outsider.owner.id);
+    expect(theirs.citations).toEqual([]);
+    expect(theirs.declines).toEqual([]);
   });
 
   it("refuses unsigned or malformed reports and limits reports per key", async () => {

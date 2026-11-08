@@ -305,7 +305,8 @@ function groundedNumbers(rule: AdvisorRuleStats, days: number, suggested: number
   return { plain, cents: new Set(cents), percentages };
 }
 
-const NUMBER_PATTERN = /(\$)?(\d+(?:\.\d+)?)\s*(%|¢|cents?\b)?/gi;
+/** A number with optional thousands separators ("1,000" is one thousand, not 1 and 0). */
+const NUMBER_PATTERN = /(\$)?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(%|¢|cents?\b)?/gi;
 
 /**
  * True when every number in `text` comes from the data: a count, a price (as 50¢, 50 cents or
@@ -325,7 +326,7 @@ export function numbersAreGrounded(
   }
   for (const match of stripped.matchAll(NUMBER_PATTERN)) {
     const [, dollar, digits = "", unit = ""] = match;
-    const value = Number(digits);
+    const value = Number(digits.replaceAll(",", ""));
     if (dollar) {
       if (!allowed.cents.has(Math.round(value * 100))) return false;
       continue;
