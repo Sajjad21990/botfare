@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Sun 8 Nov 2026, evening IST
+**Last updated:** Sun 8 Nov 2026, night IST
 
 ## Overview
 
@@ -64,7 +64,7 @@
 | ✅ | Publisher dashboard: sites, pricing editor, one-time secrets, integration snippet, earnings, Withdraw now, payout history | `/publisher` |
 | ✅ | PayPal webhook endpoint and `pnpm payouts:run` | `/api/paypal/webhook` |
 | ✅ | Demo traffic (~150 paid requests over 14 days), real sandbox Withdraw now, docs, Render cron | `pnpm seed:traffic`; $11.72 Payout batch VLJ8N6ZZVWKQE reached SUCCESS; `botfare-payouts` cron |
-| ✅ | Phase 2 review and fixes | Every route exercised over HTTP; app font and phone header fixed |
+| ✅ | Phase 2 review and fixes: 7 of 8 findings confirmed and fixed (duplicate-batch double payout, UNCLAIMED handling, judge mode so shared personas can't break the demo, AI route limits, traffic rerun) | 227 tests, e2e 9/9; every route exercised over HTTP; app font and phone header fixed |
 | ⏳ | 👤 Approve one wallet top-up in the browser with the sandbox agent-owner account | Needed to prove the v6 button end to end |
 | ⏳ | 👤 Optional: AG Studio 45-day trial key in `.env` as `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` | Removes the watermark |
 
@@ -80,7 +80,7 @@
 | ⏳ | MCP server for Claude Desktop and Claude Code (should) | `get_offer`, `fetch_paid`, `wallet_balance`, `recent_receipts` |
 | ⏳ | Log in with PayPal for publishers (should) | 👤 enable it on the sandbox app |
 | ⏳ | Full-stack Docker Compose so judges can run everything locally (should) | |
-| ⏳ | Polish: empty, loading, error and mobile states; feature freeze at 10 pm IST | |
+| ⏳ | Polish: empty, loading, error and mobile states (hide revoked test keys in the wallet); feature freeze at 10 pm IST | |
 
 ## Phase 4: Deploy to Render ⏳
 
