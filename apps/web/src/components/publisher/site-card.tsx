@@ -36,10 +36,13 @@ const MIDDLEWARE_SNIPPET = `import express from "express";
 import { botfare } from "@botfare/express";
 
 const app = express();
+app.set("trust proxy", true); // behind a proxy or CDN: real client IPs for crawler checks
 app.use(
   botfare({
     siteId: process.env.BOTFARE_SITE_ID,
     siteSecret: process.env.BOTFARE_SITE_SECRET,
+    // Human check: your Turnstile secret (optional with Cloudflare's test site key)
+    turnstileSecret: process.env.TURNSTILE_SECRET_KEY,
   }),
 );`;
 
