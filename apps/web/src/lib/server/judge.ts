@@ -52,7 +52,7 @@ export async function refillDemoAgentWallet(agentKey: string): Promise<void> {
   try {
     const db = getDb();
     const key = await getAgentKeyById(db, decodeAgentKey(agentKey).keyId);
-    if (!key || key.status !== "active") return;
+    if (key?.status !== "active") return;
     const owner = await getUserById(db, key.ownerUserId);
     if (!owner || !isDemoPersonaEmail(owner.email)) return;
     await ensureDemoWalletFloor(db, { userId: owner.id });

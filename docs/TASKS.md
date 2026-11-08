@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Mon 9 Nov 2026, early hours IST (Phase 3 builds done: research agent, MCP server, /judge, Docker stack, polish; Log in with PayPal waits on the sandbox app setup)
+**Last updated:** Mon 9 Nov 2026, early hours IST (Phase 3 builds done: research agent, MCP server, /judge, Docker stack, polish; agent-safety review fixed; Log in with PayPal waits on the sandbox app setup)
 
 ## Overview
 
@@ -80,6 +80,7 @@
 | ✅ | MCP server for Claude Desktop and Claude Code (should) | [`packages/mcp`](../packages/mcp/README.md): `get_offer`, `fetch_paid`, `wallet_balance`, `recent_receipts`; agent API `/api/agent/*` authenticated by Web Bot Auth signatures |
 | 🔄 | Log in with PayPal for publishers (should) | Code done and tested against a mock PayPal (`/api/auth/paypal/*`, off unless `PAYPAL_LOGIN_ENABLED=true`). 👤 Enable it on the sandbox app with the return URL `<BOTFARE_URL>/api/auth/paypal/callback` (README) |
 | ✅ | Full-stack Docker Compose so judges can run everything locally (should) | `docker-compose.full.yml`, project `botfare-judge`, ports 3300/4300; Safari-safe cookies (Secure only over https) |
+| ✅ | Agent-safety review: 8 findings confirmed and fixed (two were the same demo-key issue) | Linear `htmlToText` (a hostile 1 MB page took 10–50 s on the event loop, now ms); SDK cap is always min(10¢, remaining budget), unreceipted payments count; agent reads only the demo publisher and a real user's own sites; outbound guard (no redirects, no private/mapped-IPv6/DNS-to-private hosts in production); run lock per visitor; demo key $10/day, raised in place by `pnpm seed`; agent-owner wallet kept at $5 at sign-in and before each run; daily-cap refusals explained. 👤 Rerun `pnpm seed` to raise the existing demo key's cap |
 | ✅ | Polish: empty, loading, error and mobile states (hide revoked test keys in the wallet); feature freeze at 10 pm IST | Wallet "Show revoked" toggle, loading skeleton, error and 404 pages, card actions stack on phones; every page checked at 375 px with no horizontal scroll. Detection: non-browser user agents (no `Mozilla/`) now pay at standard/strict, chat link previews stay free |
 
 ## Phase 4: Deploy to Render ⏳
