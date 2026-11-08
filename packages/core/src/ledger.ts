@@ -10,6 +10,7 @@ import { eq, sql } from "drizzle-orm";
 import { Accounts, describeAccount } from "./accounts";
 import type { Db, DbOrTx } from "./db";
 import {
+  type LedgerTransaction,
   type LedgerTransactionKind,
   ledgerAccounts,
   ledgerEntries,
@@ -180,6 +181,18 @@ export async function seedWallet(
       { accountId: Accounts.paypalClearing, amountMicros: -amount },
     ],
   });
+}
+
+/** The posting made with `idempotencyKey`, or null when nothing was posted with it yet. */
+export async function getLedgerTransactionByKey(
+  db: DbOrTx,
+  idempotencyKey: string,
+): Promise<LedgerTransaction | null> {
+  const [row] = await db
+    .select()
+    .from(ledgerTransactions)
+    .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey));
+  return row ?? null;
 }
 
 // ---------------------------------------------------------------------------------------------

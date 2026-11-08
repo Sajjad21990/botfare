@@ -196,7 +196,7 @@ Open http://localhost:3000/signin and pick a persona:
 - **Agent owner** (`/wallet`): balance, a PayPal top-up button ($5, $10 or $20, approved with a sandbox buyer account), agent keys generated in the browser with their budgets, and receipts.
 - **Publisher** (`/publisher`, `/publisher/analytics`): earnings, Withdraw now to `PUBLISHER_PAYPAL_EMAIL` through PayPal Payouts, payout history with "Refresh status", the pricing editor, and the AG Studio analytics dashboard.
 
-`pnpm seed:traffic` is safe to run again: nonces, the wallet funding and two publisher refunds are keyed by its run key, so a rerun moves no money. `pnpm seed:traffic --run-key <name>` adds a fresh batch. It settles every request through `PostgresPrepaidLedger` with a clock set to the request's time, so per-request maxes, daily caps and allowed sites apply as they would live.
+`pnpm seed:traffic` is safe to run again: nonces, the wallet funding and two publisher refunds are keyed by its run key, and the plan's dates are anchored to the first run (stored with the funding), so a rerun moves no money on the same day or any later one. `pnpm seed:traffic --run-key <name>` adds a fresh batch. It settles every request through `PostgresPrepaidLedger` with a clock set to the request's time, so per-request maxes, daily caps and allowed sites apply as they would live.
 
 `pnpm payouts:run` is the daily payout job: one Payouts batch for every publisher with $1.00 or more of earnings and a payout email, then a status sync of every open payout. It is idempotent (`sender_batch_id` and `PayPal-Request-Id` per batch), and on Render it runs as the `botfare-payouts` cron job.
 

@@ -6,6 +6,7 @@ export {
   checkLedgerInvariants,
   creditTopUp,
   earningsBalanceMicros,
+  getLedgerTransactionByKey,
   type LedgerEntryInput,
   type LedgerInvariantReport,
   ledgerTotalMicros,
