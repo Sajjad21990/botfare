@@ -4,9 +4,9 @@ Run on Sun 8 Nov 2026. Each script prints PASS or FAIL; rerun with `pnpm spike:<
 
 | Script | What it proves | Result | Notes |
 | --- | --- | --- | --- |
-| `01-oauth` | Sandbox client credentials work | Pending | Needs `.env` with the sandbox app's client ID and secret |
+| `01-oauth` | Sandbox client credentials work | **PASS** | BotFare sandbox app (US business account); token in 528 ms |
 | `02-topup` / `02b-capture` | A $5.00 PayPal top-up can be approved and captured; the fee is visible | Pending | Approve as the agent-owner sandbox account |
-| `03-payout` | A $0.25 Payouts batch reaches the publisher sandbox account | Pending | Needs Payouts enabled on the app |
+| `03-payout` | A $0.25 Payouts batch reaches the publisher sandbox account | **PASS** | Batch `C4FMSUGLZ9HE4`: PENDING → PROCESSING → SUCCESS in ~25 s; item SUCCESS to the publisher sandbox account |
 | `04-jws` | Agent Ed25519 authorizations verify; tampered, wrong-key and expired ones fail | **PASS** (4/4) | jose 6.2.15, `EdDSA`, `typ: x402-prepaid+jwt` |
 | `05-x402` | The `prepaid` scheme on `paypal:sandbox` works as a plug-in for the official `@x402/express` + `@x402/fetch` + `x402Facilitator` (2.30.0) | **PASS** (6/6) | 402 with V2 header; paid 200 with `PAYMENT-RESPONSE`; 95/5 split; replay rejected (`invalid_prepaid_nonce_used`); handler 500 not charged; ledger sums to zero |
 
