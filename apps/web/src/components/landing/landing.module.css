@@ -1,0 +1,64 @@
+.root {
+  font-family: var(--font-landing-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "kern", "liga";
+}
+
+.mono {
+  font-family: var(--font-landing-mono), ui-monospace, SFMono-Regular, monospace;
+  font-feature-settings: "zero";
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ticket stock: a faint cool tint so the ticket reads as a separate object on white. */
+.ticket {
+  background-color: oklch(0.975 0.008 250);
+}
+
+/* Half-circle notches where the stub tears off. They take the page colour. */
+.notch {
+  position: absolute;
+  top: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  transform: translateY(-50%);
+  background-color: var(--background);
+  border: 1px solid var(--border);
+}
+
+.notchLeft {
+  left: -0.75rem;
+}
+
+.notchRight {
+  right: -0.75rem;
+}
+
+/* The one moment of motion on the page: the fare is stamped paid. */
+.stamp {
+  transform: rotate(-8deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stamp {
+    animation: stamp 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) 700ms both;
+  }
+}
+
+@keyframes stamp {
+  from {
+    opacity: 0;
+    transform: rotate(-14deg) scale(1.8);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-8deg) scale(1);
+  }
+}
+
+.bar {
+  min-width: 3px;
+}
