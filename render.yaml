@@ -1,5 +1,7 @@
 # Render Blueprint for BotFare: the BotFare app, the Crema Notes demo publisher and Postgres 17.
-# Paid plans so nothing sleeps or expires before judging ends. Node comes from .node-version.
+# Paid plans so nothing sleeps or expires before judging ends. Node comes from .node-version, which
+# pins Node 24 LTS: Node 25+ no longer bundles Corepack, and the build commands run `corepack enable`
+# so pnpm matches package.json's packageManager (scripts/test/render-blueprint.test.ts checks this).
 # Secrets are `sync: false`: Render asks for them when the Blueprint is first applied.
 
 services:

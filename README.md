@@ -151,7 +151,7 @@ render.yaml            Render Blueprint: botfare-web, botfare-demo, Postgres 17
 
 ## Run it locally
 
-You need Node 22+ (the repo pins 26 in `.node-version`), pnpm 10 and Docker.
+You need Node 22+ (the repo pins 24 LTS in `.node-version`; Render uses it too, and Node 25+ no longer bundles the Corepack the Render build enables), pnpm 10 and Docker.
 
 ```bash
 pnpm install
