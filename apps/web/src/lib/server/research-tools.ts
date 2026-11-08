@@ -310,7 +310,7 @@ export function htmlToText(html: string): string {
     .replace(/<li\b[^>]*>/gi, "\n- ")
     .replace(/<(br|hr)\b[^>]*\/?>/gi, "\n")
     .replace(
-      /<\/(p|div|h[1-6]|li|ul|ol|tr|table|blockquote|pre|section|article|header|figure|dl|dd|dt)>/gi,
+      /<\/(p|div|h[1-6]|ul|ol|tr|table|blockquote|pre|section|article|header|figure|dl|dd|dt)>/gi,
       "\n",
     )
     .replace(/<[^>]+>/g, "");
