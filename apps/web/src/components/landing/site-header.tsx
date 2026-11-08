@@ -20,6 +20,12 @@ export function SiteHeader() {
             How it works
           </a>
           <Link
+            href="/judge"
+            className="rounded-md px-3 py-2 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Judges
+          </Link>
+          <Link
             href="/signin"
             className="rounded-md px-3 py-2 font-medium outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
           >

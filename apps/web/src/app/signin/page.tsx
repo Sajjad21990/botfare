@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PersonaButtons } from "@/components/app/persona-buttons";
 
 export const metadata = { title: "Sign in · BotFare" };
@@ -16,6 +17,13 @@ export default function SignInPage() {
         </p>
       </div>
       <PersonaButtons />
+      <p className="text-sm text-muted-foreground">
+        Judging the hackathon?{" "}
+        <Link href="/judge" className="font-medium text-foreground underline underline-offset-4">
+          Take the two-minute tour
+        </Link>
+        .
+      </p>
     </main>
   );
 }

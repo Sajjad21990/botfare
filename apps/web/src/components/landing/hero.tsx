@@ -39,7 +39,14 @@ export function Hero() {
             </a>
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            Runs in the PayPal sandbox. Pick a demo role; no password needed.
+            Runs in the PayPal sandbox. Pick a demo role; no password needed. Judging?{" "}
+            <Link
+              href="/judge"
+              className="font-medium text-foreground underline underline-offset-4"
+            >
+              Take the two-minute tour
+            </Link>
+            .
           </p>
         </div>
         <FareTicket />
