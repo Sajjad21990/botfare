@@ -30,10 +30,15 @@ export type {
   LedgerTransaction,
   LedgerTransactionKind,
   Payout,
+  PayoutStatus,
+  PayPalOrder,
+  PayPalOrderStatus,
   Receipt,
   Site,
   TopUp,
   User,
+  WebhookEvent,
+  WebhookEventStatus,
 } from "./schema";
 export * as schema from "./schema";
 export {

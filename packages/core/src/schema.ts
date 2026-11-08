@@ -28,6 +28,8 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
+  /** Where this publisher's earnings go; falls back to their first site's payout_email. */
+  payoutEmail: text("payout_email"),
   createdAt: createdAt(),
 });
 
@@ -209,27 +211,110 @@ export const topups = pgTable(
       .references(() => ledgerTransactions.id),
     createdAt: createdAt(),
   },
-  (t) => [index("topups_owner_idx").on(t.ownerUserId)],
+  (t) => [index("topups_owner_idx").on(t.ownerUserId), index("topups_order_idx").on(t.orderId)],
 );
 
+export const paypalOrderStatuses = ["created", "captured", "failed"] as const;
+export type PayPalOrderStatus = (typeof paypalOrderStatuses)[number];
+
+/** Binds a PayPal order (wallet top-up) to the user who created it. */
+export const paypalOrders = pgTable(
+  "paypal_orders",
+  {
+    orderId: text("order_id").primaryKey(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id),
+    amountCents: integer("amount_cents").notNull(),
+    status: text("status", { enum: paypalOrderStatuses }).notNull().default("created"),
+    captureId: text("capture_id"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("paypal_orders_owner_idx").on(t.ownerUserId),
+    check("paypal_orders_status_ck", sql`${t.status} in ('created', 'captured', 'failed')`),
+    check("paypal_orders_amount_ck", sql`${t.amountCents} > 0`),
+  ],
+);
+
+export const payoutStatuses = [
+  "pending",
+  "processing",
+  "success",
+  "failed",
+  "returned",
+  "unclaimed",
+  "reversed",
+] as const;
+export type PayoutStatus = (typeof payoutStatuses)[number];
+
+/**
+ * One row per publisher payout item. `id` (po_…) is also the PayPal `sender_item_id`;
+ * `batchKey` is the PayPal `sender_batch_id`, shared by every item of one daily run.
+ */
 export const payouts = pgTable(
   "payouts",
   {
     id: text("id").primaryKey(),
+    /** PayPal `sender_batch_id`. PayPal dedupes it for 30 days, so retries reuse it. */
+    batchKey: text("sender_batch_id").notNull(),
     publisherUserId: text("publisher_user_id")
       .notNull()
       .references(() => users.id),
-    senderBatchId: text("sender_batch_id").notNull().unique(),
-    paypalBatchId: text("paypal_batch_id"),
+    receiverEmail: text("receiver_email").notNull(),
     amountCents: integer("amount_cents").notNull(),
-    status: text("status").notNull(),
+    status: text("status", { enum: payoutStatuses }).notNull().default("pending"),
+    paypalBatchId: text("paypal_batch_id"),
+    paypalItemId: text("paypal_item_id"),
+    /** PayPal's transaction ID for the item, once paid. */
+    paypalTransactionId: text("paypal_transaction_id"),
+    error: text("error"),
+    /** Ledger posting that moved the earnings out (kind `payout`). */
     transactionId: text("transaction_id")
       .notNull()
       .references(() => ledgerTransactions.id),
+    /** Ledger posting that returned them (kind `payout_reversal`), at most one. */
+    reversalTransactionId: text("reversal_transaction_id").references(() => ledgerTransactions.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("payouts_publisher_idx").on(t.publisherUserId)],
+  (t) => [
+    index("payouts_publisher_idx").on(t.publisherUserId),
+    index("payouts_batch_key_idx").on(t.batchKey),
+    index("payouts_paypal_item_idx").on(t.paypalItemId),
+    check(
+      "payouts_status_ck",
+      sql`${t.status} in ('pending', 'processing', 'success', 'failed', 'returned', 'unclaimed', 'reversed')`,
+    ),
+    check("payouts_amount_ck", sql`${t.amountCents} > 0`),
+  ],
+);
+
+export const webhookEventStatuses = ["received", "processed", "ignored", "failed"] as const;
+export type WebhookEventStatus = (typeof webhookEventStatuses)[number];
+
+/** Every PayPal webhook delivery we accepted, deduped by PayPal's event ID. */
+export const webhookEvents = pgTable(
+  "webhook_events",
+  {
+    id: serial("id").primaryKey(),
+    paypalEventId: text("paypal_event_id").notNull().unique(),
+    eventType: text("event_type").notNull(),
+    resourceId: text("resource_id"),
+    payload: jsonb("payload").$type<unknown>().notNull(),
+    status: text("status", { enum: webhookEventStatuses }).notNull().default("received"),
+    error: text("error"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("webhook_events_type_idx").on(t.eventType),
+    check(
+      "webhook_events_status_ck",
+      sql`${t.status} in ('received', 'processed', 'ignored', 'failed')`,
+    ),
+  ],
 );
 
 export type User = typeof users.$inferSelect;
@@ -241,3 +326,5 @@ export type LedgerEntry = typeof ledgerEntries.$inferSelect;
 export type Receipt = typeof receipts.$inferSelect;
 export type TopUp = typeof topups.$inferSelect;
 export type Payout = typeof payouts.$inferSelect;
+export type PayPalOrder = typeof paypalOrders.$inferSelect;
+export type WebhookEvent = typeof webhookEvents.$inferSelect;
