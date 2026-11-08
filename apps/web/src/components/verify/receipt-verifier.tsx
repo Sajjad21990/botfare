@@ -266,7 +266,9 @@ function Results({
             <p className="font-semibold">
               {allValid
                 ? `${total === 1 ? "The statement" : `All ${total} statements`} verified`
-                : `${total - valid} of ${total} ${total === 1 ? "statement" : "statements"} did not verify`}
+                : total === 1
+                  ? "The statement did not verify"
+                  : `${total - valid} of ${total} statements did not verify`}
               {outcome.receiptId ? (
                 <>
                   {" "}
