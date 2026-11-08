@@ -8,6 +8,7 @@ Solo entry for the PayPal AI Hackathon (Devpost). **Deadline: Thu 12 Nov 2026, 1
 - **Publishers** add one line of middleware, set prices in the dashboard, and get paid through PayPal Payouts.
 - **Agent owners** top up a USD balance with PayPal and give each agent a key with a budget (daily cap, per-request max, allowed sites).
 - **BotFare** settles each request over x402 in a double-entry ledger, keeps 5%, and pays publishers in Payouts batches.
+- **AI on every side of the fare** (PLAN "Decisions (9 Nov)"): Claude makes the micro-decisions (buy or skip, was it as promised, what should it cost); code moves the money and enforces policy. **Fare Court** arbitrates 3¢ disputes; **Fare Advisor** prices from offers, declines, citations and disputes.
 
 ## How payments travel (x402 V2)
 - BotFare's PayPal payment type is the x402 scheme **`prepaid`** on network **`paypal:sandbox`** (asset `USD`, `amount` in integer cents), built as a plug-in for the official `@x402/*` SDK, pinned to exactly 2.30.0. See `packages/x402-paypal`.
@@ -19,21 +20,28 @@ Solo entry for the PayPal AI Hackathon (Devpost). **Deadline: Thu 12 Nov 2026, 1
 ## Layout (target; packages are added as each phase needs them)
 ```
 apps/web             Next.js: dashboards, wallet, research agent (/agent, POST /api/research), /judge, Log in with
-                     PayPal (/api/auth/paypal/*), facilitator /api/x402/*, agent API /api/agent/*, PayPal webhooks
-apps/demo            Express demo publisher (original articles + /api/brew-ratio) behind @botfare/express
+                     PayPal (/api/auth/paypal/*), facilitator /api/x402/* (incl. receipts/:id/attest, telemetry),
+                     agent API /api/agent/* + /api/disputes, /api/offers/decline, /api/citations, Fare Court judge
+                     (lib/server/fare-court.ts), Disputes page, Fare Advisor (lib/server/fare-advisor.ts), PayPal webhooks
+apps/demo            Express demo publisher (original articles + /api/brew-ratio) behind @botfare/express; the
+                     grinder-maintenance article serves paying agents a subscribe stub (FARE_COURT_STUB_SLUG)
 packages/x402-paypal the plug-in: client, server and facilitator parts, JWS helpers, ledger port, in-memory ledger
-packages/contracts   shared wire contracts: IDs, site auth header, site config + pricing rules, agent key string, preview
+packages/contracts   shared wire contracts: IDs, site auth header, site config + pricing rules, agent key string, preview;
+                     ./fare: Content-Digest, declared offer, disputes/verdicts/DISPUTE_POLICY, declines, citations, telemetry
 packages/express     botfare({ siteId, siteSecret }): humans free, dashboard prices (cached site config), @x402/express,
-                     agent detection (src/detection) and the Turnstile human check (/__botfare/human)
-packages/sdk         createBotFareAgent(): getOffer() + paying fetch on @x402/fetch; signs every request (Web Bot Auth)
-packages/mcp         MCP server: get_offer, fetch_paid, wallet_balance, recent_receipts
+                     agent detection (src/detection), the Turnstile human check (/__botfare/human), extra.botfareOffer,
+                     proof of delivery (src/delivery-proof.ts) and offer telemetry (src/telemetry.ts)
+packages/sdk         createBotFareAgent(): getOffer() + paying fetch on @x402/fetch, dispute(), decline(),
+                     reportCitations(); signs every request (Web Bot Auth)
+packages/mcp         MCP server: get_offer, fetch_paid, decline_offer, dispute_purchase, wallet_balance, recent_receipts
 packages/paypal      typed PayPal REST client (sandbox only)
-packages/core        Drizzle schema, Postgres ledger implementing the ledger port, services (payouts next)
+packages/core        Drizzle schema, Postgres ledger implementing the ledger port, services (payouts, Fare Court:
+                     services/fare-court.ts, Fare Advisor: services/fare-advisor.ts)
 scripts/spike        Day-0 PayPal and x402 spikes
 scripts/seed.ts      local demo data (judge personas, site, wallet, agent key) -> .env
-scripts/traffic.ts   demo traffic for the dashboards (seed:traffic)
+scripts/traffic.ts   demo traffic for the dashboards (seed:traffic); lib/fare-story.ts adds the Fare Court/Advisor story
 scripts/payouts.ts   daily Payouts batch + status sync (payouts:run; Render cron)
-scripts/e2e.ts       end-to-end PASS/FAIL checks (payments + agent detection) on real processes
+scripts/e2e.ts       end-to-end PASS/FAIL checks (payments, agent detection, Fare Court, Fare Advisor) on real processes
 docker-compose.full.yml + docker/   one-command judge stack (project botfare-judge; docker/README.md)
 ```
 
@@ -42,9 +50,9 @@ docker-compose.full.yml + docker/   one-command judge stack (project botfare-jud
 - `pnpm db:up` / `pnpm db:down`: Postgres 17 in Docker (`botfare` and `botfare_test` databases)
 - `pnpm db:migrate`: apply `packages/core/drizzle` to `DATABASE_URL` (regenerate with `pnpm --filter @botfare/core db:generate`)
 - `pnpm seed`: judge personas (`DEMO_PERSONAS`; publisher payout email from `PUBLISHER_PAYPAL_EMAIL`), Crema Notes site at `DEMO_ORIGIN` (secret kept while it works; `--rotate-site-secret` forces a new one; bot detection set to `CREMA_NOTES_DETECTION`: standard + Turnstile test site key), $5 wallet, agent key; writes `BOTFARE_URL`, `BOTFARE_SITE_ID`, `BOTFARE_SITE_SECRET`, `BOTFARE_AGENT_KEY` to `.env`. On Render: `pnpm seed --print-secrets` in botfare-web's Shell (README "Deploy")
-- `pnpm seed:traffic`: three more agent keys ("Research agent", "Price watcher", "Newsletter bot") and ~150 paid requests over the last 14 days through `PostgresPrepaidLedger` with an injected clock; idempotent per `--run-key` (default `demo`)
+- `pnpm seed:traffic`: three more agent keys ("Research agent", "Price watcher", "Newsletter bot") and ~150 paid requests over the last 14 days through `PostgresPrepaidLedger` with an injected clock; then the Fare Court and Fare Advisor story through the core services (offers shown, premium roundup declines, citations, four attested stub purchases disputed: three refunded by scripted policy verdicts, one pending for the publisher); idempotent per `--run-key` (default `demo`)
 - `pnpm payouts:run`: daily PayPal Payouts batch (publishers with ≥ $1.00 and a payout email), then sync of open payouts; idempotent. Runs on Render as the `botfare-payouts` cron
-- `pnpm e2e`: starts the web app (:3000, reused if up) and the demo (:4000), runs the payment and agent-detection PASS/FAIL checks, stops both; `E2E_VERBOSE=1` streams their logs. Ports 3000/4000 belong to the user's own dev servers: run beside them with `pnpm --filter @botfare/web build && WEB_PORT=3100 DEMO_PORT=4100 E2E_WEB=start pnpm e2e` (`next start`; Next allows one `next dev` per app directory). The human-check step calls Cloudflare's siteverify (network)
+- `pnpm e2e`: starts the web app (:3000, reused if up) and the demo (:4000), runs the payment, agent-detection, Fare Court and Fare Advisor PASS/FAIL checks, stops both; the web app it starts has no `ANTHROPIC_API_KEY` (disputes go to the publisher), `E2E_AI=1` keeps the key and adds an optional AI judge check; `E2E_VERBOSE=1` streams their logs. Ports 3000/4000 belong to the user's own dev servers: run beside them with `pnpm --filter @botfare/web build && WEB_PORT=3100 DEMO_PORT=4100 E2E_WEB=start pnpm e2e` (`next start`; Next allows one `next dev` per app directory). The human-check step calls Cloudflare's siteverify (network)
 - `pnpm dev:web` / `pnpm dev:demo`: run the app or the demo (both read the root `.env`)
 - Judge stack: `docker compose -f docker-compose.full.yml -p botfare-judge up --build -d --wait` (its own Postgres, setup, web on :3300, demo on :4300; web reaches the demo via `DEMO_INTERNAL_URL=http://demo:4000`); stop with `docker compose -f docker-compose.full.yml -p botfare-judge down -v`. Always pass `-p botfare-judge`: the dev Postgres (project `botfare`, volume pgdata) holds real sandbox records and is never stopped or removed
 - Ports: 3000/4000 are the user's own dev servers (never kill or reuse); 3100/4100 for `pnpm e2e` beside them; 3300/4300 the judge Docker stack; 3200+ for other throwaway servers
@@ -80,6 +88,13 @@ docker-compose.full.yml + docker/   one-command judge stack (project botfare-jud
 - Research agent: `ANTHROPIC_API_KEY` + `BOTFARE_AGENT_KEY`; `DEMO_PUBLIC_URL`/`DEMO_INTERNAL_URL` rewrite the demo's origin server-side (`lib/server/demo-origin.ts`). Tests use scripted models; no live Claude runs.
 - Log in with PayPal is off unless `PAYPAL_LOGIN_ENABLED=true`; return URL `<BOTFARE_URL>/api/auth/paypal/callback`.
 
+## Fare Court and Fare Advisor
+- Contracts are fixed in `packages/contracts/src/fare.ts`; add to them only append-only.
+- AI output is always zod-validated. Refunds happen only through `applyVerdict`/`publisherDecide` (thresholds in `DISPUTE_POLICY`, one `refundReceipt` per receipt); prices change only through `applyPriceChange` after a publisher's Apply click.
+- Without `ANTHROPIC_API_KEY`: disputes go to the publisher (`pending_publisher`), the Advisor returns its funnel with `aiAvailable: false`. Tests use scripted judges/models.
+- The shared demo research key (`BOTFARE_AGENT_KEY`, owned by a demo persona) gets `SHARED_DEMO_KEY_DISPUTE_LIMITS` (200 disputes/day, no dispute-rate rule; `lib/server/judge.ts`); every other key keeps `DISPUTE_POLICY`.
+- Decline notes find their site by URL origin; one per key, URL and UTC day.
+
 ## Decisions (8 Nov)
 1. x402 plug-in (`prepaid` on `paypal:sandbox`) for the official SDK, not an imitation; own code only as fallback.
 2. Agent-chosen nonces; facilitator enforces single use per key + 60 s expiry.
@@ -87,7 +102,7 @@ docker-compose.full.yml + docker/   one-command judge stack (project botfare-jud
 4. One demo publisher service (articles + brew API).
 5. Prices live in the dashboard and reach the middleware through the site config (built: a per-request x402 route from the cached config instead of `DynamicPrice`, because the SDK's description and mimeType are fixed per route).
 6. Auth: judge personas + Log in with PayPal (verified payout email); no magic links.
-7. Research agent tools: `get_offer` (free 402 read incl. preview from `unpaidResponseBody`), `buy`/`skip` with a reason, `finish`; hard caps in SDK spend controls and the facilitator.
+7. Research agent tools: `get_offer` (free 402 read incl. preview from `unpaidResponseBody`), `buy`/`skip` with a reason (skip sends a decline note), `dispute` (Fare Court), `finish` (reports citations); hard caps in SDK spend controls and the facilitator.
 8. Wire inspector next to the agent (PAYMENT-REQUIRED → signed payment → PAYMENT-RESPONSE).
 9. PayPal: JS SDK v6, Orders v2 `experience_context`, PayPal fee booked from the capture, Payouts with `sender_batch_id`, webhooks, Log in with PayPal.
 10. Publisher analytics built in AG Studio (theme, custom widgets, layout, Claude adapter) for the AG Grid prize.
