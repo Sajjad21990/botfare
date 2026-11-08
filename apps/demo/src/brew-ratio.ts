@@ -2,7 +2,7 @@
 import { z } from "zod";
 
 export const BREW_METHODS = {
-  v60: {
+  "pour-over": {
     name: "Cone pour-over",
     ratio: 16,
     grind: "medium-fine (like table salt)",

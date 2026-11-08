@@ -87,9 +87,13 @@ describe("demo publisher in free mode (no BotFare configured)", () => {
   });
 
   it("answers the brew-ratio API and rejects bad queries", async () => {
-    const ok = await fetch(`${demo.url}/api/brew-ratio?method=v60&coffeeGrams=15`);
+    const ok = await fetch(`${demo.url}/api/brew-ratio?method=pour-over&coffeeGrams=15`);
     expect(ok.status).toBe(200);
-    expect(await ok.json()).toMatchObject({ method: "v60", coffeeGrams: 15, waterGrams: 240 });
+    expect(await ok.json()).toMatchObject({
+      method: "pour-over",
+      coffeeGrams: 15,
+      waterGrams: 240,
+    });
     const bad = await fetch(`${demo.url}/api/brew-ratio?method=drip&coffeeGrams=abc`);
     expect(bad.status).toBe(400);
     expect(await bad.json()).toMatchObject({ error: "invalid_query" });
@@ -115,8 +119,8 @@ describe("demoOptionsFromEnv()", () => {
 
 describe("brewRatio()", () => {
   it("scales each house recipe to the dose", () => {
-    expect(brewRatio("v60", 15)).toMatchObject({ waterGrams: 240, ratio: "1:16" });
-    expect(brewRatio("v60", 22)).toMatchObject({ waterGrams: 352 });
+    expect(brewRatio("pour-over", 15)).toMatchObject({ waterGrams: 240, ratio: "1:16" });
+    expect(brewRatio("pour-over", 22)).toMatchObject({ waterGrams: 352 });
     expect(brewRatio("espresso", 18)).toMatchObject({
       waterGrams: 36,
       ratio: "1:2",
@@ -126,7 +130,7 @@ describe("brewRatio()", () => {
   });
 
   it("rounds the dose to 0.1 g and water to the gram", () => {
-    expect(brewRatio("v60", 15.04)).toMatchObject({ coffeeGrams: 15, waterGrams: 240 });
+    expect(brewRatio("pour-over", 15.04)).toMatchObject({ coffeeGrams: 15, waterGrams: 240 });
     expect(brewRatio("espresso", 18.26)).toMatchObject({ coffeeGrams: 18.3, waterGrams: 37 });
   });
 });

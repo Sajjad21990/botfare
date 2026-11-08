@@ -20,7 +20,7 @@ ${body}
 </main>
 <footer>
 <p>People read ${SITE_NAME} for free. AI agents pay a small fare per page through BotFare, and the money goes to the writers.</p>
-<p><a href="/catalog.json">catalog.json</a> · <a href="/api/brew-ratio?method=v60&amp;coffeeGrams=15">brew-ratio API</a> (1¢ per call)</p>
+<p><a href="/catalog.json">catalog.json</a> · <a href="/api/brew-ratio?method=pour-over&amp;coffeeGrams=15">brew-ratio API</a> (1¢ per call)</p>
 </footer>
 </body>
 </html>`;

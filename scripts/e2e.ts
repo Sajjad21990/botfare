@@ -407,7 +407,7 @@ async function main(): Promise<void> {
     await check(
       "Brew API: 402 to a plain fetch, 1¢ for a paying client without the agent header",
       async () => {
-        const brewUrl = `${DEMO_URL}/api/brew-ratio?method=v60&coffeeGrams=20`;
+        const brewUrl = `${DEMO_URL}/api/brew-ratio?method=pour-over&coffeeGrams=20`;
         const plain = await fetch(brewUrl);
         await plain.body?.cancel();
         expect(plain.status === 402, `plain fetch got ${plain.status}`);

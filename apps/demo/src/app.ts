@@ -123,7 +123,7 @@ export function createApp(options: DemoOptions = {}): express.Express {
             method: Object.keys(BREW_METHODS),
             coffeeGrams: "number, 1 to 250",
           },
-          example: `${origin}/api/brew-ratio?method=v60&coffeeGrams=15`,
+          example: `${origin}/api/brew-ratio?method=pour-over&coffeeGrams=15`,
         },
       ],
     });
@@ -156,7 +156,7 @@ function previewFor(req: Request, bySlug: Map<string, Article>): OfferPreview | 
     return {
       title: "Brew ratio API",
       excerpt:
-        "JSON recipe for a dose of coffee: water (or espresso yield) in grams, ratio, grind size, brew time and temperature. Methods: v60, espresso, french-press.",
+        "JSON recipe for a dose of coffee: water (or espresso yield) in grams, ratio, grind size, brew time and temperature. Methods: pour-over, espresso, french-press.",
     };
   }
   return undefined;
