@@ -6,7 +6,8 @@
   "description": "Shared wire contracts between BotFare's app, middleware, SDK and demo: IDs, site config, auth headers, agent keys.",
   "exports": {
     ".": "./src/index.ts",
-    "./web-bot-auth": "./src/web-bot-auth.ts"
+    "./web-bot-auth": "./src/web-bot-auth.ts",
+    "./fare": "./src/fare.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
