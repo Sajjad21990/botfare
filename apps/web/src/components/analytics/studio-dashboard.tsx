@@ -19,11 +19,14 @@ import { claudeAdapter } from "./claude-adapter";
 import { setLiveState } from "./live-store";
 import { type BotFareRegistry, EARNINGS_PAYOUT, LIVE_RECEIPTS } from "./registry";
 import {
+  CITATIONS_TABLE,
+  DECLINES_TABLE,
   initialReport,
   PROMPT_STARTERS,
   RECEIPTS_TABLE,
   receiptsDataSource,
   toStudioRow,
+  toStudioSignalRow,
 } from "./report";
 import { BOTFARE_DARK, BOTFARE_LIGHT, botfareTheme } from "./theme";
 import type { ReceiptRow, ReceiptsResponse } from "./types";
@@ -129,7 +132,14 @@ export default function StudioDashboard({ initial, mode }: StudioDashboardProps)
   const [ready, setReady] = useState(false);
   const themeMode = useStudioThemeMode();
   // Read once: Studio owns the data from here and receives changes as transactions.
-  const [data] = useState(() => receiptsDataSource(initial.rows));
+  const [data] = useState(() => receiptsDataSource(initial.rows, initial));
+  // Citation and decline IDs already in the engine; new ones arrive as add transactions.
+  const knownSignals = useRef(
+    new Set([
+      ...(initial.citations ?? []).map((row) => `c:${row.citationId}`),
+      ...(initial.declines ?? []).map((row) => `d:${row.declineId}`),
+    ]),
+  );
   const style = useMemo(() => ({ height: "100%", width: "100%" }), []);
 
   useEffect(() => {
@@ -163,6 +173,26 @@ export default function StudioDashboard({ initial, mode }: StudioDashboardProps)
           update: update.map(toStudioRow),
         });
         for (const row of [...add, ...update]) known.current.set(row.receiptId, row);
+      }
+      const newCitations = (body.citations ?? []).filter(
+        (row) => !knownSignals.current.has(`c:${row.citationId}`),
+      );
+      const newDeclines = (body.declines ?? []).filter(
+        (row) => !knownSignals.current.has(`d:${row.declineId}`),
+      );
+      if (newCitations.length) {
+        await engine.applyTransaction({
+          tableId: CITATIONS_TABLE,
+          add: newCitations.map(toStudioSignalRow),
+        });
+        for (const row of newCitations) knownSignals.current.add(`c:${row.citationId}`);
+      }
+      if (newDeclines.length) {
+        await engine.applyTransaction({
+          tableId: DECLINES_TABLE,
+          add: newDeclines.map(toStudioSignalRow),
+        });
+        for (const row of newDeclines) knownSignals.current.add(`d:${row.declineId}`);
       }
       setLiveState({
         earningsUsd: body.earnings.balanceUsd,

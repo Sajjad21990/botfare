@@ -2,6 +2,7 @@ import { detectionSignalSchema } from "@botfare/contracts";
 import { type Db, earningsBalanceMicros } from "@botfare/core";
 import type { ReceiptRow, ReceiptsResponse } from "../../components/analytics/types";
 import { signalLabel } from "../../components/publisher/detection-copy";
+import { getPublisherSignals } from "./analytics-signals";
 
 /** Most rows the dashboard loads at once; the newest ones win. */
 export const MAX_RECEIPT_ROWS = 5000;
@@ -92,7 +93,7 @@ export async function getPublisherAnalytics(
   publisherUserId: string,
   options: { limit?: number } = {},
 ): Promise<ReceiptsResponse> {
-  const [rows, earningsMicros, siteCount] = await Promise.all([
+  const [rows, earningsMicros, siteCount, signals] = await Promise.all([
     listPublisherReceiptRows(db, publisherUserId, options),
     earningsBalanceMicros(db, publisherUserId),
     db.query.sites
@@ -101,9 +102,12 @@ export async function getPublisherAnalytics(
         where: (site, { eq }) => eq(site.ownerUserId, publisherUserId),
       })
       .then((sites) => sites.length),
+    getPublisherSignals(db, publisherUserId, options),
   ]);
   return {
     rows,
+    citations: signals.citations,
+    declines: signals.declines,
     earnings: { balanceUsd: earningsMicros / MICROS_PER_USD },
     siteCount,
     generatedAt: new Date().toISOString(),
