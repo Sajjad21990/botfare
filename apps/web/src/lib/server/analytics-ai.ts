@@ -22,18 +22,36 @@ type ToolUnion = Anthropic.Beta.Messages.BetaToolUnion;
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
 /** Hard cap on the answer for one turn; the browser cannot raise it. */
 export const MAX_OUTPUT_TOKENS = 8192;
-/** Bodies larger than this are refused before parsing. */
-export const MAX_BODY_BYTES = 2_000_000;
+/**
+ * Bodies larger than this are refused while reading. A first turn from AG Studio is about 19 KB
+ * (13 KB of instructions, 5 KB of tool schemas); a long conversation with query results stays well
+ * under this, and it caps one call at roughly 130k input tokens.
+ */
+export const MAX_BODY_BYTES = 512_000;
+
+/** Longer tool results are cut to this many characters before they reach the model. */
+export const MAX_TOOL_OUTPUT_CHARS = 60_000;
+
+/**
+ * Prepended to every system prompt, ahead of AG Studio's instructions, so the server's key only
+ * ever runs the analytics assistant.
+ */
+export const ANALYTICS_SYSTEM_PROMPT = [
+  "You are the analytics assistant inside the BotFare publisher dashboard, built with AG Studio.",
+  "Help the publisher understand and arrange their own BotFare data: paid AI-agent requests,",
+  "revenue, pages, agents, fees and payouts, and the dashboard's widgets and layout.",
+  "Politely decline anything unrelated to this dashboard or its data in one short sentence.",
+].join(" ");
 
 /** Prefix of a reasoning item ID that carries an Anthropic thinking-block signature. */
 const THINKING_ID_PREFIX = "thk_";
 
 // --- Request validation -------------------------------------------------------------------------
 
-const text = z.string().max(400_000);
+const text = z.string().max(100_000);
 const inputContent = z.union([
   z.looseObject({ type: z.literal("text"), text }),
-  z.looseObject({ type: z.literal("image"), imageUrl: z.string().max(2_000_000).optional() }),
+  z.looseObject({ type: z.literal("image"), imageUrl: z.string().max(200_000).optional() }),
   z.looseObject({ type: z.literal("file") }),
 ]);
 const outputContent = z.union([
@@ -45,31 +63,39 @@ const conversationItem = z.union([
   z.looseObject({
     type: z.literal("message"),
     role: z.enum(["user", "system"]),
-    content: z.array(inputContent).max(100),
+    content: z.array(inputContent).max(20),
   }),
   z.looseObject({
     type: z.literal("message"),
     role: z.literal("assistant"),
-    content: z.array(outputContent).max(100),
+    content: z.array(outputContent).max(20),
   }),
   z.looseObject({
     type: z.literal("function_call"),
     callId: z.string().min(1).max(200),
     name: z.string().min(1).max(200),
-    arguments: z.string().max(400_000),
+    arguments: z.string().max(50_000),
   }),
   z.looseObject({
     type: z.literal("function_call_output"),
     callId: z.string().min(1).max(200),
-    output: z.string().max(1_000_000),
+    // Query results can be long; keep the start rather than failing the whole turn.
+    output: z
+      .string()
+      .max(MAX_BODY_BYTES)
+      .transform((output) =>
+        output.length > MAX_TOOL_OUTPUT_CHARS
+          ? `${output.slice(0, MAX_TOOL_OUTPUT_CHARS)}\n[truncated: ${output.length - MAX_TOOL_OUTPUT_CHARS} more characters]`
+          : output,
+      ),
   }),
   z.looseObject({
     type: z.literal("reasoning"),
     id: z.string().max(20_000),
-    summary: z.array(z.looseObject({ text: z.string().max(100_000) })).max(50),
+    summary: z.array(z.looseObject({ text: z.string().max(50_000) })).max(20),
     content: z
-      .array(z.looseObject({ text: z.string().max(100_000) }))
-      .max(50)
+      .array(z.looseObject({ text: z.string().max(50_000) }))
+      .max(20)
       .optional(),
   }),
 ]);
@@ -77,18 +103,18 @@ const conversationItem = z.union([
 const jsonSchema = z.record(z.string(), z.unknown());
 
 export const aiTurnRequestSchema = z.object({
-  input: z.array(conversationItem).max(500),
-  instructions: z.string().max(200_000).optional(),
+  input: z.array(conversationItem).max(200),
+  instructions: z.string().max(50_000).optional(),
   tools: z
     .array(
       z.looseObject({
         name: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
-        description: z.string().max(20_000).default(""),
+        description: z.string().max(8_000).default(""),
         parameters: jsonSchema,
         kind: z.enum(["client", "server", "provided"]).optional(),
       }),
     )
-    .max(128)
+    .max(32)
     .optional(),
   toolChoice: z
     .union([z.enum(["auto", "none", "required"]), z.object({ name: z.string().min(1).max(128) })])
@@ -201,7 +227,7 @@ function inputBlocks(
 
 /**
  * Builds the Messages API request for one AG Studio turn.
- * - `instructions` and system messages become the system prompt.
+ * - The fixed ANALYTICS_SYSTEM_PROMPT comes first; `instructions` and system messages follow it.
  * - Assistant text, tool calls and (signed) reasoning become assistant blocks; tool results become
  *   `tool_result` blocks in the following user turn. Consecutive same-role turns are merged.
  * - Every `tool_use` gets a `tool_result` (an error result if Studio sent none), and results
@@ -214,7 +240,7 @@ export function toAnthropicParams(
   options: TranslateOptions,
 ): AnthropicTurnParams {
   const replayThinking = options.replayThinking ?? true;
-  const system: string[] = [];
+  const system: string[] = [ANALYTICS_SYSTEM_PROMPT];
   if (request.instructions?.trim()) system.push(request.instructions.trim());
 
   const turns: { role: "user" | "assistant"; content: ContentBlockParam[] }[] = [];
@@ -354,7 +380,7 @@ export function toAnthropicParams(
     cache_control: { type: "ephemeral" },
     ...thinkingFor(options.model),
   };
-  if (system.length) params.system = system.join("\n\n");
+  params.system = system.join("\n\n");
   if (tools.length) {
     params.tools = tools;
     params.tool_choice = choice === "none" ? { type: "none" } : { type: "auto" };

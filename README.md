@@ -251,6 +251,8 @@ To fill the dashboards, run `pnpm seed:traffic` in the same Shell.
 
 Then point PayPal at the app: in the sandbox app's Webhooks section, add `https://<botfare-web>.onrender.com/api/paypal/webhook` for `PAYMENT.CAPTURE.*`, `PAYMENT.PAYOUTS-ITEM.*` and `PAYMENT.PAYOUTSBATCH.*`, and put its webhook ID in `botfare-web`'s `PAYPAL_WEBHOOK_ID`. Until then the route answers 503 and PayPal retries later.
 
+Judge mode is public: anyone who opens the app can sign in as a persona. The personas cannot rotate the demo site's secret, change the payout email or revoke the seeded agent keys, and each publisher sign-in restores Crema Notes' prices, the payout email and enough earnings to try Withdraw. The analytics assistant runs on `ANTHROPIC_API_KEY` with a server-side prompt, a 512 KB request cap, a per-visitor turn limit and a shared budget (3M input-token equivalents an hour, 15M a day; see `apps/web/src/lib/server/ai-budget.ts`). Also set a monthly spend limit on the Anthropic workspace that holds the key.
+
 Running the seed again keeps the site secret only if it can see the current one, which the Shell's `.env` holds until the next deploy of `botfare-web`. After a redeploy, pass the values back in (`BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed`), or let it issue a new secret and repeat step 1.
 
 ## Built with

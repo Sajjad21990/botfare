@@ -1,12 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
+  clientIp,
+  estimateTokens,
+  TokenBudget,
+  TurnLimiter,
+  weightedTokens,
+} from "../../../../../lib/server/ai-budget";
+import {
   type AiStreamLine,
   aiTurnRequestSchema,
   anthropicConfig,
   MAX_BODY_BYTES,
   runAiTurn,
 } from "../../../../../lib/server/analytics-ai";
-import { jsonError, readJson } from "../../../../../lib/server/http";
+import { jsonError, readLimitedJson } from "../../../../../lib/server/http";
 import { requireApiUser } from "../../../../../lib/server/session";
 
 export const runtime = "nodejs";
@@ -15,21 +22,12 @@ export const maxDuration = 120;
 
 const NO_KEY_MESSAGE = "AI assistant needs an Anthropic key";
 
-/** Turns per user per window. One question can take a dozen agent turns. */
-const TURN_LIMIT = 150;
-const WINDOW_MS = 10 * 60 * 1000;
-const turnLog = new Map<string, number[]>();
-
-function allowTurn(userId: string, now = Date.now()): boolean {
-  const recent = (turnLog.get(userId) ?? []).filter((at) => now - at < WINDOW_MS);
-  if (recent.length >= TURN_LIMIT) {
-    turnLog.set(userId, recent);
-    return false;
-  }
-  recent.push(now);
-  turnLog.set(userId, recent);
-  return true;
-}
+/** Per visitor (user and IP), and a spend budget across everyone: see lib/server/ai-budget. */
+const globalForAi = globalThis as typeof globalThis & {
+  __botfareAiLimits?: { turns: TurnLimiter; budget: TokenBudget };
+};
+globalForAi.__botfareAiLimits ??= { turns: new TurnLimiter(), budget: new TokenBudget() };
+const limits = globalForAi.__botfareAiLimits;
 
 /** Whether the assistant can run (the dashboard shows a notice when it cannot). */
 export async function GET(): Promise<Response> {
@@ -54,12 +52,18 @@ export async function POST(request: Request): Promise<Response> {
   const config = anthropicConfig();
   if (!config) return jsonError(503, "ai_unavailable", NO_KEY_MESSAGE);
 
-  const length = Number(request.headers.get("content-length") ?? 0);
-  if (length > MAX_BODY_BYTES) return jsonError(413, "too_large", "The conversation is too long");
-  const parsed = await readJson(request, aiTurnRequestSchema);
+  const parsed = await readLimitedJson(request, aiTurnRequestSchema, MAX_BODY_BYTES);
   if (!parsed.ok) return parsed.response;
-  if (!allowTurn(auth.user.id)) {
+  if (!limits.turns.allow(`${auth.user.id}:${clientIp(request)}`)) {
     return jsonError(429, "rate_limited", "Too many assistant requests. Wait a few minutes.");
+  }
+  const spend = limits.budget.reserve(estimateTokens(parsed.bytes));
+  if (!spend) {
+    return jsonError(
+      429,
+      "budget_exhausted",
+      "The demo's assistant has used its AI budget for now. Try again later.",
+    );
   }
 
   const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 1, timeout: 110_000 });
@@ -73,6 +77,7 @@ export async function POST(request: Request): Promise<Response> {
         return;
       }
       const line: AiStreamLine = next.value;
+      if ("complete" in line) limits.budget.settle(spend, weightedTokens(line.complete.usage));
       controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
     },
     async cancel() {
