@@ -8,7 +8,7 @@ AI agents read pages and call APIs for free, and the open standard for paying pe
 
 - **Publishers and API owners** add one line of middleware, set a price per page or call, and get paid through **PayPal Payouts**.
 - **Agent owners** top up a balance with **PayPal Checkout** and give each agent a key with a budget: daily cap, per-request max, allowed sites.
-- **Agents** pay a few cents per request with a signed x402 payment. Humans browsing the same site are never charged.
+- **Agents** pay a few cents per request with a signed x402 payment. Humans browsing the same site are never charged: BotFare decides who pays with a score, never a hard block ([who pays](#who-pays-agent-detection)).
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), November 2026.
 
@@ -44,6 +44,42 @@ sequenceDiagram
 ```
 
 Settlement happens only after the publisher's handler succeeds, so an agent is never charged for a failed response. Each authorization is single-use and expires within 60 seconds.
+
+## Who pays: agent detection
+
+`botfare()` decides who gets a 402 with a score, never a block: **pay, or prove you're human.** A request that is not charged is served free, and a 402 is an offer, not a refusal. Each publisher picks a level in the dashboard's **Bot detection** tab:
+
+| Level | Who pays |
+| --- | --- |
+| Off | Only agents that identify themselves: signed agents, the `x-botfare-agent` header, an x402 payment |
+| Known AI bots (default for new sites) | Also known AI crawlers, and anything that claims to be one from outside its published IP ranges |
+| Standard (Crema Notes) | Also requests whose automation score reaches 60 (CDN bot scores, HTTP-client and headless signs) |
+| Strict | Like Standard, from a score of 40 |
+
+The first signal that charges at the site's level is recorded on the receipt and sent to BotFare in the x402 requirements (`extra.botfareSignal`), so the analytics show **revenue by detection signal**:
+
+| Signal | Seen when | Charges at |
+| --- | --- | --- |
+| `signed-agent` | A valid Web Bot Auth signature (RFC 9421, Ed25519) from a BotFare agent key. The SDK signs every request; BotFare publishes the keys at `/.well-known/http-message-signatures-directory` | every level |
+| `agent-header` | The request sends `x-botfare-agent` | every level |
+| `known-bot` | An AI crawler user agent (GPTBot, ClaudeBot, PerplexityBot, CCBot, …) from its published IP ranges, a crawler that publishes no ranges, or a CDN-verified bot | Known AI bots and up |
+| `bot-impostor` | A crawler user agent from outside that crawler's published ranges (score 90) | Known AI bots and up |
+| `edge-score` | Cloudflare `cf-bot-score` at or below 29, or an Akamai bot verdict, when the publisher enables those headers | Standard, Strict |
+| `automation` | HTTP client user agents (curl, python-requests, Node fetch: 80), headless browsers (80), no user agent (70), a desktop-browser user agent without a real `Accept-Language` (30) or without `Sec-Fetch-Site`/`-Dest` (30) | Standard, Strict |
+| `payment-signature` | An x402 payment and nothing above | every level |
+| `everyone` | The path charges every request (the brew API) | every level |
+
+**The human check.** A browser asking for HTML that is charged only on a score (`automation` or `edge-score`) gets a page that says "Reading as a human? Continue free." with a Cloudflare Turnstile widget, still as a 402 that carries the offer for agents. Passing it posts to `/__botfare/human`, which verifies the token with Cloudflare and sets a signed, HttpOnly, 24-hour `botfare_human` cookie; the reader returns to the page and reads free. The pass switches off scores only: it never covers a self-identified agent, a signed agent, a crawler or an impostor. Crema Notes uses Cloudflare's always-pass test key, so the demo works without a Cloudflare account. A real Chrome, Firefox or Safari scores at most 30 (plain HTTP to a LAN address) and is never charged at any level, even without the check.
+
+**Honest limits.**
+
+- The heuristics read request headers only. A scraper that copies a real browser's full header set reads free, by design: wrongly charging a person costs more than a missed bot. Signed agents, the agent header, crawler checks and CDN scores are what catch it.
+- No IP reputation, datacenter lists or request-rate signals.
+- The crawler ranges are a snapshot (677 prefixes from OpenAI, Anthropic, Perplexity, Google, Apple and Common Crawl, fetched 8 Nov 2026) and need refreshing. Bytespider, Amazonbot and meta-externalagent publish no usable list, so they are matched by user agent alone.
+- The crawler check uses `req.ip`: behind a proxy or CDN the publisher must set Express's `trust proxy`, or real crawlers look like impostors (still charged only from Known AI bots up).
+- CDN headers are trusted as sent: turn them on only when the CDN sets them and strips client copies. With Cloudflare enabled, every CF-verified bot (search crawlers included) counts as `known-bot`.
+- The human pass is not bound to an IP or browser: a scraper that solves Turnstile once gets 24 hours past the scores, though never past the other signals.
+- Sites created before detection keep their old behaviour (off, or Known AI bots if they charged known bots); BotFare's key directory is not itself signed.
 
 ## Architecture
 
@@ -131,7 +167,8 @@ Everything runs in the PayPal **sandbox only**.
 | PayPal webhooks (`/api/paypal/webhook`, verified, deduped) and `pnpm payouts:run` | ✅ Built and tested against a mock PayPal |
 | Publisher analytics in AG Studio, with a Claude assistant | ✅ Built |
 | `pnpm seed:traffic`: ~150 paid requests over 14 days for the dashboards | ✅ Built |
-| Agent detection, research agent, MCP server, judge mode, deployment | ⏳ Planned |
+| Agent detection: signed agents (Web Bot Auth), crawler IP checks, CDN scores, heuristics, Turnstile human check, Bot detection panel, revenue by signal | ✅ Built; `pnpm e2e` checks it on real servers |
+| Research agent, MCP server, judge mode, deployment | ⏳ Planned |
 
 The full proposal, decisions and day-by-day plan are in [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -139,10 +176,12 @@ The full proposal, decisions and day-by-day plan are in [`docs/PLAN.md`](docs/PL
 
 ```text
 packages/x402-paypal   the x402 plug-in: client, server and facilitator parts, JWS helpers, ledger port, in-memory ledger
-packages/contracts     types and helpers shared across every HTTP boundary: IDs, site config, pricing rules, agent keys
+packages/contracts     types and helpers shared across every HTTP boundary: IDs, site config, pricing rules, agent keys,
+                       detection config and signals, Web Bot Auth signing and verification (./web-bot-auth)
 packages/core          Drizzle schema and migrations, Postgres double-entry ledger, PostgresPrepaidLedger, services
-packages/express       botfare({ siteId, siteSecret }): one-line publisher middleware on @x402/express
-packages/sdk           createBotFareAgent(): getOffer() and a paying fetch on @x402/fetch
+packages/express       botfare({ siteId, siteSecret }): one-line publisher middleware on @x402/express, with the
+                       agent detection engine (src/detection) and the Turnstile human check
+packages/sdk           createBotFareAgent(): getOffer() and a paying fetch on @x402/fetch; signs every request
 packages/paypal        typed PayPal REST client (sandbox only)
 apps/web               Next.js: landing page, wallet, publisher dashboard and analytics, x402 facilitator
                        API (/api/x402/*), PayPal webhook, site config, health
@@ -150,7 +189,7 @@ apps/demo              Crema Notes: fictional coffee site and brew-ratio API beh
 scripts/seed.ts        demo personas, site, $5 wallet and agent key, written to .env
 scripts/traffic.ts     demo traffic: three more agent keys and ~150 paid requests over 14 days
 scripts/payouts.ts     daily PayPal Payouts batch and status sync (a Render cron runs it)
-scripts/e2e.ts         Phase 1 end to end: web app + demo + Postgres, PASS/FAIL per check
+scripts/e2e.ts         end to end: web app + demo + Postgres, payments and detection, PASS/FAIL per check
 scripts/spike          Day-0 PayPal and x402 spikes
 docs                   plan, protocol spec, spike results
 render.yaml            Render Blueprint: botfare-web, botfare-demo, botfare-payouts (cron), Postgres 17
@@ -170,9 +209,16 @@ pnpm seed:traffic       # three more agent keys and ~150 paid requests over the 
 pnpm e2e                # start the app and the demo, pay for content, check every ledger movement
 ```
 
-`pnpm e2e` starts the BotFare app (`next dev` on :3000, reused if it is already running) and the demo (:4000). It then checks:
+`pnpm e2e` starts the BotFare app (`next dev` on :3000, reused if it is already running) and the demo (:4000). To run it beside your own dev servers, use other ports and the production build (Next allows one `next dev` per app):
 
-- a human reads an article free;
+```bash
+pnpm --filter @botfare/web build
+WEB_PORT=3100 DEMO_PORT=4100 E2E_WEB=start pnpm e2e
+```
+
+It then checks:
+
+- a human in a real browser (full Chrome headers) reads an article free;
 - `getOffer` shows 3¢ with a preview and moves no money;
 - the agent pays and gets a receipt;
 - the ledger moved exactly (wallet −30,000 micro-dollars, publisher +28,500, BotFare +1,500);
@@ -180,7 +226,14 @@ pnpm e2e                # start the app and the demo, pay for content, check eve
 - a 50¢ article is refused by the 10¢ cap before anything is signed;
 - the brew API charges 1¢ to any paying client;
 - a refund restores the wallet exactly once;
+- curl and python-requests without the agent header, and a script with a bare Chrome user agent, get a 402 with signal `automation`;
+- a GPTBot user agent from 127.0.0.1 is a `bot-impostor`;
+- the SDK's signed requests are recognised as `signed-agent` and pay;
+- a headless browser gets the Turnstile page, Cloudflare's test token sets the human pass, and its next read is free (an agent with the same cookie still pays);
+- each receipt records the right detection signal;
 - the ledger sums to zero.
+
+The human-check step calls Cloudflare's real siteverify with the public test secret, so it needs network access.
 
 It exits non-zero on any failure.
 
@@ -200,10 +253,11 @@ Open http://localhost:3000/signin and pick a persona:
 
 `pnpm payouts:run` is the daily payout job: one Payouts batch for every publisher with $1.00 or more of earnings and a payout email, then a status sync of every open payout. It is idempotent (`sender_batch_id` and `PayPal-Request-Id` per batch), and on Render it runs as the `botfare-payouts` cron job.
 
-Then open http://localhost:4000 in a browser, where humans read free. Agents get a 402 with a price and a preview:
+Then open http://localhost:4000 in a browser, where humans read free. Agents get a 402 with a price and a preview; at Crema Notes' Standard level a plain curl does too, with signal `automation` in the decoded `PAYMENT-REQUIRED`:
 
 ```bash
 curl -i -H 'x-botfare-agent: 1' http://localhost:4000/articles/burr-basics
+curl -i http://localhost:4000/articles/burr-basics
 ```
 
 Run `pnpm seed` again whenever you like. It keeps the site secret in `.env` while it still works, so a running demo keeps charging; `pnpm seed --rotate-site-secret` issues a new one (restart `dev:demo` after it).

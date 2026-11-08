@@ -22,8 +22,9 @@ apps/web             Next.js: dashboards, wallet, research agent, /judge, facili
 apps/demo            Express demo publisher (original articles + /api/brew-ratio) behind @botfare/express
 packages/x402-paypal the plug-in: client, server and facilitator parts, JWS helpers, ledger port, in-memory ledger
 packages/contracts   shared wire contracts: IDs, site auth header, site config + pricing rules, agent key string, preview
-packages/express     botfare({ siteId, siteSecret }): humans free, dashboard prices (cached site config), @x402/express
-packages/sdk         createBotFareAgent(): getOffer() + paying fetch on @x402/fetch
+packages/express     botfare({ siteId, siteSecret }): humans free, dashboard prices (cached site config), @x402/express,
+                     agent detection (src/detection) and the Turnstile human check (/__botfare/human)
+packages/sdk         createBotFareAgent(): getOffer() + paying fetch on @x402/fetch; signs every request (Web Bot Auth)
 packages/mcp         MCP server: get_offer, fetch_paid, wallet_balance, recent_receipts
 packages/paypal      typed PayPal REST client (sandbox only)
 packages/core        Drizzle schema, Postgres ledger implementing the ledger port, services (payouts next)
@@ -31,17 +32,17 @@ scripts/spike        Day-0 PayPal and x402 spikes
 scripts/seed.ts      local demo data (judge personas, site, wallet, agent key) -> .env
 scripts/traffic.ts   demo traffic for the dashboards (seed:traffic)
 scripts/payouts.ts   daily Payouts batch + status sync (payouts:run; Render cron)
-scripts/e2e.ts       Phase 1 end-to-end PASS/FAIL checks on real processes
+scripts/e2e.ts       end-to-end PASS/FAIL checks (payments + agent detection) on real processes
 ```
 
 ## Commands
 - `pnpm install` · `pnpm typecheck` · `pnpm lint` (Biome) · `pnpm format` · `pnpm test` (vitest; `*.db.test.ts` run against `botfare_test` in the "db" project)
 - `pnpm db:up` / `pnpm db:down`: Postgres 17 in Docker (`botfare` and `botfare_test` databases)
 - `pnpm db:migrate`: apply `packages/core/drizzle` to `DATABASE_URL` (regenerate with `pnpm --filter @botfare/core db:generate`)
-- `pnpm seed`: judge personas (`DEMO_PERSONAS`; publisher payout email from `PUBLISHER_PAYPAL_EMAIL`), Crema Notes site at `DEMO_ORIGIN` (secret kept while it works; `--rotate-site-secret` forces a new one), $5 wallet, agent key; writes `BOTFARE_URL`, `BOTFARE_SITE_ID`, `BOTFARE_SITE_SECRET`, `BOTFARE_AGENT_KEY` to `.env`. On Render: `pnpm seed --print-secrets` in botfare-web's Shell (README "Deploy")
+- `pnpm seed`: judge personas (`DEMO_PERSONAS`; publisher payout email from `PUBLISHER_PAYPAL_EMAIL`), Crema Notes site at `DEMO_ORIGIN` (secret kept while it works; `--rotate-site-secret` forces a new one; bot detection set to `CREMA_NOTES_DETECTION`: standard + Turnstile test site key), $5 wallet, agent key; writes `BOTFARE_URL`, `BOTFARE_SITE_ID`, `BOTFARE_SITE_SECRET`, `BOTFARE_AGENT_KEY` to `.env`. On Render: `pnpm seed --print-secrets` in botfare-web's Shell (README "Deploy")
 - `pnpm seed:traffic`: three more agent keys ("Research agent", "Price watcher", "Newsletter bot") and ~150 paid requests over the last 14 days through `PostgresPrepaidLedger` with an injected clock; idempotent per `--run-key` (default `demo`)
 - `pnpm payouts:run`: daily PayPal Payouts batch (publishers with ≥ $1.00 and a payout email), then sync of open payouts; idempotent. Runs on Render as the `botfare-payouts` cron
-- `pnpm e2e`: starts the web app (:3000, reused if up) and the demo (:4000), runs the Phase 1 PASS/FAIL checks, stops both; `E2E_VERBOSE=1` streams their logs
+- `pnpm e2e`: starts the web app (:3000, reused if up) and the demo (:4000), runs the payment and agent-detection PASS/FAIL checks, stops both; `E2E_VERBOSE=1` streams their logs. Ports 3000/4000 belong to the user's own dev servers: run beside them with `pnpm --filter @botfare/web build && WEB_PORT=3100 DEMO_PORT=4100 E2E_WEB=start pnpm e2e` (`next start`; Next allows one `next dev` per app directory). The human-check step calls Cloudflare's siteverify (network)
 - `pnpm dev:web` / `pnpm dev:demo`: run the app or the demo (both read the root `.env`)
 - `pnpm --filter @botfare/web build`: production build of the app
 - `pnpm spike:01`…`spike:05`: Day-0 spikes; results in `docs/SPIKE_RESULTS.md`
@@ -61,6 +62,12 @@ scripts/e2e.ts       Phase 1 end-to-end PASS/FAIL checks on real processes
 - Use fictional site and product names in demo content (no third-party trademarks).
 - Public repo at submission, MIT license. Commit at each milestone.
 - Commit messages and PR descriptions carry **no AI attribution**: no `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" line. This applies to every agent and subagent.
+
+## Agent detection
+- Score-based, never a hard block: "pay, or prove you're human". Real browsers are never charged; a suspected human gets the Turnstile check when the site has a key.
+- Signals (strongest first): signed-agent, agent-header, known-bot, bot-impostor, edge-score, automation, payment-signature (last, so a paid retry keeps the 402's signal); `everyone` on everyone-priced paths. Sent as `extra.botfareSignal`, stored on the receipt.
+- Web Bot Auth signing and verification live in one module, `@botfare/contracts/web-bot-auth`, shared by the SDK and the middleware.
+- `TURNSTILE_SECRET_KEY` is optional with Cloudflare's test site key (the always-pass test secret is the fallback).
 
 ## Decisions (8 Nov)
 1. x402 plug-in (`prepaid` on `paypal:sandbox`) for the official SDK, not an imitation; own code only as fallback.

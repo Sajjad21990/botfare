@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Sun 8 Nov 2026, night IST
+**Last updated:** Sun 8 Nov 2026, late night IST (agent detection done)
 
 ## Overview
 
@@ -13,11 +13,11 @@
 | 0. Setup and proof | Sun 8 | ✅ Done | 10 / 10 |
 | 1. Protocol end to end | Mon 9 | ✅ Done (a day early) | 9 / 9 |
 | 2. Real money and dashboards | Tue 10 | ✅ Done (two items need you) | 9 / 11 |
-| 3. Agent detection, AI and polish | Wed 11 | ⏳ Not started | 0 / 9 |
+| 3. Agent detection, AI and polish | Wed 11 | 🔄 In progress (detection done) | 3 / 9 |
 | 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
 | 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
 
-**Overall: about 53% done** (28 of 53 items), and ahead of the plan by about two days.
+**Overall: about 58% done** (31 of 53 items), and ahead of the plan by about two days.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -68,13 +68,13 @@
 | ⏳ | 👤 Approve one wallet top-up in the browser with the sandbox agent-owner account | Needed to prove the v6 button end to end |
 | ⏳ | 👤 Optional: AG Studio 45-day trial key in `.env` as `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` | Removes the watermark |
 
-## Phase 3: Agent detection, AI and polish ⏳
+## Phase 3: Agent detection, AI and polish 🔄
 
 | | Task | Notes |
 | --- | --- | --- |
-| ⏳ | **Agent detection layer** in `botfare()`: signed agents (Web Bot Auth style, Ed25519), edge bot scores (Cloudflare, Akamai headers, configurable), crawler impostor check (published IP ranges), automation heuristics (datacenter IPs, headless signs, rates) | First job after Phase 2. Score-based: "pay, or prove you're human", never a hard block |
-| ⏳ | Human escape hatch: Cloudflare Turnstile "Reading as a human? Continue free" | Needs a free Turnstile key |
-| ⏳ | Dashboard "Bot detection" panel: strictness, edge settings, revenue recovered per signal | Strong demo moment |
+| ✅ | **Agent detection layer** in `botfare()`: signed agents (Web Bot Auth, RFC 9421 Ed25519; the SDK signs every request, BotFare publishes the key directory), edge bot scores (Cloudflare, Akamai headers, configurable), crawler impostor check (677 published IP prefixes), automation heuristics (HTTP client and headless user agents, missing browser headers); the signal travels in `extra.botfareSignal` and is stored on each receipt | Score-based: "pay, or prove you're human", never a hard block. Real Chrome, Firefox and Safari headers are never charged. Left out on purpose: datacenter IP lists and request rates. `packages/express/src/detection`; e2e 16/16 incl. 7 detection checks; SDK-to-middleware interop test |
+| ✅ | Human escape hatch: Cloudflare Turnstile "Reading as a human? Continue free" | `POST /__botfare/human` sets a signed 24 h pass; Crema Notes uses Cloudflare's test key (always passes). A real widget key is optional before the live demo |
+| ✅ | Dashboard "Bot detection" panel: strictness, edge settings, revenue recovered per signal | Site card tab + "Revenue by detection signal" in analytics; `pnpm seed` sets Crema Notes to standard |
 | ⏳ | Research agent: `get_offer` / `buy` / `skip` / `finish`, wire inspector, cost meter, citations linked to receipts | 👤 needs an Anthropic API key |
 | ⏳ | `/judge` page: one-click demo flows and sandbox logins | |
 | ⏳ | MCP server for Claude Desktop and Claude Code (should) | `get_offer`, `fetch_paid`, `wallet_balance`, `recent_receipts` |
@@ -118,3 +118,5 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | 8 Nov | No AI attribution in commits or PRs |
 | 8 Nov | Deploy to Render last, after the build work |
 | 8 Nov | Add the agent detection layer (edge signals, signed agents, impostor checks, Turnstile escape hatch) after Phase 2 |
+| 8 Nov | One Web Bot Auth module (`@botfare/contracts/web-bot-auth`) for the SDK signer and the middleware verifier; Cloudflare's sf-string `Signature-Agent` form |
+| 8 Nov | Sites created before detection keep their behaviour (`chargeKnownBots` on → known-bots, off → off); new sites start at known-bots; Crema Notes runs at standard |

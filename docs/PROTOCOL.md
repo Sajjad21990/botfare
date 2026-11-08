@@ -34,7 +34,7 @@ A resource server answers an unpaid request with HTTP 402 and a `PAYMENT-REQUIRE
 | `amount` | Price in integer cents as a string, e.g. `"3"` |
 | `payTo` | The publisher's BotFare site ID (`site_…`). The ledger credits that site owner's earnings. |
 | `maxTimeoutSeconds` | At most 60. `PrepaidPayPalServer.enhancePaymentRequirements` clamps larger values. |
-| `extra` | `{}`; no scheme-specific fields are needed. |
+| `extra` | `{"botfareSignal": "<signal>"}` from BotFare's middleware (see below); the scheme itself needs no fields. |
 
 A decoded example, as the demo publisher sends it:
 
@@ -54,10 +54,12 @@ A decoded example, as the demo publisher sends it:
     "asset": "USD",
     "payTo": "site_22a19e75551c4c2c",
     "maxTimeoutSeconds": 60,
-    "extra": {}
+    "extra": { "botfareSignal": "signed-agent" }
   }]
 }
 ```
+
+**Detection signal (BotFare extension).** `extra.botfareSignal` says why the publisher asked this request to pay. It is one of `signed-agent`, `agent-header`, `known-bot`, `bot-impostor`, `edge-score`, `automation`, `payment-signature` or `everyone` (`detectionSignalSchema` in `@botfare/contracts`). The resource server (a `PrepaidPayPalServer` subclass in `@botfare/express`, `src/payment-gate.ts`) declares it in `dynamicExtraFields`, so `@x402/core` leaves it out when it matches a payment's `accepted` terms: a client that echoes a different signal still matches, and verify and settle always receive the server's own value. The facilitator passes `requirements.extra` to the ledger, which stores a known signal on the receipt (`receipts.detection_signal`; an unknown or missing one is stored as null). The signal decides nothing about money; it feeds "revenue by detection signal" in the publisher's analytics.
 
 **Preview (BotFare extension).** The 402 body is `{"preview": {"title", "excerpt", "wordCount"?} | null}`, where `excerpt` is at most 600 characters. The publisher middleware sends it as the SDK's `unpaidResponseBody`, and agents read it free before deciding to pay. `getOffer()` in `@botfare/sdk` returns it.
 
@@ -170,11 +172,29 @@ The base URL is `${BOTFARE_URL}/api/x402`. All bodies are JSON.
 
 **Site config.** `GET ${BOTFARE_URL}/api/sites/<siteId>/config` uses the same site auth and returns the `SiteConfig` (pricing rules, free paths, `chargeKnownBots`, version) that the `botfare()` middleware caches for 30 s.
 
+## Signed agents (Web Bot Auth)
+
+Agents identify themselves cryptographically before any payment, with RFC 9421 HTTP Message Signatures over Ed25519, in the Web Bot Auth format that Cloudflare verifies. The BotFare SDK signs every request it sends (the offer read, the unpaid request and the paid retry), each with a fresh `created` and `nonce`. The signer (`createRequestSigner`) and the verifier (`verifySignedRequest`) are one module, `@botfare/contracts/web-bot-auth`, which the SDK and the `botfare()` middleware both import.
+
+```
+Signature-Agent: "https://botfare.example"
+Signature-Input: sig1=("@authority" "signature-agent");created=1762600000;keyid="<JWK thumbprint>";alg="ed25519";expires=1762600060;nonce="<64 random bytes, base64url>";tag="web-bot-auth"
+Signature: sig1=:<base64 Ed25519 signature>:
+```
+
+- **`keyid`** is the RFC 7638 / RFC 8037 SHA-256 thumbprint (base64url) of the agent key's public JWK: the same Ed25519 key that signs payment authorizations.
+- **Signature base** (RFC 9421 section 2.5), lines joined by `\n`: `"@authority": <host[:port]>`, `"signature-agent": "<origin>"`, then `"@signature-params": <the inner list>`. `Signature-Agent` is the origin of `BOTFARE_URL`, as an sf-string; the verifier also accepts the newer dictionary form covered as `"signature-agent";key="…"`.
+- **Key directory.** BotFare publishes every active agent key at `${BOTFARE_URL}/.well-known/http-message-signatures-directory` (`application/http-message-signatures-directory+json`, `Cache-Control: max-age=60`) as `{keys: [{kty: "OKP", crv: "Ed25519", x, kid: <thumbprint>, use: "sig", botfare_key_id: "ak_…"}]}`. A revoked key leaves the directory. `GET /api/agents/<thumbprint>` returns `{keyId, status}`.
+- **Publisher rules** (`botfare()`): keys come only from the publisher's own configured BotFare URL, never from the URL a request names. The member tagged `web-bot-auth` is used, whatever its label. `created` and `expires` are required; `created` may be at most 5 s in the future, the signature is refused after `expires`, and it may live at most 24 h (the SDK uses 60 s). `@authority` (or `@target-uri`) must be covered, and so must `signature-agent` when it is sent. Behind a proxy, `X-Forwarded-Host` is tried as the authority too. The directory is cached for 5 minutes; an unknown `keyid` refreshes it at most every 30 s.
+- **Failure is never punished.** An expired, unknown or tampered signature is ignored and the request is scored as if unsigned. A valid one is the `signed-agent` signal, which charges at every detection level.
+- **Not done:** the directory response itself is not signed (the draft asks for one signature per listed key, made with that key's private key, which BotFare does not hold).
+
 ## Security notes
 
 - The signature covers every field that decides who pays whom and how much. The resource URL is not signed: the price, payee and nonce bind the payment, and `resource.url` is recorded on the receipt only for display.
 - Each authorization lives at most 60 s and can be used once. Its nonce is stored for good, which more than covers the 60 s lifetime plus skew.
 - Spend limits are checked twice: by the SDK's spend controls before signing (`BotFareSpendLimitError`, so nothing is signed or sent) and by the facilitator inside the settle transaction.
+- A signed-agent signature proves which BotFare key sent a request, not that it will pay: the payment is still the separate `prepaid` authorization above.
 - No personal data travels in headers. The payer is identified only by its agent key ID, and the agent header `x-botfare-agent` carries the constant `1`.
 
 ## Precedent
