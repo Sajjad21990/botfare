@@ -26,6 +26,31 @@ export function newId(prefix: IdPrefix): string {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Base64 helpers that work in Node and in the browser (agent keys are generated in the browser).
+
+function utf8ToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToUtf8(base64: string): string {
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function toBase64Url(base64: string): string {
+  return base64.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(base64url: string): string {
+  const base64 = base64url.replaceAll("-", "+").replaceAll("_", "/");
+  return base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+}
+
+// ---------------------------------------------------------------------------------------------
 // HTTP surface of the BotFare app
 
 /** The x402 facilitator lives at `${BOTFARE_URL}${FACILITATOR_PATH}`: GET /supported, POST /verify, POST /settle, POST /refund. */
@@ -41,7 +66,7 @@ export function siteConfigPath(siteId: string): string {
  * `Authorization: Basic base64(siteId:siteSecret)`. `/supported` needs no auth.
  */
 export function siteAuthHeader(siteId: string, siteSecret: string): string {
-  return `Basic ${Buffer.from(`${siteId}:${siteSecret}`).toString("base64")}`;
+  return `Basic ${utf8ToBase64(`${siteId}:${siteSecret}`)}`;
 }
 
 export function parseSiteAuthHeader(
@@ -49,7 +74,12 @@ export function parseSiteAuthHeader(
 ): { siteId: string; siteSecret: string } | null {
   const match = /^Basic\s+([A-Za-z0-9+/=]+)$/.exec(header?.trim() ?? "");
   if (!match?.[1]) return null;
-  const decoded = Buffer.from(match[1], "base64").toString("utf8");
+  let decoded: string;
+  try {
+    decoded = base64ToUtf8(match[1]);
+  } catch {
+    return null;
+  }
   const colon = decoded.indexOf(":");
   if (colon <= 0) return null;
   return { siteId: decoded.slice(0, colon), siteSecret: decoded.slice(colon + 1) };
@@ -155,12 +185,12 @@ export type AgentKeyPayload = z.infer<typeof agentKeyPayloadSchema>;
 const AGENT_KEY_PREFIX = "bfk_";
 
 export function encodeAgentKey(payload: AgentKeyPayload): string {
-  return AGENT_KEY_PREFIX + Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return AGENT_KEY_PREFIX + toBase64Url(utf8ToBase64(JSON.stringify(payload)));
 }
 
 export function decodeAgentKey(key: string): AgentKeyPayload {
   if (!key.startsWith(AGENT_KEY_PREFIX)) throw new Error("Agent key must start with bfk_");
-  const json = Buffer.from(key.slice(AGENT_KEY_PREFIX.length), "base64url").toString("utf8");
+  const json = base64ToUtf8(fromBase64Url(key.slice(AGENT_KEY_PREFIX.length)));
   return agentKeyPayloadSchema.parse(JSON.parse(json));
 }
 
