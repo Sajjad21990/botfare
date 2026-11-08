@@ -1,16 +1,20 @@
 "use client";
 
+import type { AnswerManifest } from "@botfare/contracts/receipts";
 import { ExternalLink, Sparkles } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ResearchCitation } from "@/lib/server/research-events";
 import { formatFare, formatUsd, shortPath } from "./format";
+import { VerifySources } from "./verify-sources";
 
 interface AnswerCardProps {
   answer: string;
   citations: ResearchCitation[];
   spentCents: number;
   budgetCents: number;
+  /** The answer event's sources manifest, for "Verify sources" (optional until the agent sends it). */
+  manifest?: AnswerManifest | null;
   /** Shows the citation's payment in the wire inspector. */
   onShowReceipt: (receiptId: string) => void;
 }
@@ -69,6 +73,7 @@ export function AnswerCard(props: AnswerCardProps) {
             ))}
           </ol>
         ) : null}
+        <VerifySources citations={props.citations} manifest={props.manifest} />
       </CardContent>
     </Card>
   );
