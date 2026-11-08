@@ -172,6 +172,31 @@ export async function startStack() {
   });
   const spentTodayCents = () =>
     ledger.receipts.filter((r) => r.keyId === KEY_ID).reduce((sum, r) => sum + r.amountCents, 0);
+  /** Fare Court and Fare Advisor requests the stand-in received (after signature checks). */
+  const disputes: Array<Record<string, unknown>> = [];
+  const declines: Array<Record<string, unknown>> = [];
+  botfare.use(express.json({ limit: "2mb" }));
+  botfare.post("/api/disputes", (req, res) => {
+    disputes.push(req.body);
+    res.json({
+      disputeId: `dsp_${disputes.length}`,
+      receiptId: req.body.receiptId,
+      status: "refunded",
+      refundedCents: 3,
+      verdict: {
+        decision: "refund",
+        confidence: 0.93,
+        category: "stub_or_paywall",
+        rationale: "The delivered page is a subscribe prompt, not the declared article.",
+        evidence: [],
+      },
+      message: "Refunded $0.03 to the agent's wallet.",
+    });
+  });
+  botfare.post("/api/offers/decline", (req, res) => {
+    declines.push(req.body);
+    res.status(202).json({ ok: true });
+  });
   botfare.get("/api/agent/wallet", (_req, res) => {
     res.json({
       keyId: KEY_ID,
@@ -210,6 +235,9 @@ export async function startStack() {
     siteUrl: siteServer.url,
     botfareUrl: botfareServer.url,
     apiRequests: () => apiRequests,
+    disputes,
+    declines,
+    articleHtml: ARTICLE_HTML,
     walletMicros: () => ledger.balanceMicros(`wallet:${WALLET_ID}`),
     async stop() {
       await siteServer.close();

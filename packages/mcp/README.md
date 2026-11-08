@@ -14,6 +14,8 @@ Claude never sees the key, only the tool results.
 | --- | --- | --- |
 | `get_offer(url)` | One unpaid request: the price, the publisher's site and a free preview (title, excerpt, length), and whether it fits your limits. | No |
 | `fetch_paid(url, max_price_usd?)` | Fetches the URL and pays if it asks for payment, then returns readable text (HTML becomes plain text, JSON is pretty-printed) and the receipt ID. Free pages are read without paying. | Yes, at most the cap below |
+| `decline_offer(url, category, reason)` | Skips an offer and tells the publisher why, in one sentence (`too_expensive`, `irrelevant`, `low_quality_preview`, `already_have`, `over_budget`, `other`). Free and best effort; it feeds the publisher's Fare Advisor. | No |
+| `dispute_purchase(receipt_id, reason, note?)` | Fare Court buyer protection: disputes a purchase whose content clearly does not match its offer (`stub_or_paywall`, `error_page`, `truncated`, `unrelated`, `not_as_described`, `other`). Submits the exact bytes this server received; an AI judge compares them with the declared offer. Confident cases are refunded in seconds, unsure ones go to the publisher. | Only back to you (a refund) |
 | `wallet_balance()` | Wallet balance, today's spend against the daily cap, the per-request max and the allowed sites. | No |
 | `recent_receipts(limit?)` | The key's latest payments: time, site, URL, amount, status and receipt ID (1-50, default 10). | No |
 
@@ -24,8 +26,20 @@ key has none (`BOTFARE_MAX_PRICE_USD` changes that default). BotFare's facilitat
 same limits again when it settles, and it settles only after the publisher answers successfully,
 so a failed response is never charged.
 
-The server tells Claude to call `get_offer` first and to buy only what the preview shows is
-worth it.
+The server tells Claude to call `get_offer` first, then decide: `fetch_paid` to buy what the
+preview shows is worth it, or `decline_offer` with a short reason to skip it. After a purchase it
+calls `dispute_purchase` only when the content clearly is not what the offer declared (a
+"subscribe to keep reading" stub, a paywall or login wall, an error page, or an unrelated page),
+never because a matching page was merely less useful than hoped.
+
+### Disputes and the delivered bytes
+
+The publisher's `botfare()` middleware attests a SHA-256 digest of every paid body to BotFare, so
+a dispute must carry the exact bytes delivered. The server keeps those bytes in memory for its
+recent paid fetches (the last 25, at most 8 MB in all, for the 24-hour dispute window) and sends
+them with `dispute_purchase`; nothing is written to disk, and purchases made by another process
+cannot be disputed from here. BotFare allows at most 10 disputes per key per day, and a key that
+disputes a large share of its purchases has its disputes reviewed by the publisher.
 
 ## Setup
 
@@ -97,15 +111,23 @@ With the demo publisher running (`pnpm dev:demo`, port 4000):
   2 cents or less."
 - "How much is left on my BotFare wallet today?"
 - "List my last five BotFare receipts and add up what I spent."
+- "Buy http://localhost:4000/articles/grinder-maintenance and summarize it. If what you get is not
+  the article the preview promised, dispute it." (the demo's Fare Court case: the paid response
+  is a subscribe stub)
 
 ## How it authenticates to BotFare
 
-`wallet_balance` and `recent_receipts` call BotFare's agent API:
+`wallet_balance`, `recent_receipts`, `decline_offer` and `dispute_purchase` call BotFare's agent
+API:
 
 - `GET /api/agent/wallet` returns
   `{ keyId, keyName, balanceUsd, spentTodayUsd, dailyCapUsd, perRequestMaxUsd, allowedSiteIds }`.
 - `GET /api/agent/receipts?limit=N` (1-100, default 10) returns
   `{ keyId, receipts: [{ receiptId, time, site, siteId, url, amountUsd, status }] }`.
+- `POST /api/disputes` with `{ receiptId, reason, note?, contentBase64 }` returns the dispute
+  outcome `{ disputeId, receiptId, status, refundedCents, verdict, message }`
+  (`@botfare/contracts/fare`).
+- `POST /api/offers/decline` with `{ url, priceCents, category, reason }`.
 
 There is no API token. Each request carries the agent's Web Bot Auth signature
 (`Signature-Input`, `Signature`, `Signature-Agent`). BotFare looks the `keyid` (the key's JWK

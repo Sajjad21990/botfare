@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { htmlToText } from "../src/text";
-import { createBotFareMcpServer, spendCap } from "../src/tools";
+import { createBotFareMcpServer, PurchaseMemory, spendCap } from "../src/tools";
 import { ARTICLE_PREVIEW, SITE_ID, startStack } from "./harness";
 
 let stack: Awaited<ReturnType<typeof startStack>>;
@@ -40,9 +40,11 @@ afterAll(async () => {
 });
 
 describe("BotFare MCP server", () => {
-  it("lists four tools and tells Claude to check the offer first", async () => {
+  it("lists six tools and tells Claude to check the offer first", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "decline_offer",
+      "dispute_purchase",
       "fetch_paid",
       "get_offer",
       "recent_receipts",
@@ -54,6 +56,10 @@ describe("BotFare MCP server", () => {
     expect(byName.get_offer?.annotations?.readOnlyHint).toBe(true);
     expect(byName.fetch_paid?.inputSchema.properties).toHaveProperty("max_price_usd");
     expect(client.getInstructions()).toMatch(/call get_offer first/);
+    expect(client.getInstructions()).toMatch(/decline_offer/);
+    expect(client.getInstructions()).toMatch(/dispute_purchase/);
+    expect(byName.dispute_purchase?.inputSchema.properties).toHaveProperty("receipt_id");
+    expect(byName.decline_offer?.inputSchema.properties).toHaveProperty("category");
   });
 
   it("get_offer returns the price and preview without paying", async () => {
@@ -188,6 +194,92 @@ describe("BotFare MCP server", () => {
     expect(stack.apiRequests()).toBeGreaterThan(0);
     expect(logs.join("\n")).not.toContain(stack.agentKey);
     expect(logs.some((line) => line.includes("fetch_paid") && line.includes("rcpt_"))).toBe(true);
+  });
+});
+
+describe("Fare Court and Fare Advisor tools", () => {
+  it("dispute_purchase submits the exact bytes of a paid fetch and reports the outcome", async () => {
+    const receipt = stack.ledger.receipts[0];
+    const result = await call("dispute_purchase", {
+      receipt_id: receipt?.transaction,
+      reason: "stub_or_paywall",
+      note: "Only a subscribe prompt",
+    });
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain(`Refunded $0.03 for receipt ${receipt?.transaction}`);
+    expect(result.text).toMatch(/Judge: refund \(93% confident, stub_or_paywall\)/);
+    expect(stack.disputes).toHaveLength(1);
+    const [sent] = stack.disputes;
+    expect(sent).toMatchObject({
+      receiptId: receipt?.transaction,
+      reason: "stub_or_paywall",
+      note: "Only a subscribe prompt",
+    });
+    expect(Buffer.from(String(sent?.contentBase64), "base64").toString("utf8")).toBe(
+      stack.articleHtml,
+    );
+
+    // A second dispute of the same receipt is answered locally.
+    const again = await call("dispute_purchase", {
+      receipt_id: receipt?.transaction,
+      reason: "stub_or_paywall",
+    });
+    expect(again.text).toContain("already disputed");
+    expect(stack.disputes).toHaveLength(1);
+  });
+
+  it("dispute_purchase refuses a receipt it holds no content for", async () => {
+    const result = await call("dispute_purchase", {
+      receipt_id: "rcpt_0000000000000000",
+      reason: "unrelated",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toMatch(/No content is held/);
+    expect(stack.disputes).toHaveLength(1);
+  });
+
+  it("decline_offer sends a signed note with the offered price and pays nothing", async () => {
+    const before = stack.walletMicros();
+    const url = `${stack.siteUrl}/reports/annual`;
+    const result = await call("decline_offer", {
+      url,
+      category: "too_expensive",
+      reason: "25¢ for a report the preview does not describe",
+    });
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Noted");
+    expect(stack.declines.at(-1)).toEqual({
+      url,
+      priceCents: 25,
+      category: "too_expensive",
+      reason: "25¢ for a report the preview does not describe",
+    });
+    expect(stack.walletMicros()).toBe(before);
+    const free = await call("decline_offer", {
+      url: `${stack.siteUrl}/free`,
+      category: "other",
+      reason: "x",
+    });
+    expect(free.isError).toBe(true);
+  });
+});
+
+describe("PurchaseMemory", () => {
+  it("keeps the newest purchases within count, bytes and the dispute window", () => {
+    let now = 0;
+    const memory = new PurchaseMemory(2, 10, 1_000, () => now);
+    const add = (id: string, size: number) =>
+      memory.add({ receiptId: id, url: "u", priceUsd: "$0.03", bytes: new Uint8Array(size) });
+    add("a", 2);
+    add("b", 2);
+    add("c", 2);
+    expect(memory.get("a")).toBeUndefined();
+    expect(memory.size).toBe(2);
+    add("d", 9); // over the byte budget: older ones go first
+    expect(memory.get("c")).toBeUndefined();
+    expect(memory.get("d")).toBeDefined();
+    now = 2_000;
+    expect(memory.get("d")).toBeUndefined();
   });
 });
 

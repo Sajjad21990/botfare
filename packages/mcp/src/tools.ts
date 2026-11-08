@@ -1,5 +1,13 @@
 import {
+  DISPUTE_POLICY,
+  type DisputeOutcome,
+  declineCategorySchema,
+  disputeReasonSchema,
+  MAX_DISPUTE_CONTENT_BYTES,
+} from "@botfare/contracts/fare";
+import {
   BotFareOfferError,
+  BotFareApiError as BotFareSdkApiError,
   BotFareSpendLimitError,
   createBotFareAgent,
   DEFAULT_MAX_PER_REQUEST_USD,
@@ -18,6 +26,7 @@ import { formatUsd, htmlTitle, htmlToText, truncate, usdToCents } from "./text";
 
 /**
  * BotFare's MCP tools: get_offer (free price + preview), fetch_paid (pay within limits and read),
+ * decline_offer (a free note on why an offer was skipped), dispute_purchase (Fare Court),
  * wallet_balance and recent_receipts. The agent key never leaves this process: requests are
  * signed here (Web Bot Auth for every request, an Ed25519 JWS for each payment).
  */
@@ -41,7 +50,93 @@ export interface BotFareMcpOptions {
 }
 
 export const SERVER_INSTRUCTIONS = `BotFare lets you read pages and APIs that charge AI agents a small fee per request (x402 over PayPal), paid from the user's prepaid BotFare balance.
-Workflow: call get_offer first to see the price and a free preview; decide whether the content is worth it for the user's task; then call fetch_paid with max_price_usd set to the offered price. Never pay for something the preview shows is irrelevant. Payments are settled only after a successful response, and every payment returns a receipt ID you can cite. Use wallet_balance to check the budget and recent_receipts to review spending.`;
+Workflow: call get_offer first to see the price and a free preview; decide whether the content is worth it for the user's task; then either call fetch_paid with max_price_usd set to the offered price, or call decline_offer with a short, honest reason (free; it tells the publisher why, so prices and previews get better). Never pay for something the preview shows is irrelevant. Payments are settled only after a successful response, and every payment returns a receipt ID you can cite.
+Buyer protection (Fare Court): if paid content clearly does not match its offer (a "subscribe to keep reading" stub, a paywall or login wall, an error page, or something unrelated to the declared title and preview), call dispute_purchase with the receipt ID within 24 hours; an AI judge compares the offer with what was delivered and confident cases are refunded in seconds. Do not dispute content that matches the offer but is merely shorter or less useful than hoped. Use wallet_balance to check the budget and recent_receipts to review spending.`;
+
+/** A paid read kept in memory so dispute_purchase can submit the exact bytes delivered. */
+interface Purchase {
+  receiptId: string;
+  url: string;
+  priceUsd: string;
+  /** Null when the body was larger than a dispute may carry. */
+  bytes: Uint8Array | null;
+  at: number;
+  disputed?: DisputeOutcome;
+}
+
+/** Keeps the most recent purchases (bounded by count, bytes and the dispute window). */
+export class PurchaseMemory {
+  private readonly items = new Map<string, Purchase>();
+  constructor(
+    private readonly maxItems = 25,
+    private readonly maxBytes = 8_000_000,
+    private readonly ttlMs = DISPUTE_POLICY.windowHours * 3_600_000,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  add(purchase: Omit<Purchase, "at">): void {
+    this.items.delete(purchase.receiptId);
+    this.items.set(purchase.receiptId, { ...purchase, at: this.now() });
+    this.prune();
+  }
+
+  get(receiptId: string): Purchase | undefined {
+    this.prune();
+    return this.items.get(receiptId);
+  }
+
+  get size(): number {
+    return this.items.size;
+  }
+
+  private prune(): void {
+    const cutoff = this.now() - this.ttlMs;
+    for (const [id, item] of this.items) if (item.at < cutoff) this.items.delete(id);
+    let bytes = 0;
+    for (const item of this.items.values()) bytes += item.bytes?.length ?? 0;
+    // Map iteration is oldest first.
+    for (const [id, item] of this.items) {
+      if (this.items.size <= this.maxItems && bytes <= this.maxBytes) break;
+      bytes -= item.bytes?.length ?? 0;
+      this.items.delete(id);
+    }
+  }
+}
+
+function describeOutcome(outcome: DisputeOutcome): string {
+  const lines: string[] = [];
+  switch (outcome.status) {
+    case "refunded":
+      lines.push(
+        `Refunded ${formatUsd(outcome.refundedCents / 100)} for receipt ${outcome.receiptId}.`,
+      );
+      break;
+    case "denied":
+      lines.push(
+        `Dispute denied for receipt ${outcome.receiptId}: the judge found the content matches the offer. No refund.`,
+      );
+      break;
+    case "pending_publisher":
+      lines.push(
+        `Dispute ${outcome.disputeId} is waiting for the publisher's review (the judge was not confident either way). Check recent_receipts later.`,
+      );
+      break;
+    case "rejected_by_publisher":
+      lines.push(`The publisher reviewed dispute ${outcome.disputeId} and declined the refund.`);
+      break;
+    case "invalid":
+      lines.push(`BotFare could not accept this dispute: ${outcome.message}`);
+      break;
+  }
+  if (outcome.status !== "invalid" && outcome.message) lines.push(outcome.message);
+  if (outcome.verdict) {
+    lines.push(
+      `Judge: ${outcome.verdict.decision} (${Math.round(outcome.verdict.confidence * 100)}% confident, ${outcome.verdict.category}). ${outcome.verdict.rationale}`,
+    );
+  }
+  lines.push(`Dispute ID: ${outcome.disputeId}`);
+  return lines.join("\n");
+}
 
 const MAX_BODY_BYTES = 2_000_000;
 
@@ -59,7 +154,12 @@ function checkUrl(value: string): string | null {
 }
 
 function describeError(err: unknown): string {
-  if (err instanceof BotFareApiError || err instanceof BotFareOfferError) return err.message;
+  if (
+    err instanceof BotFareApiError ||
+    err instanceof BotFareSdkApiError ||
+    err instanceof BotFareOfferError
+  )
+    return err.message;
   if (err instanceof Error) return `${err.name}: ${err.message}`;
   return String(err);
 }
@@ -167,6 +267,15 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
 
+  const purchases = new PurchaseMemory();
+  /** Prices seen by get_offer, so decline_offer can say what was declined without asking again. */
+  const offers = new Map<string, Offer>();
+  const rememberOffer = (offer: Offer) => {
+    offers.delete(offer.url);
+    offers.set(offer.url, offer);
+    if (offers.size > 100) offers.delete(offers.keys().next().value as string);
+  };
+
   async function walletOrNull(): Promise<{ wallet: AgentWallet | null; note?: string }> {
     try {
       return { wallet: await api.wallet() };
@@ -189,7 +298,7 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
     {
       title: "Get price and preview (free)",
       description:
-        "Check what a URL costs before paying. Makes one unpaid request and returns the price in USD, the publisher's site, and a free preview (title, excerpt, length) when the page charges agents through BotFare. Never pays and never signs a payment. Always call this before fetch_paid so you (and the user) can decide whether the content is worth the price.",
+        "Check what a URL costs before paying. Makes one unpaid request and returns the price in USD, the publisher's site, and a free preview (title, excerpt, length) when the page charges agents through BotFare. Never pays and never signs a payment. Always call this first, then decide: fetch_paid to buy it, or decline_offer to skip it with a reason.",
       inputSchema: { url: z.string().describe("Absolute http(s) URL of the page or API to price") },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
@@ -205,6 +314,7 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
           );
         }
         log(`get_offer ${url}: ${offer.priceUsd}`);
+        rememberOffer(offer);
         const { wallet, note } = await walletOrNull();
         const lines = [`Offer for ${url}`, ...describeOffer(offer)];
         if (wallet?.allowedSiteIds && !wallet.allowedSiteIds.includes(offer.payTo)) {
@@ -213,7 +323,7 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
           const cap = spendCap(wallet, offer.priceCents / 100, defaultMax);
           lines.push(
             cap.cents >= offer.priceCents
-              ? `Within your limits. To buy it, call fetch_paid with url and max_price_usd ${(offer.priceCents / 100).toFixed(2)}.`
+              ? `Within your limits. To buy it, call fetch_paid with url and max_price_usd ${(offer.priceCents / 100).toFixed(2)}; to skip it, call decline_offer with a short reason.`
               : `Over your limits: ${cap.reason} is ${formatUsd(cap.cents / 100)}; fetch_paid will refuse.`,
           );
         }
@@ -231,7 +341,7 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
     {
       title: "Pay for and read a URL",
       description:
-        "Fetch a URL, paying the publisher's BotFare price from the user's prepaid balance if it asks for one, and return the content as readable text with the receipt ID. Call get_offer first. Pays at most min(max_price_usd, this key's per-request max, what is left of its daily cap, the wallet balance); a higher price is refused before anything is signed, so no money moves. If max_price_usd is omitted, the ceiling is the key's per-request max (or $0.10). Free pages are fetched without paying.",
+        "Fetch a URL, paying the publisher's BotFare price from the user's prepaid balance if it asks for one, and return the content as readable text with the receipt ID. Call get_offer first. If the paid content clearly does not match the offer (a stub, paywall, error page or unrelated page), call dispute_purchase with the receipt ID. Pays at most min(max_price_usd, this key's per-request max, what is left of its daily cap, the wallet balance); a higher price is refused before anything is signed, so no money moves. If max_price_usd is omitted, the ceiling is the key's per-request max (or $0.10). Free pages are fetched without paying.",
       inputSchema: {
         url: z.string().describe("Absolute http(s) URL to read"),
         max_price_usd: z
@@ -326,8 +436,17 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
         }
         const content = await readContent(response, maxChars);
         const paidUsd = result.offer?.priceUsd ?? offer.priceUsd;
+        if (result.paid && result.receiptId) {
+          const bytes = result.body;
+          purchases.add({
+            receiptId: result.receiptId,
+            url,
+            priceUsd: paidUsd,
+            bytes: bytes && bytes.length <= MAX_DISPUTE_CONTENT_BYTES ? bytes : null,
+          });
+        }
         const header = result.paid
-          ? `Paid ${paidUsd} to site ${result.offer?.payTo ?? offer.payTo} for ${url}. Receipt: ${receipt?.transaction}`
+          ? `Paid ${paidUsd} to site ${result.offer?.payTo ?? offer.payTo} for ${url}. Receipt: ${receipt?.transaction}\nIf this clearly is not what the offer promised (a stub, paywall, error page or unrelated content), call dispute_purchase with this receipt ID.`
           : `Read ${url} (HTTP ${response.status}); no payment was settled.`;
         log(
           `fetch_paid ${url}: ${result.paid ? `paid ${paidUsd}, ${receipt?.transaction}` : "not paid"}`,
@@ -336,6 +455,106 @@ export function createBotFareMcpServer(options: BotFareMcpOptions): McpServer {
       } catch (err) {
         log(`fetch_paid ${url} failed: ${describeError(err)}`);
         return text(`Could not fetch ${url}: ${describeError(err)}`, true);
+      }
+    },
+  );
+
+  server.registerTool(
+    "decline_offer",
+    {
+      title: "Skip an offer, with a reason (free)",
+      description:
+        "Tell the publisher, through BotFare, why you are not buying an offer you checked with get_offer: too expensive, irrelevant to the task, a preview too thin to judge, already have it, over budget, or other. Free, never pays, and helps publishers fix prices and previews. Give a short, honest, specific reason (no personal data).",
+      inputSchema: {
+        url: z.string().describe("The URL whose offer you are declining"),
+        category: declineCategorySchema.describe("The main reason"),
+        reason: z
+          .string()
+          .min(1)
+          .max(300)
+          .describe("One sentence on why, e.g. 'Thin listicle for 50¢'"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ url, category, reason }) => {
+      const invalid = checkUrl(url);
+      if (invalid) return text(`${invalid}: ${url}`, true);
+      try {
+        const offer = offers.get(url) ?? (await probe.getOffer(url));
+        if (!offer)
+          return text(`${url} does not ask for payment, so there is no offer to decline.`, true);
+        const sent = await probe.decline(offer, { category, reason });
+        log(`decline_offer ${url}: ${category}${sent ? "" : " (not delivered)"}`);
+        return text(
+          sent
+            ? `Noted: told the publisher why you skipped ${url} (${offer.priceUsd}, ${category}). Nothing was paid.`
+            : `Skipped ${url}; the note could not be delivered to BotFare right now (best effort). Nothing was paid.`,
+        );
+      } catch (err) {
+        log(`decline_offer ${url} failed: ${describeError(err)}`);
+        return text(`Could not decline ${url}: ${describeError(err)}`, true);
+      }
+    },
+  );
+
+  server.registerTool(
+    "dispute_purchase",
+    {
+      title: "Dispute a purchase (buyer protection)",
+      description: `Fare Court: ask for a refund when content bought with fetch_paid in this session clearly does not match its offer: a "subscribe to keep reading" stub or paywall (stub_or_paywall), an error or empty page (error_page), cut off far short of what was declared (truncated), a different page or spam (unrelated), or otherwise not as described (not_as_described). This server submits the exact bytes it received; BotFare checks them against the publisher's signed digest, and an AI judge compares the declared offer with what was delivered. Confident cases are refunded in seconds; unsure ones go to the publisher. Only within ${DISPUTE_POLICY.windowHours} hours and at most ${DISPUTE_POLICY.maxDisputesPerKeyPerDay} disputes per key per day; never dispute content that matches its offer.`,
+      inputSchema: {
+        receipt_id: z.string().describe("Receipt ID (rcpt_...) from fetch_paid"),
+        reason: disputeReasonSchema.describe("What is wrong with the delivered content"),
+        note: z
+          .string()
+          .max(500)
+          .optional()
+          .describe("One or two sentences of evidence, e.g. 'Only a subscribe prompt, no article'"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ receipt_id, reason, note }) => {
+      const purchase = purchases.get(receipt_id);
+      if (!purchase) {
+        return text(
+          `No content is held for receipt ${receipt_id}. This server keeps the exact bytes of its recent paid fetches (this session, last ${DISPUTE_POLICY.windowHours} hours) because a dispute must include them; it cannot dispute purchases made elsewhere.`,
+          true,
+        );
+      }
+      if (!purchase.bytes) {
+        return text(
+          `The content for receipt ${receipt_id} is larger than a dispute may carry (${MAX_DISPUTE_CONTENT_BYTES} bytes), so it cannot be disputed here.`,
+          true,
+        );
+      }
+      if (purchase.disputed) {
+        return text(
+          `Receipt ${receipt_id} was already disputed.\n\n${describeOutcome(purchase.disputed)}`,
+        );
+      }
+      try {
+        const outcome = await probe.dispute({
+          receiptId: receipt_id,
+          reason,
+          ...(note ? { note } : {}),
+          content: purchase.bytes,
+        });
+        if (outcome.status !== "invalid") purchase.disputed = outcome;
+        log(`dispute_purchase ${receipt_id}: ${outcome.status}`);
+        return text(describeOutcome(outcome), outcome.status === "invalid");
+      } catch (err) {
+        log(`dispute_purchase ${receipt_id} failed: ${describeError(err)}`);
+        return text(`Could not file the dispute: ${describeError(err)}`, true);
       }
     },
   );
