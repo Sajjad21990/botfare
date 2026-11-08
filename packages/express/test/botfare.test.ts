@@ -91,7 +91,14 @@ describe("botfare() with BotFare up", () => {
   it("puts the detection signal in the 402's requirements", async () => {
     const res = await agent.fetch(`${site.url}/articles/burr-basics`);
     const required = decodePaymentRequiredHeader(res.headers.get("payment-required") ?? "");
-    expect(required.accepts[0]?.extra).toEqual({ botfareSignal: "agent-header" });
+    expect(required.accepts[0]?.extra).toEqual({
+      botfareSignal: "agent-header",
+      botfareOffer: {
+        title: "Preview of /articles/burr-basics",
+        preview: "Burr grinders crush beans between two abrasive surfaces...",
+        wordCount: 1200,
+      },
+    });
   });
 
   it("accepts a payment whose echoed signal differs, and settles with its own", async () => {

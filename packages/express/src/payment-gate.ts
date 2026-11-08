@@ -6,6 +6,11 @@ import {
   type PricingRule,
 } from "@botfare/contracts";
 import {
+  type DeclaredOffer,
+  declaredOfferSchema,
+  REQUIREMENT_EXTRA_KEYS,
+} from "@botfare/contracts/fare";
+import {
   MAX_AUTHORIZATION_SECONDS,
   PAYPAL_SANDBOX,
   PREPAID_SCHEME,
@@ -22,6 +27,7 @@ import {
 import { paymentMiddlewareFromHTTPServer } from "@x402/express";
 import type { NextFunction, Request, Response } from "express";
 import { escapeHtml } from "./human-check";
+import { normalizePath } from "./matching";
 
 /**
  * Requirements carry the detection signal as `extra.botfareSignal`, so the facilitator can store
@@ -29,10 +35,18 @@ import { escapeHtml } from "./human-check";
  * `accepted` against the requirements, so a paid retry matches even if its signal differs from
  * the 402's, and the requirements sent to verify/settle carry the server's own signal.
  */
-export const BOTFARE_SIGNAL_EXTRA = "botfareSignal";
+export const BOTFARE_SIGNAL_EXTRA = REQUIREMENT_EXTRA_KEYS.signal;
+
+/**
+ * Fare Court: requirements also declare the offer (title, preview, word count) as
+ * `extra.botfareOffer`. Like the signal it is server-authored and dynamic, so the facilitator's
+ * settle call receives the publisher's own declaration (stored on the receipt), never the agent's
+ * echo of it.
+ */
+export const BOTFARE_OFFER_EXTRA = REQUIREMENT_EXTRA_KEYS.offer;
 
 class SignalRecordingPrepaidServer extends PrepaidPayPalServer {
-  readonly dynamicExtraFields = [BOTFARE_SIGNAL_EXTRA];
+  readonly dynamicExtraFields = [BOTFARE_SIGNAL_EXTRA, BOTFARE_OFFER_EXTRA];
 }
 
 /** Per-call timeout for /supported, /verify and /settle. */
@@ -50,6 +64,12 @@ export interface PaymentGateOptions {
   authHeader: string;
   preview?: PreviewFn;
   log: (msg: string) => void;
+}
+
+/** What the gate did with one request, reported once the response has finished. */
+export interface ChargeHooks {
+  /** A 402 carrying a price was sent (Fare Advisor telemetry). */
+  onOfferShown?: (offer: { path: string; method: string; priceCents: number }) => void;
 }
 
 /**
@@ -112,21 +132,38 @@ export class PaymentGate {
    * Runs the x402 flow for one request: 402, or verify → `next()` → settle. `signal` goes into
    * the requirements; `browserPaywall` replaces the plain HTML paywall (the human check).
    */
-  charge(
+  async charge(
     rule: PricingRule,
     req: Request,
     res: Response,
     next: NextFunction,
-    charge: { signal: DetectionSignal; browserPaywall?: PaywallProvider },
+    charge: { signal: DetectionSignal; browserPaywall?: PaywallProvider; hooks?: ChargeHooks },
   ): Promise<void> {
-    const route = this.routeFor(rule, req, charge.signal);
+    const preview = await this.previewFor(req);
+    const route = this.routeFor(rule, charge.signal, preview);
+    const onOfferShown = charge.hooks?.onOfferShown;
+    if (onOfferShown) {
+      res.once("finish", () => {
+        if (res.statusCode === 402 && res.getHeader("payment-required")) {
+          onOfferShown({
+            path: normalizePath(req.baseUrl + req.path),
+            method: req.method,
+            priceCents: rule.priceCents,
+          });
+        }
+      });
+    }
     const httpServer = new x402HTTPResourceServer(this.resourceServer, route);
     const provider = charge.browserPaywall ?? paywall;
     const middleware = paymentMiddlewareFromHTTPServer(httpServer, undefined, provider, false);
     return middleware(req, res, next);
   }
 
-  private routeFor(rule: PricingRule, req: Request, signal: DetectionSignal): RouteConfig {
+  private routeFor(
+    rule: PricingRule,
+    signal: DetectionSignal,
+    preview: OfferPreview | undefined,
+  ): RouteConfig {
     return {
       accepts: {
         scheme: PREPAID_SCHEME,
@@ -135,13 +172,16 @@ export class PaymentGate {
         // Integer cents as the asset amount; no float formatting on the way.
         price: { asset: USD.asset, amount: String(rule.priceCents) },
         maxTimeoutSeconds: MAX_AUTHORIZATION_SECONDS,
-        extra: { [BOTFARE_SIGNAL_EXTRA]: signal },
+        extra: {
+          [BOTFARE_SIGNAL_EXTRA]: signal,
+          [BOTFARE_OFFER_EXTRA]: declaredOffer(rule, preview),
+        },
       },
       description: rule.description ?? `${rule.method} ${rule.pattern}`,
       mimeType: rule.mimeType ?? "",
       unpaidResponseBody: async () => ({
         contentType: "application/json",
-        body: { preview: (await this.previewFor(req)) ?? null },
+        body: { preview: preview ?? null },
       }),
     };
   }
@@ -163,6 +203,20 @@ export class PaymentGate {
     }
     return undefined;
   }
+}
+
+/**
+ * The offer as declared to the agent: the publisher's preview when there is one, else the pricing
+ * rule's description. Always valid against `declaredOfferSchema` (trimmed to its limits).
+ */
+export function declaredOffer(rule: PricingRule, preview: OfferPreview | undefined): DeclaredOffer {
+  const title =
+    preview?.title.trim() || rule.description?.trim() || `${rule.method} ${rule.pattern}`;
+  return declaredOfferSchema.parse({
+    title: title.slice(0, 200),
+    preview: (preview?.excerpt ?? "").slice(0, 600),
+    ...(preview?.wordCount !== undefined ? { wordCount: preview.wordCount } : {}),
+  });
 }
 
 /** Plain HTML for a browser that hits an "everyone" route; the SDK's default paywall is for wallets. */

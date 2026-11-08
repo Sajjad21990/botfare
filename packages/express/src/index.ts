@@ -5,11 +5,18 @@
  *   app.use(botfare({ siteId: "site_…", siteSecret: process.env.BOTFARE_SITE_SECRET }));
  *
  * Mount it at the app root, before the routes it prices. Behind a proxy or CDN, set Express's
- * `trust proxy` so `req.ip` is the client's address (used to verify known crawlers).
+ * `trust proxy` so `req.ip` is the client's address (used to verify known crawlers). Mount any
+ * compression middleware *before* botfare(), so the delivery digest is over the decoded body the
+ * agent reads (see src/delivery-proof.ts).
+ *
+ * Fare Court and Fare Advisor: every 402 declares the offer (`extra.botfareOffer`), every paid
+ * response is attested to BotFare by its SHA-256 digest after it has been sent, and "offer shown"
+ * events are batched to BotFare. None of these ever delays or fails a response.
  */
 import { type OfferPreview, type SiteConfig, siteAuthHeader } from "@botfare/contracts";
 import type { Request, RequestHandler } from "express";
 import { SiteConfigCache } from "./config-cache";
+import { Attestor, attestationFor, captureDeliveredBody } from "./delivery-proof";
 import {
   type Detection,
   detectAgent,
@@ -27,8 +34,10 @@ import {
   turnstileSecretFor,
 } from "./human-check";
 import { normalizeConfig, ruleFor } from "./matching";
-import { BOTFARE_SIGNAL_EXTRA, PaymentGate } from "./payment-gate";
+import { BOTFARE_OFFER_EXTRA, BOTFARE_SIGNAL_EXTRA, PaymentGate } from "./payment-gate";
+import { OfferTelemetry } from "./telemetry";
 
+export { type DeliveredBody, paidReceiptId } from "./delivery-proof";
 export * from "./detection";
 export {
   HUMAN_CHECK_PATH,
@@ -39,7 +48,8 @@ export {
   turnstileSecretFor,
 } from "./human-check";
 export { isAgentRequest, normalizePath } from "./matching";
-export { BOTFARE_SIGNAL_EXTRA };
+export { declaredOffer } from "./payment-gate";
+export { BOTFARE_OFFER_EXTRA, BOTFARE_SIGNAL_EXTRA };
 
 export interface BotFareOptions {
   siteId: string;
@@ -61,6 +71,13 @@ export interface BotFareOptions {
   turnstileVerifyUrl?: string;
   /** Default: `console.log` with a `[botfare]` prefix. */
   logger?: (msg: string) => void;
+  /**
+   * Fare Court proof of delivery: attest the digest of each paid body to BotFare. Default on;
+   * without it the site's buyers cannot win a dispute on evidence, so leave it on.
+   */
+  proofOfDelivery?: boolean | { retryDelaysMs?: number[] };
+  /** Fare Advisor "offer shown" telemetry (no personal data). Default on. */
+  offerTelemetry?: boolean | { flushMs?: number; batchSize?: number; maxPending?: number };
 }
 
 /** What botfare() decided for a priced request, on `res.locals.botfare`. */
@@ -97,6 +114,24 @@ export function botfare(options: BotFareOptions): RequestHandler {
     log,
   });
   const gate = new PaymentGate({ botfareUrl, siteId, authHeader, preview: options.preview, log });
+  const proof = options.proofOfDelivery ?? true;
+  const attestor = proof
+    ? new Attestor({
+        botfareUrl,
+        authHeader,
+        log,
+        retryDelaysMs: typeof proof === "object" ? proof.retryDelaysMs : undefined,
+      })
+    : undefined;
+  const telemetryOptions = options.offerTelemetry ?? true;
+  const telemetry = telemetryOptions
+    ? new OfferTelemetry({
+        botfareUrl,
+        authHeader,
+        log,
+        ...(typeof telemetryOptions === "object" ? telemetryOptions : {}),
+      })
+    : undefined;
   const directory = new SignatureDirectory({ botfareUrl, log });
   const humanPass = new HumanPass(siteId, siteSecret);
   const configuredSecret = options.turnstileSecret ?? process.env.TURNSTILE_SECRET_KEY;
@@ -169,8 +204,25 @@ export function botfare(options: BotFareOptions): RequestHandler {
       ? humanCheckPaywall(humanCheckKey, req.originalUrl)
       : undefined;
 
+    // Hash what leaves for a paid response; wrapped before the x402 middleware buffers the body,
+    // so the digest covers exactly the bytes it replays after settle. Unpaid answers (402s, 5xx,
+    // handler errors) carry no successful PAYMENT-RESPONSE and are never attested.
+    if (attestor) {
+      captureDeliveredBody(res, (body) => {
+        const paid = attestationFor(res, body);
+        if (paid) attestor.attest(paid.receiptId, paid.attestation);
+      });
+    }
+    const { signal } = detection;
+    const hooks = telemetry
+      ? {
+          onOfferShown: (offer: { path: string; method: string; priceCents: number }) =>
+            telemetry.record({ ...offer, signal }),
+        }
+      : undefined;
+
     // The SDK middleware answers 402/5xx itself and calls next() only for a verified payment.
-    await gate.charge(rule, req, res, next, { signal: detection.signal, browserPaywall });
+    await gate.charge(rule, req, res, next, { signal, browserPaywall, hooks });
   };
 }
 

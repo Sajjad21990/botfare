@@ -95,6 +95,11 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
   let directoryKeys: object[] = [];
   /** When true, /supported answers 500 (the facilitator is unreachable for the gate). */
   let supportedFailing = false;
+  /** Fare Court: receipt attestations received (receipt ID → body), and how many to fail first. */
+  const attestations: Array<{ receiptId: string; body: Record<string, unknown> }> = [];
+  let attestFailures = 0;
+  /** Fare Advisor: offer telemetry batches received. */
+  const telemetry: Array<{ events: Array<Record<string, unknown>> }> = [];
   const ledger = new InMemoryLedger();
   const facilitator = new x402Facilitator().register(
     PAYPAL_SANDBOX,
@@ -128,6 +133,27 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
     }
     res.json(facilitator.getSupported());
   });
+  app.post(`${FACILITATOR_PATH}/receipts/:id/attest`, (req, res) => {
+    if (!authorized(req)) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    if (attestFailures > 0) {
+      attestFailures--;
+      res.status(503).json({ error: "try_again" });
+      return;
+    }
+    attestations.push({ receiptId: req.params.id, body: req.body });
+    res.status(201).json({ ok: true });
+  });
+  app.post(`${FACILITATOR_PATH}/telemetry`, (req, res) => {
+    if (!authorized(req)) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    telemetry.push(req.body);
+    res.status(202).json({ accepted: req.body.events?.length ?? 0 });
+  });
   app.post(`${FACILITATOR_PATH}/:op`, async (req, res) => {
     if (!authorized(req)) {
       res.status(401).json({ error: "unauthorized" });
@@ -150,6 +176,11 @@ export async function startFakeBotFare(initial: SiteConfig = siteConfig()) {
     ledger,
     calls,
     settled,
+    attestations,
+    telemetry,
+    failNextAttestations(count: number) {
+      attestFailures = count;
+    },
     setConfig(next: SiteConfig) {
       config = next;
     },
@@ -184,6 +215,18 @@ export async function startPublisher(
       ...botfareOptions,
     }),
   );
+  // Streams its body in several writes (strings and Buffers), for the delivery digest.
+  app.get("/articles/streamed", (_req, res) => {
+    res.type("text/plain");
+    res.write("Part one. ");
+    res.write(Buffer.from("Part two, café. ", "utf8"));
+    res.write("50617274", "hex");
+    res.end(" three.");
+  });
+  // A paid route whose handler fails: the agent is not charged and nothing is attested.
+  app.get("/articles/broken", (_req, res) => {
+    res.status(500).send("Something broke");
+  });
   app.get("/articles/:slug", (req, res) => {
     res.type("html").send(`<h1>${req.params.slug}</h1><p>The full article.</p>`);
   });
