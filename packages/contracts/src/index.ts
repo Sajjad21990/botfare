@@ -174,3 +174,26 @@ export const offerPreviewSchema = z.object({
 });
 
 export type OfferPreview = z.infer<typeof offerPreviewSchema>;
+
+// ---------------------------------------------------------------------------------------------
+// Demo personas (judge mode). The seed script creates these users; the app signs judges in as them.
+
+export const DEMO_PERSONAS = {
+  publisher: {
+    email: "publisher@crema-notes.example",
+    name: "Crema Notes publisher",
+    label: "Publisher",
+    description:
+      "Runs the Crema Notes coffee site, sets prices, watches AI revenue, withdraws to PayPal.",
+    home: "/publisher",
+  },
+  agentOwner: {
+    email: "agent-owner@botfare.example",
+    name: "Demo agent owner",
+    label: "Agent owner",
+    description: "Tops up a wallet with PayPal and gives research agents keys with budgets.",
+    home: "/wallet",
+  },
+} as const;
+
+export type DemoPersona = keyof typeof DEMO_PERSONAS;
