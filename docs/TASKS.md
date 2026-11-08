@@ -12,12 +12,12 @@
 | --- | --- | --- | --- |
 | 0. Setup and proof | Sun 8 | ✅ Done | 10 / 10 |
 | 1. Protocol end to end | Mon 9 | ✅ Done (a day early) | 9 / 9 |
-| 2. Real money and dashboards | Tue 10 | ✅ Done (two items need you) | 9 / 11 |
+| 2. Real money and dashboards | Tue 10 | ✅ Done (one optional item needs you) | 10 / 11 |
 | 3. Agent detection, AI and polish | Wed 11 | 🔄 In progress (detection done) | 3 / 9 |
 | 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
 | 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
 
-**Overall: about 58% done** (31 of 53 items), and ahead of the plan by about two days.
+**Overall: about 60% done** (32 of 53 items), and ahead of the plan by about two days.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -65,7 +65,7 @@
 | ✅ | PayPal webhook endpoint and `pnpm payouts:run` | `/api/paypal/webhook` |
 | ✅ | Demo traffic (~150 paid requests over 14 days), real sandbox Withdraw now, docs, Render cron | `pnpm seed:traffic`; $11.72 Payout batch VLJ8N6ZZVWKQE reached SUCCESS; `botfare-payouts` cron |
 | ✅ | Phase 2 review and fixes: 7 of 8 findings confirmed and fixed (duplicate-batch double payout, UNCLAIMED handling, judge mode so shared personas can't break the demo, AI route limits, traffic rerun) | 227 tests, e2e 9/9; every route exercised over HTTP; app font and phone header fixed |
-| ⏳ | 👤 Approve one wallet top-up in the browser with the sandbox agent-owner account | Needed to prove the v6 button end to end |
+| ✅ | 👤 Approve one wallet top-up in the browser with the sandbox agent-owner account | Done: order 9LL18551JF351230G, capture 4UK59144XL504881G, $5.00 gross, $0.66 PayPal fee, wallet credited |
 | ⏳ | 👤 Optional: AG Studio 45-day trial key in `.env` as `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` | Removes the watermark |
 
 ## Phase 3: Agent detection, AI and polish 🔄
