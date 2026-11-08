@@ -54,6 +54,20 @@ describe("render.yaml", () => {
     }
   });
 
+  it("generates the receipt-signing seed and shares it with the cron job that signs", () => {
+    const yaml = read("render.yaml");
+    const web = /name: botfare-web\n([\s\S]*?)(?=\n {2}- type:)/.exec(yaml)?.[1] ?? "";
+    expect(web).toMatch(/key: BOTFARE_RECEIPT_KEY_SEED\n\s+generateValue: true/);
+    const refresh = /name: botfare-demo-refresh\n([\s\S]*?)(?=\n {2}- type:|\ndatabases:)/.exec(
+      yaml,
+    )?.[1];
+    // seed:traffic settles, attests and refunds receipts, so it signs with botfare-web's key.
+    expect(refresh).toMatch(
+      /key: BOTFARE_RECEIPT_KEY_SEED\n[\s\S]*?envVarKey: BOTFARE_RECEIPT_KEY_SEED/,
+    );
+    expect(refresh).toMatch(/key: BOTFARE_URL\n[\s\S]*?envVarKey: BOTFARE_URL/);
+  });
+
   it("runs the daily payouts job as a cron service with the payouts script", () => {
     const yaml = read("render.yaml");
     const cron = /- type: cron\n([\s\S]*?)(?=\n {2}- type:|\ndatabases:)/.exec(yaml)?.[1] ?? "";

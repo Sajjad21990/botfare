@@ -22,6 +22,14 @@ services:
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
+      # Seed of BotFare's receipt-signing key (signed payment, delivery and refund statements; public
+      # keys at /.well-known/botfare-receipt-keys.json). Generated once; never change it in place:
+      # to rotate, move the old value to BOTFARE_RECEIPT_KEY_SEED_PREVIOUS first.
+      - key: BOTFARE_RECEIPT_KEY_SEED
+        generateValue: true
+      # Optional: retired receipt seeds, comma-separated, kept so old statements still verify.
+      - key: BOTFARE_RECEIPT_KEY_SEED_PREVIOUS
+        sync: false
       # Public https URL of this service, e.g. https://botfare-web.onrender.com: PayPal return URLs
       # (top-ups, Log in with PayPal), the agent API's host check, Signature-Agent, the publisher
       # snippet. The app falls back to RENDER_EXTERNAL_URL, but set it explicitly.
@@ -131,6 +139,18 @@ services:
         fromDatabase:
           name: botfare-db
           property: connectionString
+      # The refresh settles, attests and refunds demo receipts, so it signs their statements with
+      # botfare-web's receipt key and issuer.
+      - key: BOTFARE_RECEIPT_KEY_SEED
+        fromService:
+          type: web
+          name: botfare-web
+          envVarKey: BOTFARE_RECEIPT_KEY_SEED
+      - key: BOTFARE_URL
+        fromService:
+          type: web
+          name: botfare-web
+          envVarKey: BOTFARE_URL
 
 databases:
   - name: botfare-db

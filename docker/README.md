@@ -44,7 +44,7 @@ network at `http://web:3000`.
 `setup` seeds the two judge personas, the Crema Notes site with its prices and bot detection, a
 $5.00 demo wallet, a demo agent key, and two weeks of settled demo traffic so the dashboards have
 data. It writes the site's ID and secret, the demo agent key (for the research agent) and a
-generated `SESSION_SECRET` to `judge.env` on a shared volume (`judge-shared`); `web` and `demo` load that file when they start
+generated `SESSION_SECRET` and receipt-signing seed (`BOTFARE_RECEIPT_KEY_SEED`) to `judge.env` on a shared volume (`judge-shared`); `web` and `demo` load that file when they start
 (`docker/env-entrypoint.sh`). Secrets are never printed: the seed log shows IDs and last four
 characters only. Every step is idempotent, so `up` again reuses the same site secret and agent key.
 
