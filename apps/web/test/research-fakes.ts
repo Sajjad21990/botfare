@@ -155,14 +155,23 @@ export function fakeAgents(
             paid: false,
             receipt: null,
             receiptId: null,
+            receiptStatement: null,
             body: null,
+            readDigest: null,
             offer,
             failureReason: page.refuse,
           };
         }
         const html = page.html ?? `<article><p>${page.title} full text.</p></article>`;
         const response = new Response(html, { headers: { "content-type": "text/html" } });
-        const none = { paid: false, receipt: null, receiptId: null, body: null } as const;
+        const none = {
+          paid: false,
+          receipt: null,
+          receiptId: null,
+          receiptStatement: null,
+          body: null,
+          readDigest: null,
+        } as const;
         if (page.priceCents === 0) return { response, ...none, offer: null };
         onWire?.({
           stage: "payment-signature",
@@ -200,7 +209,9 @@ export function fakeAgents(
           paid: true,
           receipt,
           receiptId: receipt.transaction,
+          receiptStatement: null,
           body: new TextEncoder().encode(html),
+          readDigest: null,
           offer,
         };
       },

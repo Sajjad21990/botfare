@@ -14,6 +14,7 @@ import {
 } from "@botfare/x402-paypal";
 import { x402Facilitator } from "@x402/core/facilitator";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
+import type { PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { paymentMiddleware } from "@x402/express";
 import express from "express";
 
@@ -53,7 +54,15 @@ function listen(app: express.Express): Promise<{ url: string; close: () => Promi
   });
 }
 
-export async function startStack() {
+export interface StackOptions {
+  /** Rewrites each settle response before it reaches the publisher (e.g. adds a signed receipt). */
+  decorateSettle?: (
+    settle: SettleResponse,
+    requirements: PaymentRequirements,
+  ) => Promise<SettleResponse>;
+}
+
+export async function startStack(options: StackOptions = {}) {
   const ledger = new InMemoryLedger();
   const { publicJwk, privateJwk } = await generateAgentKeyPair();
   // The facilitator allows up to $1 per request, so the SDK's own cap is what refuses $0.25.
@@ -83,7 +92,12 @@ export async function startStack() {
     res.json(await facilitator.verify(req.body.paymentPayload, req.body.paymentRequirements));
   });
   facilitatorApp.post("/settle", async (req, res) => {
-    res.json(await facilitator.settle(req.body.paymentPayload, req.body.paymentRequirements));
+    const settle = await facilitator.settle(req.body.paymentPayload, req.body.paymentRequirements);
+    res.json(
+      options.decorateSettle && settle.success
+        ? await options.decorateSettle(settle, req.body.paymentRequirements)
+        : settle,
+    );
   });
   const facilitatorServer = await listen(facilitatorApp);
 

@@ -1,12 +1,17 @@
 import { AGENT_HEADER, decodeAgentKey } from "@botfare/contracts";
-import { type DisputeOutcome, MAX_DISPUTE_CONTENT_BYTES } from "@botfare/contracts/fare";
+import {
+  contentDigestSha256,
+  type DisputeOutcome,
+  MAX_DISPUTE_CONTENT_BYTES,
+} from "@botfare/contracts/fare";
+import type { ReceiptStatements } from "@botfare/contracts/receipts";
 import { createRequestSigner, type RequestSigner } from "@botfare/contracts/web-bot-auth";
 import { PAYPAL_SANDBOX, PrepaidPayPalClient } from "@botfare/x402-paypal";
 import { MAX_CONTROL_PLANE_RESPONSE_BYTES, readLimitedText } from "@x402/core/http";
 import type { SettleResponse } from "@x402/core/types";
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import type { JWK } from "jose";
-import { BotFareAgentKeyError, BotFareSpendLimitError } from "./errors";
+import { BotFareAgentKeyError, BotFareApiError, BotFareSpendLimitError } from "./errors";
 import {
   type CitationReportInput,
   createFareApi,
@@ -15,6 +20,13 @@ import {
 } from "./fare";
 import { type Offer, parseOffer, readPaymentRequired } from "./offer";
 import { readReceipt } from "./receipt";
+import {
+  createReceiptVerifier,
+  type ReceiptVerification,
+  type ReceiptVerifier,
+  readReceiptStatement,
+  type VerifyReceiptOptions,
+} from "./receipts";
 import {
   emitPaymentRequired,
   emitPaymentResponse,
@@ -71,11 +83,21 @@ export interface PaidResult {
   /** The receipt ID (`rcpt_…`) of a settled payment: what `agent.dispute()` takes. */
   receiptId: string | null;
   /**
+   * BotFare's signed payment statement for this receipt (a compact Ed25519 JWS from the
+   * PAYMENT-RESPONSE `extra.botfareReceipt`); null when absent. Check it with `agent.verifyReceipt`.
+   */
+  receiptStatement: string | null;
+  /**
    * The exact bytes delivered for a paid response (what the publisher attested by digest), kept
    * so a Fare Court dispute can submit them; null when nothing was paid or the body was larger
    * than `maxKeptBodyBytes`.
    */
   body: Uint8Array | null;
+  /**
+   * sha-256 Content-Digest (RFC 9530) of `body`, the exact bytes kept for the caller; compare it
+   * with the publisher's signed delivery statement. Null when `body` is null.
+   */
+  readDigest: string | null;
   /** The 402 offer that was paid (or refused by the publisher); null if no 402 was seen. */
   offer: Offer | null;
   /** Why the publisher refused the payment (x402 `error` reason), when the result is still a 402. */
@@ -104,6 +126,18 @@ export interface BotFareAgent {
   decline(offer: { url: string; priceCents: number }, input: DeclineInput): Promise<boolean>;
   /** Fare Advisor: which receipts an answer cited. Best effort; never throws. */
   reportCitations(report: CitationReportInput): Promise<boolean>;
+  /**
+   * Signed receipts: verifies a BotFare statement (payment, delivery or refund) against the receipt
+   * keys BotFare publishes (fetched once and cached), with the BotFare URL as the required issuer.
+   * Never throws; without a BotFare URL the result is `keys_unavailable`.
+   */
+  verifyReceipt(token: string, options?: VerifyReceiptOptions): Promise<ReceiptVerification>;
+  /**
+   * The latest signed statements BotFare holds for a receipt (payment, delivery once the publisher
+   * attested, refund if any); null when BotFare does not know it. Public, unsigned GET. Throws
+   * BotFareApiError when BotFare cannot be read or no BotFare URL is configured.
+   */
+  fetchStatements(receiptId: string): Promise<ReceiptStatements | null>;
 }
 
 export const DEFAULT_MAX_PER_REQUEST_USD = 0.1;
@@ -126,6 +160,11 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
     fetch: options.botfareFetch ?? baseFetch,
   });
   const maxKeptBodyBytes = options.maxKeptBodyBytes ?? MAX_DISPUTE_CONTENT_BYTES;
+  const receipts: ReceiptVerifier | null = botfareUrl
+    ? createReceiptVerifier({ botfareUrl, fetch: options.botfareFetch ?? baseFetch })
+    : null;
+  const noBotFareUrl =
+    "This agent has no BotFare URL: pass botfareUrl to createBotFareAgent or set BOTFARE_URL";
 
   // The official x402 client with BotFare's scheme; spend controls run before the plug-in signs.
   const client = new x402Client()
@@ -185,18 +224,22 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
     const receipt = readReceipt(response);
     const paid = receipt?.success === true;
     let body: Uint8Array | null = null;
+    let readDigest: string | null = null;
     if (paid) {
       // Keep the exact bytes for a possible dispute, and hand back a response that replays them.
       const kept = await keepBody(response, maxKeptBodyBytes);
       body = kept.body;
       response = kept.response;
+      if (body) readDigest = await contentDigestSha256(body);
     }
     return {
       response,
       paid,
       receipt,
       receiptId: paid && receipt?.transaction ? receipt.transaction : null,
+      receiptStatement: paid ? readReceiptStatement(receipt) : null,
       body,
+      readDigest,
       offer,
       ...(response.status === 402 && failureReason ? { failureReason } : {}),
     };
@@ -211,6 +254,14 @@ export function createBotFareAgent(options: BotFareAgentOptions): BotFareAgent {
     dispute: fare.dispute,
     decline: fare.decline,
     reportCitations: fare.reportCitations,
+    verifyReceipt: async (token, verifyOptions) =>
+      receipts
+        ? receipts.verify(token, verifyOptions)
+        : { ok: false, error: "keys_unavailable", message: noBotFareUrl },
+    fetchStatements: async (receiptId) => {
+      if (!receipts) throw new BotFareApiError(0, noBotFareUrl);
+      return receipts.fetchStatements(receiptId);
+    },
   };
 }
 

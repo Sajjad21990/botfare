@@ -10,6 +10,16 @@ export type {
   DisputeStatus,
   DisputeVerdict,
 } from "@botfare/contracts/fare";
+export type {
+  AnswerManifest,
+  AnswerSource,
+  BotFareStatement,
+  DeliveryStatement,
+  PaymentStatement,
+  ReceiptStatements,
+  RefundStatement,
+  StatementKind,
+} from "@botfare/contracts/receipts";
 export {
   createDirectoryKeyResolver,
   createRequestSigner,
@@ -41,4 +51,13 @@ export {
 } from "./fare";
 export { type Offer, parseOffer } from "./offer";
 export { readReceipt } from "./receipt";
+export {
+  createReceiptVerifier,
+  type ReceiptVerification,
+  type ReceiptVerifier,
+  type ReceiptVerifierOptions,
+  readReceiptStatement,
+  type VerifyReceiptOptions,
+  verifyReceipt,
+} from "./receipts";
 export type { WireEvent, WireListener } from "./wire";
