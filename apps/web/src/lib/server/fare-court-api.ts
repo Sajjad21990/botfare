@@ -17,6 +17,7 @@ import {
   toDisputeOutcome,
 } from "@botfare/core";
 import { z } from "zod";
+import type { DisputeView, PublisherDisputes } from "../../components/publisher/disputes-types";
 import { authenticateAgent } from "./agent-auth";
 import { authenticateSiteRequest, unauthorized } from "./auth";
 import { getDb } from "./db";
@@ -164,33 +165,6 @@ export async function handleDispute(request: Request): Promise<Response> {
 // ---------------------------------------------------------------------------------------------
 // Views for the publisher's Disputes tab and the owner's wallet
 
-/** One dispute as the dashboards show it (JSON-safe). */
-export interface DisputeView {
-  id: string;
-  receiptId: string;
-  siteId: string;
-  siteName: string;
-  agentKeyName: string;
-  url: string | null;
-  path: string;
-  amountCents: number;
-  reason: string;
-  note: string | null;
-  /** `open` (waiting for the verdict) reads as pending_publisher. */
-  status: DisputeOutcome["status"];
-  message: string;
-  verdict: DisputeOutcome["verdict"];
-  refundedCents: number;
-  declaredOffer: { title: string; preview: string; wordCount?: number } | null;
-  deliveredExcerpt: string | null;
-  contentDigestOk: boolean;
-  autoAllowed: boolean;
-  decidedBy: string | null;
-  createdAt: string;
-  decidedAt: string | null;
-  purchasedAt: string;
-}
-
 export function toDisputeView(row: DisputeListRow, options: { excerpt: boolean }): DisputeView {
   return {
     id: row.id,
@@ -220,11 +194,6 @@ export function toDisputeView(row: DisputeListRow, options: { excerpt: boolean }
 
 export const PUBLISHER_DISPUTE_LIMIT = 100;
 export const OWNER_DISPUTE_LIMIT = 25;
-
-export interface PublisherDisputes {
-  pendingCount: number;
-  disputes: DisputeView[];
-}
 
 export async function getPublisherDisputes(
   publisherUserId: string,

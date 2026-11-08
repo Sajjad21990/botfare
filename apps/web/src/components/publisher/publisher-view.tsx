@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { AddSiteDialog } from "./add-site-dialog";
 import { api } from "./api";
+import { DisputesLink } from "./disputes-link";
 import { EarningsCard, PayoutEmailCard, PayoutHistory } from "./earnings";
 import { SiteCard } from "./site-card";
 import type { PayoutView, PublisherDashboard, SiteView } from "./types";
@@ -73,11 +74,12 @@ export function PublisherView({
             Price your pages for AI agents and get paid through PayPal.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link href="/publisher/analytics" className={buttonVariants({ variant: "outline" })}>
             <BarChart3 />
             Analytics
           </Link>
+          <DisputesLink />
           {data.sites.length > 0 && (
             <AddSiteDialog
               defaultPayoutEmail={data.payoutEmail}
