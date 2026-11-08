@@ -3,13 +3,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import { schema } from "@botfare/core";
 import { createBotFareAgent } from "@botfare/sdk";
 import { getDb } from "./db";
+import { createRewritingFetch, demoOriginRewrite, demoPublicOrigin } from "./demo-origin";
 import { DEFAULT_MODEL, type ResearchDeps } from "./research-agent";
 import { normalizeUrl, type ResearchSite, readTextLimited } from "./research-tools";
 
 /**
  * Wiring for the research agent on this server: the Anthropic client, the demo agent key
  * (BOTFARE_AGENT_KEY, seeded for the agent-owner persona; it never reaches the model or the
- * browser) and the BotFare sites from the database.
+ * browser) and the BotFare sites from the database. Requests for the demo's public origin go to
+ * DEMO_INTERNAL_URL when it is set (lib/server/demo-origin: the judge Docker stack).
  */
 
 const MAX_SITES = 10;
@@ -61,8 +63,9 @@ function isPrivateHost(hostname: string): boolean {
 
 /**
  * Sites the agent may read: one per origin, oldest first. In production, origins on private or
- * loopback hosts are left out (other than the configured demo publisher), so a registered site
- * cannot point the server at its own network.
+ * loopback hosts are left out (other than the configured demo publisher: DEMO_PUBLIC_URL or
+ * DEMO_ORIGIN), so a registered site cannot point the server at its own network. The demo's
+ * DEMO_INTERNAL_URL is operator configuration and is reached only through that trusted origin.
  */
 export function selectSites(
   rows: { id: string; name: string; origin: string; createdAt: Date }[],
@@ -102,12 +105,17 @@ async function loadSites(): Promise<ResearchSite[]> {
     .from(schema.sites);
   return selectSites(rows, {
     production: process.env.NODE_ENV === "production",
-    trustedOrigins: [process.env.DEMO_ORIGIN ?? ""].filter(Boolean),
+    trustedOrigins: [process.env.DEMO_ORIGIN ?? "", demoPublicOrigin() ?? ""].filter(Boolean),
   });
 }
 
-async function fetchCatalog(site: ResearchSite, signal: AbortSignal): Promise<unknown> {
-  const response = await fetch(`${site.origin}/catalog.json`, {
+/** GET <origin>/catalog.json with a size and time limit, through `fetchImpl`. */
+export async function fetchCatalogWith(
+  fetchImpl: typeof fetch,
+  site: ResearchSite,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const response = await fetchImpl(`${site.origin}/catalog.json`, {
     headers: { accept: "application/json" },
     redirect: "error",
     signal: AbortSignal.any([signal, AbortSignal.timeout(CATALOG_TIMEOUT_MS)]),
@@ -120,6 +128,8 @@ async function fetchCatalog(site: ResearchSite, signal: AbortSignal): Promise<un
 }
 
 export function createResearchDeps(config: Extract<ResearchConfig, { ok: true }>): ResearchDeps {
+  // Server-side only: the model and the browser keep seeing the public URLs.
+  const serverFetch = createRewritingFetch(demoOriginRewrite());
   return {
     client: new Anthropic({ apiKey: config.apiKey, maxRetries: 1, timeout: 60_000 }),
     model: config.model,
@@ -128,8 +138,9 @@ export function createResearchDeps(config: Extract<ResearchConfig, { ok: true }>
         agentKey: config.agentKey,
         maxPerRequestUsd: maxPerRequestCents / 100,
         onWire,
+        fetch: serverFetch,
       }),
     loadSites,
-    fetchCatalog,
+    fetchCatalog: (site, signal) => fetchCatalogWith(serverFetch, site, signal),
   };
 }

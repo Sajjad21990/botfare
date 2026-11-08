@@ -5,8 +5,8 @@
 #   1. pnpm db:migrate     applies the Drizzle migrations to the judge database
 #   2. pnpm seed           judge personas, the Crema Notes site, a $5.00 wallet, a demo agent key
 #   3. pnpm seed:traffic   two weeks of settled demo traffic for the dashboards
-#   4. writes /run/botfare/judge.env (SESSION_SECRET, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET)
-#      for the web and demo containers
+#   4. writes /run/botfare/judge.env (SESSION_SECRET, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET,
+#      BOTFARE_AGENT_KEY for the research agent) for the web and demo containers
 #
 # pnpm seed reads and writes the repo-root .env (/app/.env). Here that file is a link to
 # /run/botfare/seed.env on the shared volume, so a rerun keeps the same site secret and agent key.
@@ -38,6 +38,8 @@ tmp="$SHARED/judge.env.tmp"
   echo "SESSION_SECRET=$session_secret"
   echo "BOTFARE_SITE_ID=$(value_of BOTFARE_SITE_ID "$SHARED/seed.env")"
   echo "BOTFARE_SITE_SECRET=$(value_of BOTFARE_SITE_SECRET "$SHARED/seed.env")"
+  # The seeded demo agent key (10c per request, $1.00 a day): the web app's research agent pays with it.
+  echo "BOTFARE_AGENT_KEY=$(value_of BOTFARE_AGENT_KEY "$SHARED/seed.env")"
 } >"$tmp"
 mv "$tmp" "$SHARED/judge.env"
 # The web and demo containers run as the unprivileged node user.

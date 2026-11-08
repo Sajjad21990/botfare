@@ -52,6 +52,8 @@ services:
       # Public URLs as a browser or an agent on the host sees them.
       BOTFARE_URL: http://localhost:3300
       DEMO_ORIGIN: http://localhost:4300
+      # Silences pnpm seed's "restart the demo" hint: the demo container starts after setup.
+      BOTFARE_JUDGE_DOCKER: "1"
     volumes:
       - judge-shared:/run/botfare
     networks: [judge]
@@ -73,6 +75,12 @@ services:
       DATABASE_URL: postgres://botfare:botfare@db:5432/botfare
       # Public URL: PayPal return URLs and the publisher snippet.
       BOTFARE_URL: http://localhost:3300
+      # The demo as browsers and agents on the host see it (the /judge curl commands, the
+      # research agent's sources), and where this container reaches it instead: localhost inside
+      # the container is the container itself, so the research agent's requests for
+      # http://localhost:4300 go to the demo service on the compose network (lib/server/demo-origin).
+      DEMO_PUBLIC_URL: http://localhost:4300
+      DEMO_INTERNAL_URL: http://demo:4000
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
     ports:

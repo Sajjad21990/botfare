@@ -19,6 +19,9 @@
  *                         botfare-demo's Render environment (README "Deploy")
  *
  * Without --print-secrets, secrets are never printed: only IDs and the last four characters.
+ *
+ * BOTFARE_JUDGE_DOCKER=1 (set by docker-compose.full.yml's setup service) drops the "restart the
+ * demo" hint: in the judge Docker stack the demo starts after the seed and reads the new secret.
  */
 
 import { parseArgs } from "node:util";
@@ -170,7 +173,8 @@ async function main(): Promise<void> {
     console.log(
       "\nWrote BOTFARE_URL, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET and BOTFARE_AGENT_KEY to .env",
     );
-    if (action !== "kept") {
+    // In the judge Docker stack the demo container starts after this and loads the new secret.
+    if (action !== "kept" && process.env.BOTFARE_JUDGE_DOCKER !== "1") {
       console.log("Restart the demo (pnpm dev:demo) so it picks up the new site secret.");
     }
     if (flags["print-secrets"]) {
