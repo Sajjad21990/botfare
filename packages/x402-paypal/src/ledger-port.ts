@@ -19,6 +19,11 @@ export interface ChargeRequest {
   resourceUrl?: string;
   /** Unix seconds after which the authorization (and its nonce) is dead. */
   expiresAt: number;
+  /**
+   * The publisher's `extra` from the payment requirements, as the resource server sent them to
+   * verify/settle (BotFare's middleware puts `botfareSignal` here: why it asked for payment).
+   */
+  extra?: Record<string, unknown>;
 }
 
 /** A refusal. For a reused nonce, `originalTransaction` names the receipt it was charged under. */

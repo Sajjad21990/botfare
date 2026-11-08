@@ -187,6 +187,7 @@ export class PrepaidPayPalFacilitator implements SchemeNetworkFacilitator {
         network: requirements.network,
         resourceUrl: payload.resource?.url,
         expiresAt: claims.exp,
+        ...(requirements.extra ? { extra: requirements.extra } : {}),
       },
     };
   }

@@ -2,33 +2,39 @@
  * Signed agents, Web Bot Auth style: HTTP Message Signatures (RFC 9421) with Ed25519 keys that
  * BotFare publishes as a JWKS at `${BOTFARE_URL}/.well-known/http-message-signatures-directory`.
  *
- * What a signed request carries (the format Cloudflare verifies, which the SDK signs too):
+ * The wire format, the signature base and the verification itself live in one shared module,
+ * `@botfare/contracts/web-bot-auth`: the SDK signs with `createRequestSigner` and this file
+ * verifies with `verifySignedRequest`, so signer and verifier cannot drift apart. A signed request
+ * carries (the format Cloudflare verifies):
  *
  *   Signature-Agent: "https://botfare.example"
- *   Signature-Input: sig1=("@authority" "signature-agent");created=1762600000;expires=1762600060;keyid="<JWK thumbprint>";alg="ed25519";nonce="<base64url>";tag="web-bot-auth"
+ *   Signature-Input: sig1=("@authority" "signature-agent");created=1762600000;keyid="<JWK thumbprint>";alg="ed25519";expires=1762600060;nonce="<base64url>";tag="web-bot-auth"
  *   Signature: sig1=:<base64 Ed25519 signature>:
  *
- * The signature covers this base (RFC 9421 §2.5), lines joined by "\n", no trailing newline:
- *
- *   "@authority": publisher.example:4000
- *   "signature-agent": "https://botfare.example"
- *   "@signature-params": ("@authority" "signature-agent");created=…;expires=…;keyid="…";alg="ed25519";nonce="…";tag="web-bot-auth"
- *
- * Rules: the member tagged `web-bot-auth` is used (any label); `keyid` is the RFC 7638 / RFC 8037
- * SHA-256 JWK thumbprint (base64url) of the agent's public key; `created` and `expires` are
- * required, `created` may be at most 5 s in the future, the signature is refused after `expires`
- * (5 s skew) and may live at most 24 h; `alg`, if present, must be `ed25519`; `@authority` or
- * `@target-uri` must be covered, and `signature-agent` too when that header is sent.
+ * What this file adds for publishers: the key directory (always BotFare's own, from the
+ * middleware's `botfareUrl`, never the URL a request names), the publisher's timing policy
+ * (`created` at most 5 s in the future, lifetime at most 24 h), and proxies (the signed authority
+ * may be the public host in X-Forwarded-Host).
  *
  * A signature that fails any check is ignored, never punished: the request is scored as if it
  * were unsigned.
  */
-import { createHash, createPublicKey, type KeyObject, verify } from "node:crypto";
+import { createHash } from "node:crypto";
 import { SIGNATURE_DIRECTORY_PATH } from "@botfare/contracts";
-import { parseDictionary, type SfItem } from "./structured-fields";
+import {
+  BOTFARE_KEY_ID_MEMBER,
+  type Ed25519PublicJwk,
+  isEd25519PublicJwk,
+  parseSignatureDirectory,
+  SIGNATURE_DIRECTORY_MEDIA_TYPE,
+  SIGNATURE_HEADERS,
+  verifySignedRequest,
+  WEB_BOT_AUTH_TAG,
+} from "@botfare/contracts/web-bot-auth";
 import type { DetectionRequest } from "./types";
 
-export const WEB_BOT_AUTH_TAG = "web-bot-auth";
+export { WEB_BOT_AUTH_TAG };
+
 const CLOCK_SKEW_SECONDS = 5;
 const MAX_LIFETIME_SECONDS = 24 * 60 * 60;
 
@@ -42,8 +48,8 @@ export type SignatureCheck =
 
 export interface DirectoryKey {
   thumbprint: string;
-  publicKey: KeyObject;
-  /** The BotFare agent key ID (`ak_…`) when the directory names it in `kid`. */
+  jwk: Ed25519PublicJwk;
+  /** The BotFare agent key ID (`ak_…`): the directory's `botfare_key_id`, or an `ak_` `kid`. */
   agentKeyId?: string;
   /** Optional validity window (Unix seconds) from the JWK's `nbf` / `exp`. */
   nbf?: number;
@@ -61,7 +67,10 @@ export interface SignatureDirectoryOptions {
 
 const FETCH_TIMEOUT_MS = 3_000;
 
-/** RFC 7638 thumbprint of an Ed25519 public JWK (RFC 8037 A.3): SHA-256 over `{crv,kty,x}`. */
+/**
+ * RFC 7638 thumbprint of an Ed25519 public JWK (RFC 8037 A.3): SHA-256 over `{crv,kty,x}`.
+ * Synchronous twin of the contracts' WebCrypto `jwkThumbprint`; both give the same value.
+ */
 export function jwkThumbprint(jwk: { crv: string; kty: string; x: string }): string {
   const canonical = JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x });
   return createHash("sha256").update(canonical).digest("base64url");
@@ -106,16 +115,14 @@ export class SignatureDirectory {
     this.attemptedAt = Date.now();
     try {
       const res = await fetch(this.url, {
-        headers: { accept: "application/http-message-signatures-directory+json, application/json" },
+        headers: { accept: `${SIGNATURE_DIRECTORY_MEDIA_TYPE}, application/json` },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { keys?: unknown };
-      const list = Array.isArray(body.keys) ? body.keys : body.keys ? [body.keys] : [];
       const keys = new Map<string, DirectoryKey>();
-      for (const jwk of list) {
+      for (const jwk of parseSignatureDirectory(await res.json())) {
         const key = toDirectoryKey(jwk);
-        if (key) keys.set(key.thumbprint, key);
+        keys.set(key.thumbprint, key);
       }
       this.keys = keys;
       this.fetchedAt = Date.now();
@@ -125,24 +132,22 @@ export class SignatureDirectory {
   }
 }
 
-function toDirectoryKey(jwk: unknown): DirectoryKey | undefined {
-  if (!jwk || typeof jwk !== "object") return undefined;
-  const { kty, crv, x, kid, nbf, exp, d } = jwk as Record<string, unknown>;
-  if (kty !== "OKP" || crv !== "Ed25519" || typeof x !== "string" || d !== undefined) {
-    return undefined;
-  }
-  try {
-    const publicKey = createPublicKey({ key: { kty, crv, x }, format: "jwk" });
-    return {
-      thumbprint: jwkThumbprint({ kty, crv, x }),
-      publicKey,
-      agentKeyId: typeof kid === "string" && kid.startsWith("ak_") ? kid : undefined,
-      nbf: typeof nbf === "number" ? nbf : undefined,
-      exp: typeof exp === "number" ? exp : undefined,
-    };
-  } catch {
-    return undefined;
-  }
+function toDirectoryKey(jwk: Ed25519PublicJwk): DirectoryKey {
+  const { kid, nbf, exp } = jwk;
+  const named = jwk[BOTFARE_KEY_ID_MEMBER];
+  const agentKeyId =
+    typeof named === "string"
+      ? named
+      : typeof kid === "string" && kid.startsWith("ak_")
+        ? kid
+        : undefined;
+  return {
+    thumbprint: jwkThumbprint(jwk),
+    jwk,
+    agentKeyId,
+    nbf: typeof nbf === "number" ? nbf : undefined,
+    exp: typeof exp === "number" ? exp : undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -150,7 +155,24 @@ function toDirectoryKey(jwk: unknown): DirectoryKey | undefined {
 
 /** True when the request carries Web Bot Auth headers at all (cheap; no parsing). */
 export function hasSignatureHeaders(req: DetectionRequest): boolean {
-  return Boolean(req.get("signature-input") && req.get("signature"));
+  return Boolean(req.get(SIGNATURE_HEADERS.signatureInput) && req.get(SIGNATURE_HEADERS.signature));
+}
+
+/**
+ * The request headers the verifier may need: the three signature headers plus every quoted name
+ * in Signature-Input (covered fields; anything else that matches is simply absent).
+ */
+function signedHeaders(req: DetectionRequest, inputHeader: string): Array<[string, string]> {
+  const names = new Set<string>(Object.values(SIGNATURE_HEADERS));
+  for (const match of inputHeader.matchAll(/"([a-z0-9][a-z0-9_.-]*)"/g)) {
+    if (match[1]) names.add(match[1]);
+  }
+  const entries: Array<[string, string]> = [];
+  for (const name of names) {
+    const value = req.get(name);
+    if (value !== undefined) entries.push([name, value]);
+  }
+  return entries;
 }
 
 export async function checkSignedAgent(
@@ -158,140 +180,50 @@ export async function checkSignedAgent(
   directory: SignatureDirectory | undefined,
   nowSeconds: number,
 ): Promise<SignatureCheck> {
-  const inputHeader = req.get("signature-input");
-  const signatureHeader = req.get("signature");
-  if (!inputHeader || !signatureHeader) return { status: "absent" };
+  const inputHeader = req.get(SIGNATURE_HEADERS.signatureInput);
+  if (!inputHeader || !req.get(SIGNATURE_HEADERS.signature)) return { status: "absent" };
   if (!directory) return { status: "invalid", reason: "no key directory configured" };
 
-  let inputs: ReturnType<typeof parseDictionary>;
-  let signatures: ReturnType<typeof parseDictionary>;
-  try {
-    inputs = parseDictionary(inputHeader);
-    signatures = parseDictionary(signatureHeader);
-  } catch {
-    return { status: "invalid", reason: "malformed signature headers" };
-  }
-
-  // The member tagged web-bot-auth, whatever its label.
-  const entry = [...inputs].find(([, m]) => m.list && m.params.get("tag") === WEB_BOT_AUTH_TAG);
-  if (!entry) return { status: "invalid", reason: `no ${WEB_BOT_AUTH_TAG} signature` };
-  const [label, input] = entry;
-  const components = input.list as SfItem[];
-  const sigValue = signatures.get(label)?.item?.value;
-  if (!(sigValue instanceof Uint8Array)) {
-    return { status: "invalid", reason: `no Signature for ${label}` };
-  }
-
-  const keyid = input.params.get("keyid");
-  const created = input.params.get("created");
-  const expires = input.params.get("expires");
-  const alg = input.params.get("alg");
-  if (typeof keyid !== "string" || !keyid) return { status: "invalid", reason: "missing keyid" };
-  if (!Number.isInteger(created) || !Number.isInteger(expires)) {
-    return { status: "invalid", reason: "missing created/expires" };
-  }
-  if (alg !== undefined && alg !== "ed25519") {
-    return { status: "invalid", reason: `unsupported alg ${String(alg)}` };
-  }
-  const createdAt = created as number;
-  const expiresAt = expires as number;
-  if (createdAt > nowSeconds + CLOCK_SKEW_SECONDS) {
-    return { status: "invalid", reason: "created in the future" };
-  }
-  if (nowSeconds > expiresAt + CLOCK_SKEW_SECONDS) return { status: "invalid", reason: "expired" };
-  if (expiresAt < createdAt || expiresAt - createdAt > MAX_LIFETIME_SECONDS) {
-    return { status: "invalid", reason: "lifetime above 24 h" };
-  }
-
-  const names = components.map((c) => c.value);
-  if (!names.includes("@authority") && !names.includes("@target-uri")) {
-    return { status: "invalid", reason: "@authority not covered" };
-  }
-  if (req.get("signature-agent") !== undefined && !names.includes("signature-agent")) {
-    return { status: "invalid", reason: "signature-agent not covered" };
-  }
-
-  const key = await directory.keyFor(keyid);
-  if (!key) return { status: "invalid", reason: "unknown keyid" };
-  if ((key.nbf && nowSeconds < key.nbf) || (key.exp && nowSeconds > key.exp)) {
-    return { status: "invalid", reason: "key outside its validity window" };
-  }
+  const headers = signedHeaders(req, inputHeader);
+  const keys = new Map<string, DirectoryKey>();
+  const resolveKey = async (keyid: string) => {
+    const key = await directory.keyFor(keyid);
+    if (!key || !isEd25519PublicJwk(key.jwk)) return null;
+    if ((key.nbf && nowSeconds < key.nbf) || (key.exp && nowSeconds > key.exp)) return null;
+    keys.set(keyid, key);
+    return key.jwk;
+  };
 
   // Behind a proxy the agent signed the public host; try X-Forwarded-Host as a second candidate.
   const hosts = [req.get("host"), req.get("x-forwarded-host")?.split(",")[0]?.trim()].filter(
     (h, i, all): h is string => Boolean(h) && all.indexOf(h) === i,
   );
+  let reason = "no Host header";
   for (const host of hosts) {
-    const base = signatureBase(req, host, components, input.raw);
-    if (base === undefined) return { status: "invalid", reason: "uncoverable component" };
-    if (verify(null, Buffer.from(base, "utf8"), key.publicKey, sigValue)) {
-      return { status: "valid", keyid, agentKeyId: key.agentKeyId };
+    let url: URL;
+    try {
+      url = new URL(req.originalUrl, `${req.protocol.toLowerCase()}://${host}`);
+    } catch {
+      reason = "invalid host";
+      continue;
     }
+    const result = await verifySignedRequest({
+      url,
+      authority: host,
+      method: req.method,
+      headers: headers,
+      resolveKey,
+      now: nowSeconds,
+      clockSkewSeconds: CLOCK_SKEW_SECONDS,
+      maxValiditySeconds: MAX_LIFETIME_SECONDS,
+    });
+    if (result.ok) {
+      const agentKeyId = keys.get(result.keyid)?.agentKeyId ?? result.botfareKeyId ?? undefined;
+      return { status: "valid", keyid: result.keyid, agentKeyId };
+    }
+    reason = `${result.reason}: ${result.message}`;
+    // Only a signature mismatch depends on the authority; anything else fails for every host.
+    if (result.reason !== "bad-signature") break;
   }
-  return { status: "invalid", reason: "bad signature" };
-}
-
-/** The RFC 9421 signature base, or undefined when a covered component cannot be produced. */
-export function signatureBase(
-  req: DetectionRequest,
-  host: string,
-  components: SfItem[],
-  signatureParams: string,
-): string | undefined {
-  const lines: string[] = [];
-  for (const component of components) {
-    const value = componentValue(req, host, component);
-    if (value === undefined) return undefined;
-    lines.push(`${component.raw}: ${value}`);
-  }
-  lines.push(`"@signature-params": ${signatureParams}`);
-  return lines.join("\n");
-}
-
-function componentValue(
-  req: DetectionRequest,
-  host: string,
-  component: SfItem,
-): string | undefined {
-  const name = component.value;
-  if (typeof name !== "string") return undefined;
-  const scheme = req.protocol.toLowerCase();
-  const url = new URL(req.originalUrl, `${scheme}://${host}`);
-  switch (name) {
-    case "@authority":
-      return authority(host, scheme);
-    case "@method":
-      return req.method.toUpperCase();
-    case "@scheme":
-      return scheme;
-    case "@target-uri":
-      return `${scheme}://${authority(host, scheme)}${url.pathname}${url.search}`;
-    case "@request-target":
-      return `${url.pathname}${url.search}`;
-    case "@path":
-      return url.pathname;
-    case "@query":
-      return url.search || "?";
-  }
-  if (name.startsWith("@") || name !== name.toLowerCase()) return undefined;
-  const raw = req.get(name);
-  if (raw === undefined) return undefined;
-  const value = raw.trim();
-  const member = component.params.get("key");
-  if (member === undefined) return value;
-  // `"signature-agent";key="sig1"`: the serialized dictionary member (draft's dictionary form).
-  if (typeof member !== "string") return undefined;
-  try {
-    return parseDictionary(value).get(member)?.raw;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Host as RFC 9421 wants it: lower case, default port dropped. */
-function authority(host: string, scheme: string): string {
-  const lower = host.toLowerCase();
-  if (scheme === "http" && lower.endsWith(":80")) return lower.slice(0, -3);
-  if (scheme === "https" && lower.endsWith(":443")) return lower.slice(0, -4);
-  return lower;
+  return { status: "invalid", reason };
 }

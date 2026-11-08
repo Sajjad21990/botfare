@@ -22,6 +22,20 @@ describe("PrepaidPayPalFacilitator", () => {
     expect(ledger.totalMicros()).toBe(0);
   });
 
+  it("hands the requirements' extra (the detection signal) to the ledger on settle", async () => {
+    const { facilitator, pay, ledger } = await setup();
+    const seen: Array<Record<string, unknown> | undefined> = [];
+    const charge = ledger.charge.bind(ledger);
+    ledger.charge = (request) => {
+      seen.push(request.extra);
+      return charge(request);
+    };
+    const withSignal = { ...requirements, extra: { botfareSignal: "signed-agent" } };
+    const result = await facilitator.settle(await pay(), withSignal);
+    expect(result.success).toBe(true);
+    expect(seen).toEqual([{ botfareSignal: "signed-agent" }]);
+  });
+
   it("rejects a replayed payment but points at the original receipt", async () => {
     const { facilitator, pay, ledger } = await setup();
     const payload = await pay();

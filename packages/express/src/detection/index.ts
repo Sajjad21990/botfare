@@ -14,6 +14,5 @@ export {
   checkSignedAgent,
   jwkThumbprint,
   SignatureDirectory,
-  signatureBase,
   WEB_BOT_AUTH_TAG,
 } from "./web-bot-auth";
