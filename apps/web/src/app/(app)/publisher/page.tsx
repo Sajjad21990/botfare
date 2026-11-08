@@ -14,9 +14,9 @@ export default async function Page() {
   return <PublisherView initial={initial} botfareUrl={await botfareUrl()} />;
 }
 
-/** The URL publishers put in BOTFARE_URL: the configured one, else this request's origin. */
+/** The URL publishers put in BOTFARE_URL: the configured one (or Render's), else this request's origin. */
 async function botfareUrl(): Promise<string> {
-  const configured = process.env.BOTFARE_URL?.trim();
+  const configured = process.env.BOTFARE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim();
   if (configured) return configured.replace(/\/+$/, "");
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";

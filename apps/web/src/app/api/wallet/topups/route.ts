@@ -25,7 +25,12 @@ export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request, bodySchema);
   if (!body.ok) return body.response;
 
-  const base = process.env.BOTFARE_URL || new URL(request.url).origin;
+  // Render sets RENDER_EXTERNAL_URL to the public URL; behind its proxy request.url may not be.
+  const base = (
+    process.env.BOTFARE_URL?.trim() ||
+    process.env.RENDER_EXTERNAL_URL?.trim() ||
+    new URL(request.url).origin
+  ).replace(/\/+$/, "");
   try {
     const { orderId } = await startTopUp(getDb(), currentPayPal(), {
       ownerUserId: auth.user.id,
