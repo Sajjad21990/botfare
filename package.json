@@ -15,6 +15,7 @@
     "test": "vitest run",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @botfare/core db:migrate",
     "spike:01": "tsx scripts/spike/01-oauth.ts",
     "spike:02": "tsx scripts/spike/02-topup.ts",
     "spike:02b": "tsx scripts/spike/02b-capture.ts",
