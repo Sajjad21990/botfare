@@ -1,10 +1,14 @@
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { migrate as runMigrations } from "drizzle-orm/postgres-js/migrator";
 import { createDb } from "./db";
 
-/** packages/core/drizzle, resolved lazily so bundlers never try to inline the folder. */
+/**
+ * packages/core/drizzle. Built with node:path rather than `new URL("../drizzle", import.meta.url)`,
+ * which bundlers such as Turbopack treat as an asset import and fail on (it is a directory).
+ */
 export function migrationsFolder(): string {
-  return fileURLToPath(new URL("../drizzle", import.meta.url));
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "drizzle");
 }
 
 /** Applies the SQL migrations in packages/core/drizzle to the database at `url`. */

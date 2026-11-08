@@ -16,12 +16,6 @@ const nextConfig: NextConfig = {
     "@botfare/paypal",
   ],
   serverExternalPackages: ["postgres"],
-  turbopack: {
-    // @botfare/core's migrate() points at its drizzle folder with `new URL("../drizzle",
-    // import.meta.url)`, which Turbopack tries to bundle as an asset and cannot (it is a
-    // directory). The web app never runs migrations (use `pnpm db:migrate`), so stub it out.
-    resolveAlias: { "../drizzle": "./src/lib/server/no-migrations.ts" },
-  },
 };
 
 export default nextConfig;
