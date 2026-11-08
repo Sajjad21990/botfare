@@ -12,6 +12,7 @@ import { Problem } from "@/components/landing/problem";
 import { SiteFooter } from "@/components/landing/site-footer";
 import { SiteHeader } from "@/components/landing/site-header";
 import { Thesis } from "@/components/landing/thesis";
+import { Trust } from "@/components/landing/trust";
 
 export const metadata: Metadata = {
   title: "BotFare: every bot pays its fare",
@@ -34,6 +35,7 @@ export default function Home() {
         <PillarCourt />
         <PillarAdvisor />
         <HowItWorks />
+        <Trust />
         <BuiltOn />
       </main>
       <SiteFooter />
