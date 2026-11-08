@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { AddSiteDialog } from "./add-site-dialog";
+import { FareAdvisorCard } from "./advisor/fare-advisor-card";
 import { api } from "./api";
 import { DisputesLink } from "./disputes-link";
 import { EarningsCard, PayoutEmailCard, PayoutHistory } from "./earnings";
@@ -22,6 +23,8 @@ export function PublisherView({
   botfareUrl: string;
 }) {
   const [data, setData] = useState(initial);
+  // Bumped when Fare Advisor changes a site's prices, so that site's pricing editor reloads them.
+  const [advisorApplied, setAdvisorApplied] = useState<Record<string, number>>({});
 
   const reload = useCallback(async () => {
     try {
@@ -58,6 +61,11 @@ export function PublisherView({
   function addSite(site: SiteView) {
     setData((current) => ({ ...current, sites: [site, ...current.sites] }));
     void reload();
+  }
+
+  function applyFromAdvisor(site: SiteView) {
+    replaceSite(site);
+    setAdvisorApplied((current) => ({ ...current, [site.id]: (current[site.id] ?? 0) + 1 }));
   }
 
   function addPayout(payout: PayoutView) {
@@ -109,6 +117,8 @@ export function PublisherView({
         }}
       />
 
+      {data.sites.length > 0 && <FareAdvisorCard sites={data.sites} onApplied={applyFromAdvisor} />}
+
       <section className="space-y-4">
         <div className="flex items-end justify-between gap-4">
           <div className="space-y-1">
@@ -140,7 +150,12 @@ export function PublisherView({
         ) : (
           <div className="space-y-4">
             {data.sites.map((site) => (
-              <SiteCard key={site.id} site={site} botfareUrl={botfareUrl} onChange={replaceSite} />
+              <SiteCard
+                key={`${site.id}:${advisorApplied[site.id] ?? 0}`}
+                site={site}
+                botfareUrl={botfareUrl}
+                onChange={replaceSite}
+              />
             ))}
           </div>
         )}
