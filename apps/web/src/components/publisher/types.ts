@@ -1,0 +1,72 @@
+/**
+ * JSON shapes of the publisher dashboard (GET /api/publisher/summary and the page's initial data).
+ * Types only, so client components can import them without pulling in server code.
+ */
+import type { PricingRule } from "@botfare/contracts";
+
+export type PayoutStatusView =
+  | "pending"
+  | "processing"
+  | "success"
+  | "failed"
+  | "returned"
+  | "unclaimed"
+  | "reversed";
+
+export interface PayoutView {
+  id: string;
+  amountCents: number;
+  receiverEmail: string;
+  status: PayoutStatusView;
+  /** PayPal's payout_batch_id, once PayPal accepted the batch. */
+  paypalBatchId: string | null;
+  /** Our sender_batch_id. */
+  batchKey: string;
+  error: string | null;
+  /** True when the amount went back to available earnings. */
+  reversed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SiteView {
+  id: string;
+  name: string;
+  origin: string;
+  payoutEmail: string | null;
+  pricing: PricingRule[];
+  freePaths: string[];
+  chargeKnownBots: boolean;
+  version: string;
+  createdAt: string;
+  paidRequests: number;
+  /** After BotFare's 5%, settled receipts only. */
+  earningsMicros: number;
+}
+
+export interface PublisherDashboard {
+  /** Available to withdraw now. */
+  earningsMicros: number;
+  lifetimeEarningsMicros: number;
+  paidRequests: number;
+  /** The user's payout email, falling back to their first site's. */
+  payoutEmail: string | null;
+  /** True when payoutEmail is set on the user, not inherited from a site. */
+  payoutEmailOnProfile: boolean;
+  minimumPayoutCents: number;
+  payouts: PayoutView[];
+  /** Newest first. */
+  sites: SiteView[];
+}
+
+/** POST /api/publisher/sites and POST /api/publisher/sites/[siteId]/rotate-secret. */
+export interface SiteSecretResponse {
+  site: SiteView;
+  /** Shown once; BotFare keeps only its hash. */
+  siteSecret: string;
+}
+
+export interface ApiErrorBody {
+  error: string;
+  message: string;
+}
