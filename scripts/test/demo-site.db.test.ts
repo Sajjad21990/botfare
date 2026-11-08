@@ -1,4 +1,9 @@
-import { authenticateSite, getSite } from "@botfare/core";
+import {
+  CREMA_NOTES_DETECTION,
+  DEFAULT_DETECTION,
+  detectionConfigSchema,
+} from "@botfare/contracts";
+import { authenticateSite, getSite, updateSiteDetection } from "@botfare/core";
 import { afterAll, describe, expect, it } from "vitest";
 import { freePaths, pricing } from "../../apps/demo/src/pricing";
 import { makeUser, openTestDb } from "../../packages/core/test/helpers";
@@ -30,7 +35,22 @@ describe("ensureDemoSite", () => {
     expect(row?.origin).toBe(DEPLOYED);
     expect(row?.pricing).toHaveLength(pricing.length);
     expect(row?.freePaths).toEqual(freePaths);
+    expect(row?.detection).toEqual(detectionConfigSchema.parse(CREMA_NOTES_DETECTION));
     expect(await authenticateSite(db, site.siteId, site.siteSecret)).not.toBeNull();
+  });
+
+  it("puts Crema Notes' bot detection back on a rerun", async () => {
+    const publisher = await makeUser(db, "seed-publisher");
+    const base = { publisherId: publisher.id, origin: DEFAULT_DEMO_ORIGIN, payoutEmail: null };
+    const first = await ensureDemoSite(db, base);
+    await updateSiteDetection(db, { siteId: first.siteId, detection: DEFAULT_DETECTION });
+    await ensureDemoSite(db, {
+      ...base,
+      current: { siteId: first.siteId, siteSecret: first.siteSecret },
+    });
+    expect((await getSite(db, first.siteId))?.detection).toEqual(
+      detectionConfigSchema.parse(CREMA_NOTES_DETECTION),
+    );
   });
 
   it("keeps a working secret on a rerun, so a configured demo keeps charging", async () => {

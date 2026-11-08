@@ -62,6 +62,10 @@ services:
         sync: false
       - key: BOTFARE_SITE_SECRET
         sync: false
+      # Optional: Cloudflare Turnstile secret for the human check. Empty is fine while Crema Notes
+      # uses Cloudflare's test site key: botfare() then uses Cloudflare's always-pass test secret.
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
 
   # Daily PayPal Payouts: one batch for every publisher with $1.00+ of earnings and a payout email,
   # then a status sync of open payouts. Idempotent, so a rerun from the dashboard is safe.

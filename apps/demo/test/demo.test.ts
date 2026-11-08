@@ -113,7 +113,11 @@ describe("demoOptionsFromEnv()", () => {
       siteId: "site_x",
       siteSecret: undefined,
       botfareUrl: "http://botfare-web:10000",
+      turnstileSecret: undefined,
     });
+    expect(demoOptionsFromEnv({ TURNSTILE_SECRET_KEY: " 0x4AAA-secret " }).turnstileSecret).toBe(
+      "0x4AAA-secret",
+    );
   });
 });
 

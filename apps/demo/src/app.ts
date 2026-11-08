@@ -28,6 +28,12 @@ export interface DemoOptions {
   contentDir?: string;
   /** Passed to botfare(). */
   configTtlMs?: number;
+  /**
+   * Cloudflare Turnstile secret for the "Reading as a human? Continue free." check (env
+   * TURNSTILE_SECRET_KEY). Optional: with Cloudflare's test site key, botfare() falls back to
+   * Cloudflare's always-pass test secret, and without a site key there is no human check.
+   */
+  turnstileSecret?: string;
   /** Default: `console.log` with a `[demo]` prefix (botfare() logs get `[botfare]`). */
   logger?: (msg: string) => void;
 }
@@ -56,6 +62,7 @@ export function createApp(options: DemoOptions = {}): express.Express {
         siteSecret,
         botfareUrl,
         configTtlMs: options.configTtlMs,
+        turnstileSecret: options.turnstileSecret,
         logger: options.logger,
         preview: (req) => previewFor(req, bySlug),
       }),
@@ -174,6 +181,7 @@ export function demoOptionsFromEnv(env: NodeJS.ProcessEnv = process.env) {
     siteSecret: env.BOTFARE_SITE_SECRET || undefined,
     botfareUrl: withScheme(env.BOTFARE_URL),
     origin: env.DEMO_ORIGIN || undefined,
+    turnstileSecret: env.TURNSTILE_SECRET_KEY?.trim() || undefined,
   } satisfies DemoOptions & { port: number; host: string };
 }
 

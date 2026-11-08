@@ -1,10 +1,13 @@
 // The Crema Notes site that `pnpm seed` registers, locally or in a deployed database.
+import { CREMA_NOTES_DETECTION, detectionConfigSchema } from "@botfare/contracts";
 import {
   authenticateSite,
   createSite,
   type Db,
   listSites,
   rotateSiteSecret,
+  siteDetection,
+  updateSiteDetection,
   updateSitePricing,
   updateSiteProfile,
 } from "@botfare/core";
@@ -34,7 +37,8 @@ export interface DemoSite {
 }
 
 /**
- * Creates the site, or brings an existing one up to apps/demo's pricing, free paths and origin.
+ * Creates the site, or brings an existing one up to apps/demo's pricing, free paths, origin and bot
+ * detection (CREMA_NOTES_DETECTION: standard level with Cloudflare's Turnstile test site key).
  * The current secret is kept when it still authenticates, so running the seed again does not break
  * a demo (local or on Render) that already holds it; otherwise a new secret is issued.
  */
@@ -48,6 +52,7 @@ export async function ensureDemoSite(db: Db, input: EnsureDemoSiteInput): Promis
       pricing,
       freePaths,
       payoutEmail: input.payoutEmail,
+      detection: CREMA_NOTES_DETECTION,
     });
     return { siteId: created.site.id, siteSecret: created.siteSecret, action: "created" };
   }
@@ -58,6 +63,11 @@ export async function ensureDemoSite(db: Db, input: EnsureDemoSiteInput): Promis
     origin: input.origin,
     payoutEmail: input.payoutEmail,
   });
+  // Written only when it differs, so a running demo's cached config stays valid.
+  const detection = detectionConfigSchema.parse(CREMA_NOTES_DETECTION);
+  if (JSON.stringify(siteDetection(existing)) !== JSON.stringify(detection)) {
+    await updateSiteDetection(db, { siteId: existing.id, detection });
+  }
 
   const { siteId, siteSecret } = input.current ?? {};
   if (
