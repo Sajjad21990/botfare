@@ -1,4 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { contentDigestSha256 } from "@botfare/contracts/fare";
+import type { ReceiptStatements } from "@botfare/contracts/receipts";
 import type { DeclineInput, DisputeInput, DisputeOutcome } from "@botfare/sdk";
 import { BotFareSpendLimitError, type Offer, type WireListener } from "@botfare/sdk";
 import type { ResearchDeps, ResearchModelClient } from "../src/lib/server/research-agent";
@@ -83,6 +85,11 @@ export function fakeOffer(url: string, page: FakePage): Offer {
 const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
 const JWS = `${b64({ alg: "EdDSA", typ: "x402-prepaid+jwt", kid: "key_demo" })}.${b64({ amount: "3" })}.sig`;
 
+/** A stand-in for a signed BotFare statement (not a real signature; the manifest only carries it). */
+export function fakeStatement(kind: "payment" | "delivery", receiptId: string): string {
+  return `${b64({ alg: "EdDSA", typ: "botfare-receipt+jwt", kid: "rk_fake" })}.${b64({ kind, sub: receiptId })}.sig`;
+}
+
 /** A fake BotFare agent per cap that behaves like the SDK: over-cap prices throw before signing. */
 export function fakeAgents(
   pages: Record<string, FakePage> = PAGES,
@@ -91,6 +98,19 @@ export function fakeAgents(
     dispute?: (input: DisputeInput) => Promise<DisputeOutcome>;
     /** Whether BotFare takes decline notes and citation reports (default true). */
     notesAccepted?: boolean;
+    /**
+     * BotFare's statements for a receipt on the nth lookup (0-based). Default: the payment and
+     * delivery statements at once.
+     */
+    statements?: (receiptId: string, lookup: number) => Promise<ReceiptStatements | null>;
+    /** Whether the PAYMENT-RESPONSE carries a signed payment statement (default true). */
+    signedReceipts?: boolean;
+    /** Signs a statement (default: an unsigned stand-in, fakeStatement). */
+    sign?: (
+      kind: "payment" | "delivery",
+      receiptId: string,
+      page: { url: string; html: string },
+    ) => Promise<string>;
   } = {},
 ) {
   const calls = {
@@ -100,8 +120,16 @@ export function fakeAgents(
     disputes: [] as DisputeInput[],
     declines: [] as { url: string; priceCents: number; input: DeclineInput }[],
     citations: [] as { answerId: string; citations: { receiptId: string; claim?: string }[] }[],
+    statements: [] as string[],
   };
   const paidCents = new Map<string, number>();
+  const delivered = new Map<string, { url: string; html: string }>();
+  const sign = (kind: "payment" | "delivery", receiptId: string) => {
+    const page = delivered.get(receiptId) ?? { url: "", html: "" };
+    return fare.sign
+      ? fare.sign(kind, receiptId, page)
+      : Promise.resolve(fakeStatement(kind, receiptId));
+  };
   let receipts = 0;
   const create = (options: {
     maxPerRequestCents: number;
@@ -204,14 +232,16 @@ export function fakeAgents(
           decoded: receipt,
         } as never);
         paidCents.set(receipt.transaction, page.priceCents);
+        delivered.set(receipt.transaction, { url, html });
         return {
           response,
           paid: true,
           receipt,
           receiptId: receipt.transaction,
-          receiptStatement: null,
+          receiptStatement:
+            fare.signedReceipts === false ? null : await sign("payment", receipt.transaction),
           body: new TextEncoder().encode(html),
-          readDigest: null,
+          readDigest: await contentDigestSha256(html),
           offer,
         };
       },
@@ -242,6 +272,18 @@ export function fakeAgents(
       async reportCitations(report) {
         calls.citations.push(report);
         return fare.notesAccepted ?? true;
+      },
+      async fetchStatements(receiptId) {
+        const lookup = calls.statements.filter((id) => id === receiptId).length;
+        calls.statements.push(receiptId);
+        if (fare.statements) return fare.statements(receiptId, lookup);
+        if (!paidCents.has(receiptId)) return null;
+        return {
+          receiptId,
+          payment: await sign("payment", receiptId),
+          delivery: await sign("delivery", receiptId),
+          refund: null,
+        };
       },
     };
   };

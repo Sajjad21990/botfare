@@ -5,6 +5,12 @@ import {
   disputeReasonSchema,
 } from "@botfare/contracts/fare";
 import {
+  type AnswerManifest,
+  type AnswerSource,
+  answerManifestSchema,
+  answerSourceSchema,
+} from "@botfare/contracts/receipts";
+import {
   type BotFareAgent,
   BotFareApiError,
   BotFareSpendLimitError,
@@ -32,7 +38,14 @@ import {
 /** The parts of a BotFare agent the tools use (a fake one in tests). */
 export type ResearchAgent = Pick<
   BotFareAgent,
-  "keyId" | "maxPerRequestCents" | "getOffer" | "fetch" | "dispute" | "decline" | "reportCitations"
+  | "keyId"
+  | "maxPerRequestCents"
+  | "getOffer"
+  | "fetch"
+  | "dispute"
+  | "decline"
+  | "reportCitations"
+  | "fetchStatements"
 >;
 
 /** A BotFare site as the research agent sees it: from the sites table. */
@@ -50,6 +63,13 @@ const MAX_EXCERPT_CHARS = 300;
 const MAX_ARTICLES_PER_SITE = 40;
 /** Longest wait for a best-effort Fare Advisor note (decline, citations) before the run moves on. */
 const NOTE_TIMEOUT_MS = 3_000;
+/**
+ * Waits between lookups of a cited receipt's statements while its delivery statement is missing:
+ * the publisher attests the delivered bytes just after the response, so it can trail the purchase.
+ */
+export const DELIVERY_RETRY_MS = [300, 600, 900];
+/** Longest wait for one source's statements before the answer goes out without its delivery. */
+const MANIFEST_TIMEOUT_MS = 4_000;
 
 // --- Tool definitions -----------------------------------------------------------------------------
 
@@ -217,6 +237,10 @@ export interface PurchasedPage {
   siteName: string;
   /** The exact bytes delivered (for a dispute); null when too large to keep. */
   delivered: Uint8Array | null;
+  /** BotFare's signed payment statement from the PAYMENT-RESPONSE; null if it sent none. */
+  paymentStatement: string | null;
+  /** sha-256 Content-Digest of the bytes the agent read; null when they were too large to keep. */
+  readDigest: string | null;
   /** Set once the page was disputed: the outcome, or "failed" when BotFare could not take it. */
   dispute?: DisputeOutcome["status"] | "failed";
 }
@@ -271,6 +295,11 @@ export interface ToolOutcome {
   refused?: boolean;
   /** Set by a valid `finish`: the run ends with this answer. */
   finished?: { answer: string; citations: ResearchCitation[] };
+  /**
+   * Set by a valid `finish`: the signed sources manifest for the answer (one source per citation
+   * with a signed payment statement), or null when the answer cites nothing.
+   */
+  manifest?: AnswerManifest | null;
 }
 
 export interface ResearchToolContext {
@@ -284,8 +313,10 @@ export interface ResearchToolContext {
   fetchCatalog: (site: ResearchSite, signal: AbortSignal) => Promise<unknown>;
   emit: (event: ResearchEvent) => void;
   signal: AbortSignal;
-  /** ID of this run's answer for the citation report (8-64 characters, e.g. the run ID). */
+  /** ID of this run's answer for the citation report and the manifest (8-64 characters, e.g. the run ID). */
   answerId?: string;
+  /** Waits between statement lookups while a delivery statement is missing (default DELIVERY_RETRY_MS). */
+  deliveryRetryMs?: number[];
 }
 
 // --- Helpers --------------------------------------------------------------------------------------
@@ -1004,6 +1035,8 @@ async function buy(
     siteId: paidSite.id,
     siteName: paidSite.name,
     delivered: result.body,
+    paymentStatement: result.receiptStatement ?? null,
+    readDigest: result.readDigest ?? null,
   };
   state.spentCents += amountCents;
   state.receipts.set(page.receiptId, page);
@@ -1240,17 +1273,124 @@ export function validateFinish(
 async function finish(ctx: ResearchToolContext, input: unknown): Promise<ToolOutcome> {
   const result = validateFinish(ctx.state, input);
   if (!result.ok) return toolError(result.message);
-  // Fare Advisor, "citations are the new clicks": which paid reads the answer used (best effort).
-  if (result.citations.length > 0 && ctx.answerId) {
-    await bestEffort(
-      ctx.agent.reportCitations({
-        answerId: ctx.answerId,
-        citations: result.citations.map((c) => ({ receiptId: c.receiptId, claim: c.claim })),
-      }),
-    );
-  }
+  const [manifest] = await Promise.all([
+    buildAnswerManifest(ctx, result.citations),
+    // Fare Advisor, "citations are the new clicks": which paid reads the answer used (best effort).
+    result.citations.length > 0 && ctx.answerId
+      ? bestEffort(
+          ctx.agent.reportCitations({
+            answerId: ctx.answerId,
+            citations: result.citations.map((c) => ({ receiptId: c.receiptId, claim: c.claim })),
+          }),
+        )
+      : Promise.resolve(false),
+  ]);
   return {
     content: json({ finished: true }),
     finished: { answer: result.answer, citations: result.citations },
+    manifest,
   };
+}
+
+// --- Sources manifest (signed receipts) ------------------------------------------------------------
+
+/** Resolves after `ms`, or at once when `signal` aborts. */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    }
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+/**
+ * BotFare's statements for a cited receipt, asking again (DELIVERY_RETRY_MS) while the delivery
+ * statement is missing. An error (BotFare unreachable, no BotFare URL) ends the lookup.
+ */
+async function lookUpStatements(
+  ctx: ResearchToolContext,
+  receiptId: string,
+): Promise<{ payment: string | null; delivery: string | null }> {
+  const delays = ctx.deliveryRetryMs ?? DELIVERY_RETRY_MS;
+  let payment: string | null = null;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const held = await ctx.agent.fetchStatements(receiptId);
+      payment = held?.payment ?? payment;
+      if (held?.delivery) return { payment, delivery: held.delivery };
+    } catch (err) {
+      console.error("[research] statements lookup failed", receiptId, (err as Error)?.message);
+      return { payment, delivery: null };
+    }
+    const delay = delays[attempt];
+    if (delay === undefined || ctx.signal.aborted) return { payment, delivery: null };
+    await pause(delay, ctx.signal);
+  }
+}
+
+/** `promise`, or `fallback` once `ms` have passed. */
+async function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The answer's sources manifest: for each citation, BotFare's signed payment statement (from the
+ * buy), its signed delivery statement (null if the publisher has not attested yet) and the digest
+ * of the bytes the agent read, so anyone can check offline that each source was paid for and that
+ * the bytes read are the bytes delivered. A citation without a signed payment statement is left
+ * out. Null when the answer cites nothing. Never throws.
+ */
+export async function buildAnswerManifest(
+  ctx: ResearchToolContext,
+  citations: ResearchCitation[],
+): Promise<AnswerManifest | null> {
+  if (citations.length === 0) return null;
+  const sources = await Promise.all(
+    citations.map(async (citation): Promise<AnswerSource | null> => {
+      const page = ctx.state.receipts.get(citation.receiptId);
+      const held = await within(lookUpStatements(ctx, citation.receiptId), MANIFEST_TIMEOUT_MS, {
+        payment: null,
+        delivery: null,
+      });
+      const payment = page?.paymentStatement ?? held.payment;
+      if (!payment) return null;
+      const source = answerSourceSchema.safeParse({
+        url: citation.url,
+        receiptId: citation.receiptId,
+        claim: citation.claim.slice(0, 300),
+        payment,
+        delivery: held.delivery,
+        readDigest: page?.readDigest ?? null,
+      });
+      if (!source.success) {
+        console.error("[research] source left out of the manifest", citation.receiptId);
+        return null;
+      }
+      return source.data;
+    }),
+  );
+  const manifest = answerManifestSchema.safeParse({
+    answerId:
+      ctx.answerId && ctx.answerId.length >= 8 ? ctx.answerId.slice(0, 64) : crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    sources: sources.filter((source): source is AnswerSource => source !== null),
+  });
+  if (!manifest.success) {
+    console.error("[research] invalid sources manifest", manifest.error.issues[0]?.message);
+    return null;
+  }
+  return manifest.data;
 }

@@ -3,6 +3,7 @@
  * Types only (plus a few limits), so the browser can import them without pulling in server code.
  */
 import type { DisputeReason, DisputeStatus, DisputeVerdict } from "@botfare/contracts/fare";
+import type { AnswerManifest } from "@botfare/contracts/receipts";
 
 /** Default and highest budget for one run, in US cents. */
 export const DEFAULT_BUDGET_CENTS = 25;
@@ -155,6 +156,14 @@ export type ResearchEvent =
       type: "answer";
       answer: string;
       citations: ResearchCitation[];
+      /**
+       * Signed sources manifest (`answerManifestSchema`): per cited receipt, BotFare's signed
+       * payment statement, its signed delivery statement (null until the publisher attests) and the
+       * digest of the bytes the agent read. Check each source in the browser with
+       * `checkAnswerSource` from @botfare/contracts/receipts. A citation without a signed payment
+       * statement has no source here. Null when the answer cites nothing.
+       */
+      manifest: AnswerManifest | null;
       spentCents: number;
       budgetCents: number;
     }

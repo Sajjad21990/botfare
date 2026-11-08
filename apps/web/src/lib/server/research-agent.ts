@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { AnswerManifest } from "@botfare/contracts/receipts";
 import type { WireListener } from "@botfare/sdk";
 import {
   MAX_DISPUTES_PER_RUN,
@@ -266,7 +267,11 @@ export async function runResearch(
       }
 
       const results: ToolResultBlockParam[] = [];
-      let finished: { answer: string; citations: ResearchCitation[] } | null = null;
+      let finished: {
+        answer: string;
+        citations: ResearchCitation[];
+        manifest: AnswerManifest | null;
+      } | null = null;
       for (const toolUse of toolUses) {
         toolCalls++;
         if (message.stop_reason === "max_tokens") {
@@ -303,7 +308,7 @@ export async function runResearch(
           });
         }
         if (outcome.finished) {
-          finished = outcome.finished;
+          finished = { ...outcome.finished, manifest: outcome.manifest ?? null };
           break;
         }
         results.push({
@@ -319,6 +324,7 @@ export async function runResearch(
           type: "answer",
           answer: finished.answer,
           citations: finished.citations,
+          manifest: finished.manifest,
           spentCents: state.spentCents,
           budgetCents: state.budgetCents,
         });
