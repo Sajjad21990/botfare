@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
     "@botfare/contracts",
     "@botfare/x402-paypal",
     "@botfare/paypal",
+    "@botfare/sdk",
   ],
   serverExternalPackages: ["postgres"],
   // Tailwind CSS v4 runs as a Turbopack loader on every stylesheet.

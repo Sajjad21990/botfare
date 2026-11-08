@@ -1,0 +1,20 @@
+{
+  "name": "@botfare/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server that lets Claude Desktop and Claude Code pay BotFare sites per request.",
+  "bin": {
+    "botfare-mcp": "./src/server.ts"
+  },
+  "scripts": {
+    "start": "tsx --env-file-if-exists=../../.env src/server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@botfare/contracts": "workspace:*",
+    "@botfare/sdk": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  }
+}
