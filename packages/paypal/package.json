@@ -1,0 +1,16 @@
+{
+  "name": "@botfare/paypal",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Typed PayPal REST client for BotFare (sandbox only).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}
