@@ -2,7 +2,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { migrate as runMigrations } from "drizzle-orm/postgres-js/migrator";
 import { createDb } from "./db";
 
-export const MIGRATIONS_FOLDER = fileURLToPath(new URL("../drizzle", import.meta.url));
+/** packages/core/drizzle, resolved lazily so bundlers never try to inline the folder. */
+export function migrationsFolder(): string {
+  return fileURLToPath(new URL("../drizzle", import.meta.url));
+}
 
 /** Applies the SQL migrations in packages/core/drizzle to the database at `url`. */
 export async function migrate(
@@ -11,7 +14,7 @@ export async function migrate(
 ): Promise<void> {
   const { db, close } = createDb(url, { max: 1 });
   try {
-    await runMigrations(db, { migrationsFolder: options.migrationsFolder ?? MIGRATIONS_FOLDER });
+    await runMigrations(db, { migrationsFolder: options.migrationsFolder ?? migrationsFolder() });
   } finally {
     await close();
   }
