@@ -10,12 +10,26 @@ export function SiteFooter() {
           <p className="text-5xl leading-[0.95] font-extrabold tracking-[-0.035em] sm:text-7xl">
             Pay the fare, pal.
           </p>
-          <Link
-            href="/signin"
-            className={cn(buttonVariants({ size: "lg", className: "h-11 px-5 text-base" }))}
-          >
-            Try the demo
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/signin"
+              className={cn(buttonVariants({ size: "lg", className: "h-11 px-5 text-base" }))}
+            >
+              Try the demo
+            </Link>
+            <Link
+              href="/judge"
+              className={cn(
+                buttonVariants({
+                  variant: "outline",
+                  size: "lg",
+                  className: "h-11 px-5 text-base",
+                }),
+              )}
+            >
+              Take the two-minute tour
+            </Link>
+          </div>
         </div>
         <div className="mt-16 flex flex-col gap-2 border-t pt-6 text-sm text-muted-foreground sm:flex-row sm:justify-between">
           <p>BotFare runs in the PayPal sandbox only. No real money moves.</p>

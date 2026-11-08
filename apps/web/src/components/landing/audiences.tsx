@@ -4,17 +4,17 @@ const audiences = [
   {
     icon: NewspaperIcon,
     title: "Publishers",
-    body: "Add one line of middleware, set a price per page or API call, and get paid through PayPal Payouts.",
+    body: "Add one line of middleware, set a price per page or API call, and get paid through PayPal Payouts. Fare Advisor shows why agents passed; you decide the disputes Claude isn't sure about.",
   },
   {
     icon: WalletIcon,
     title: "Agent owners",
-    body: "Top up with PayPal and give each agent a key with a daily cap, a per-request maximum and a list of allowed sites.",
+    body: "Top up with PayPal and give each agent a key with a daily cap, a per-request maximum and a list of allowed sites. A page that wasn't as promised comes back through Fare Court.",
   },
   {
     icon: BotIcon,
     title: "Agents",
-    body: "Read the price and a free preview, then pay a few cents per request with a signed x402 payment.",
+    body: "Read the price and a free preview, pay a few cents with a signed x402 payment, dispute a bad page and leave a note when they skip. From the SDK, or from Claude through the MCP server.",
   },
 ];
 
@@ -26,7 +26,7 @@ export function Audiences() {
           id="audiences-title"
           className="max-w-2xl text-3xl leading-tight font-bold tracking-tight text-balance sm:text-4xl"
         >
-          Three riders, one fare system
+          Who rides
         </h2>
         <ul className="mt-12 grid gap-10 md:grid-cols-3 md:gap-8">
           {audiences.map(({ icon: Icon, title, body }) => (

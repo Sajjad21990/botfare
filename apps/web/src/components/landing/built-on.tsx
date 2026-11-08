@@ -15,6 +15,22 @@ const parts = [
     name: "PayPal Webhooks",
     role: "Signature-verified events keep captures and payouts in sync with the ledger.",
   },
+  {
+    name: "Log in with PayPal",
+    role: "Publishers sign in with their verified PayPal email, which becomes their payout email.",
+  },
+  {
+    name: "Claude",
+    role: "The research agent's buy-or-skip decisions, Fare Court verdicts and Fare Advisor recommendations, each checked before anything happens.",
+  },
+  {
+    name: "MCP",
+    role: "An MCP server lets Claude Desktop and Claude Code get offers, pay, decline and dispute. The agent key stays on the machine.",
+  },
+  {
+    name: "AG Studio",
+    role: "Publisher analytics: revenue by detection signal, cited versus paid by page, with a Claude assistant.",
+  },
 ];
 
 export function BuiltOn() {
@@ -25,7 +41,7 @@ export function BuiltOn() {
           id="built-title"
           className="text-3xl leading-tight font-bold tracking-tight text-balance sm:text-4xl"
         >
-          Built on x402 V2 + PayPal Orders, JS SDK v6, Payouts, Webhooks
+          Built on open standards and PayPal&apos;s own APIs
         </h2>
         <dl className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
           {parts.map((p) => (

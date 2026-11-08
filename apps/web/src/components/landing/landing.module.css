@@ -17,6 +17,11 @@
   background-color: oklch(0.975 0.008 250);
 }
 
+/* A perforated edge: the stub side of a ticket, drawn with a dotted border. */
+.perforated {
+  border-left: 2px dashed var(--border);
+}
+
 /* Half-circle notches where the stub tears off. They take the page colour. */
 .notch {
   position: absolute;
@@ -61,4 +66,21 @@
 
 .bar {
   min-width: 3px;
+}
+
+/* Anchored sections clear the top of the viewport when reached from the nav. */
+.anchor {
+  scroll-margin-top: 1rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.root) {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Visible focus on links that are not buttons (pillar tickets, inline links). */
+.focusRing:focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--ring) 60%, transparent);
+  outline-offset: 3px;
 }

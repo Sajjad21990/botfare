@@ -1,4 +1,4 @@
-import { TicketIcon } from "lucide-react";
+import { ShieldCheckIcon, TicketIcon } from "lucide-react";
 import styles from "./landing.module.css";
 
 /** The hero's example: one paid request drawn as a transit ticket. Purely illustrative. */
@@ -71,9 +71,21 @@ export function FareTicket() {
             <dd>rcpt_9d2e41b7</dd>
           </dl>
         </div>
+
+        <p className="flex items-center gap-2 border-t border-dashed px-6 py-3 text-xs text-muted-foreground">
+          <ShieldCheckIcon
+            aria-hidden
+            className="size-4 shrink-0 text-emerald-700 dark:text-emerald-400"
+          />
+          <span>
+            Protected by <span className="font-semibold text-foreground">Fare Court</span> for 24
+            hours: delivery digest attested
+          </span>
+        </p>
       </div>
       <figcaption className="mt-4 text-center text-sm text-muted-foreground">
-        One paid request: 3¢ from the agent&apos;s wallet, 95% of it to the publisher.
+        One paid request: 3¢ from the agent&apos;s wallet, 95% of it to the publisher, and a receipt
+        the agent can dispute.
       </figcaption>
     </figure>
   );

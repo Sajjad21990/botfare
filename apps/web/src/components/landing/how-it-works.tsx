@@ -16,11 +16,11 @@ const steps: Step[] = [
   },
   {
     title: "The publisher names the fare",
-    body: "The reply is a 402 with the price in a PAYMENT-REQUIRED header, plus a free preview so the agent can decide before it pays.",
+    body: "The reply is a 402 with the price and the declared offer in a PAYMENT-REQUIRED header, plus a free preview so the agent can decide before it pays. An agent that passes can leave a free decline note for Fare Advisor.",
     wire: [
       { text: "402 Payment Required", tone: "required" },
       {
-        text: 'PAYMENT-REQUIRED: {"scheme":"prepaid","network":"paypal:sandbox","asset":"USD","amount":"3"}',
+        text: 'PAYMENT-REQUIRED: {"scheme":"prepaid","network":"paypal:sandbox","asset":"USD","amount":"3","extra":{"botfareOffer":{"title":"Burr grinders, explained",…}}}',
       },
     ],
   },
@@ -43,12 +43,14 @@ const steps: Step[] = [
   },
   {
     title: "The agent gets the content and a receipt",
-    body: "The response carries the page and a PAYMENT-RESPONSE header with the receipt ID, which both sides can look up later.",
+    body: "The response carries the page and a PAYMENT-RESPONSE header with the receipt ID. The middleware then attests a digest of the bytes it sent, so Fare Court can settle a dispute later.",
     wire: [
       { text: "200 OK", tone: "paid" },
       {
         text: 'PAYMENT-RESPONSE: {"success":true,"transaction":"rcpt_9d2e41b7","network":"paypal:sandbox"}',
       },
+      { text: "then, to BotFare: POST /api/x402/receipts/rcpt_9d2e41b7/attest" },
+      { text: '{"contentDigest":"sha-256=:+oWVrNYqTwN…=:"}' },
     ],
   },
 ];
@@ -60,7 +62,7 @@ const toneClass: Record<NonNullable<WireLine["tone"]>, string> = {
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" aria-labelledby="how-title" className="scroll-mt-4 border-b">
+    <section id="how-it-works" aria-labelledby="how-title" className={`${styles.anchor} border-b`}>
       <div className="mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-24">
         <div className="max-w-2xl">
           <h2

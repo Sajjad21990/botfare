@@ -16,7 +16,8 @@ export function Hero() {
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
             Pay-per-request for AI agents, settled on PayPal — x402 for PayPal&apos;s 440 million
-            accounts.
+            accounts. Bots pay a few cents a page, people read free, and Claude handles the
+            decisions too small for anyone to make by hand.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-3">
             <Link
@@ -25,8 +26,8 @@ export function Hero() {
             >
               Try the demo
             </Link>
-            <a
-              href="#how-it-works"
+            <Link
+              href="/judge"
               className={cn(
                 buttonVariants({
                   variant: "outline",
@@ -35,18 +36,12 @@ export function Hero() {
                 }),
               )}
             >
-              See how it works
-            </a>
-          </div>
-          <p className="mt-4 text-sm text-muted-foreground">
-            Runs in the PayPal sandbox. Pick a demo role; no password needed. Judging?{" "}
-            <Link
-              href="/judge"
-              className="font-medium text-foreground underline underline-offset-4"
-            >
               Take the two-minute tour
             </Link>
-            .
+          </div>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Runs in the PayPal sandbox, so no real money moves. Pick a demo role; no password
+            needed.
           </p>
         </div>
         <FareTicket />
