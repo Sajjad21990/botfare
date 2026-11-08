@@ -117,11 +117,16 @@ Everything runs in the PayPal **sandbox only**.
 
 | Piece | State |
 | --- | --- |
-| x402 plug-in (`prepaid` on `paypal:sandbox`) | ✅ Works end to end with the official `@x402/express`, `@x402/fetch` and `x402Facilitator` 2.30.0 |
+| x402 plug-in (`prepaid` on `paypal:sandbox`) | ✅ Works end to end with the official `@x402/express`, `@x402/fetch` and `x402Facilitator` 2.30.0 ([spec](docs/PROTOCOL.md)) |
 | PayPal client: orders, capture, refunds, Payouts, webhooks | ✅ Built and tested |
 | Sandbox spikes: OAuth, $5 top-up, $0.25 Payout, JWS, x402 | ✅ All pass ([results](docs/SPIKE_RESULTS.md)) |
-| Postgres ledger, facilitator API, middleware, agent SDK, demo publisher | 🚧 In progress |
-| Wallet and publisher dashboards, Payouts UI, webhooks | ⏳ Planned |
+| Postgres double-entry ledger, `PostgresPrepaidLedger`, refunds | ✅ Built; DB tests cover concurrency, caps, replays and refunds |
+| Facilitator API in the Next.js app (`/api/x402/*`, site config, health) | ✅ Built; site Basic auth |
+| `botfare()` publisher middleware, agent SDK (`getOffer`, paid `fetch`, spend cap, wire events) | ✅ Built |
+| Crema Notes demo publisher (articles + brew-ratio API) | ✅ Built |
+| `pnpm seed` + `pnpm e2e`: Phase 1 on real processes and Postgres | ✅ All checks pass |
+| Render Blueprint ([`render.yaml`](render.yaml)) | ✅ Written, not yet deployed |
+| Wallet and publisher dashboards, PayPal top-up and Payouts UI, webhooks | ⏳ Next |
 | Research agent, MCP server, judge mode, deployment | ⏳ Planned |
 
 The full proposal, decisions and day-by-day plan are in [`docs/PLAN.md`](docs/PLAN.md).
@@ -129,27 +134,69 @@ The full proposal, decisions and day-by-day plan are in [`docs/PLAN.md`](docs/PL
 ## Repository layout
 
 ```text
-packages/x402-paypal   the x402 plug-in: client, server and facilitator parts, JWS helpers, ledger port
+packages/x402-paypal   the x402 plug-in: client, server and facilitator parts, JWS helpers, ledger port, in-memory ledger
+packages/contracts     types and helpers shared across every HTTP boundary: IDs, site config, pricing rules, agent keys
+packages/core          Drizzle schema and migrations, Postgres double-entry ledger, PostgresPrepaidLedger, services
+packages/express       botfare({ siteId, siteSecret }): one-line publisher middleware on @x402/express
+packages/sdk           createBotFareAgent(): getOffer() and a paying fetch on @x402/fetch
 packages/paypal        typed PayPal REST client (sandbox only)
-packages/core          Postgres schema and double-entry ledger (in progress)
-packages/express       botfare() middleware for publishers (in progress)
-packages/sdk           agent SDK on @x402/fetch (in progress)
-apps/web               Next.js: facilitator API, dashboards, research agent (in progress)
-apps/demo              demo publisher site and API (in progress)
+apps/web               Next.js: x402 facilitator API (/api/x402/*), site config, health; dashboards next
+apps/demo              Crema Notes: fictional coffee site and brew-ratio API behind botfare()
+scripts/seed.ts        demo publisher, site, $5 wallet and agent key, written to .env
+scripts/e2e.ts         Phase 1 end to end: web app + demo + Postgres, PASS/FAIL per check
 scripts/spike          Day-0 PayPal and x402 spikes
-docs                   plan, spike results, protocol notes
+docs                   plan, protocol spec, spike results
+render.yaml            Render Blueprint: botfare-web, botfare-demo, Postgres 17
 ```
 
 ## Run it locally
 
-You need Node 22+, pnpm 10 and Docker.
+You need Node 22+ (the repo pins 26 in `.node-version`), pnpm 10 and Docker.
 
 ```bash
 pnpm install
-cp .env.example .env    # add your PayPal sandbox app's client ID and secret
-pnpm db:up              # Postgres 17 in Docker
-pnpm test               # unit tests
-pnpm spike:05           # x402 plug-in end to end; no PayPal account needed
+cp .env.example .env    # PayPal sandbox keys are only needed for the PayPal spikes for now
+pnpm db:up              # Postgres 17 in Docker (botfare and botfare_test databases)
+pnpm db:migrate         # apply the Drizzle migrations to DATABASE_URL
+pnpm seed               # demo publisher, Crema Notes site, $5.00 wallet, agent key -> .env
+pnpm e2e                # start the app and the demo, pay for content, check every ledger movement
+```
+
+`pnpm e2e` starts the BotFare app (`next dev` on :3000, reused if it is already running) and the demo (:4000). It then checks:
+
+- a human reads an article free;
+- `getOffer` shows 3¢ with a preview and moves no money;
+- the agent pays and gets a receipt;
+- the ledger moved exactly (wallet −30,000 micro-dollars, publisher +28,500, BotFare +1,500);
+- a replayed payment is refused with `nonce_used` and the original receipt;
+- a 50¢ article is refused by the 10¢ cap before anything is signed;
+- the brew API charges 1¢ to any paying client;
+- a refund restores the wallet exactly once;
+- the ledger sums to zero.
+
+It exits non-zero on any failure.
+
+To click around yourself:
+
+```bash
+pnpm dev:web            # BotFare app on http://localhost:3000 (GET /api/health)
+pnpm dev:demo           # Crema Notes on http://localhost:4000, payments on with the seeded site
+```
+
+Then open http://localhost:4000 in a browser, where humans read free. Agents get a 402 with a price and a preview:
+
+```bash
+curl -i -H 'x-botfare-agent: 1' http://localhost:4000/articles/burr-basics
+```
+
+Run `pnpm seed` again whenever you like. It rotates the site secret, so restart `dev:demo` after it.
+
+Checks:
+
+```bash
+pnpm typecheck && pnpm lint && pnpm test   # unit tests plus *.db.test.ts against botfare_test
+pnpm --filter @botfare/web build
+pnpm spike:04 && pnpm spike:05             # JWS and the x402 plug-in; no PayPal account needed
 ```
 
 With PayPal sandbox credentials in `.env`:
@@ -159,6 +206,16 @@ pnpm spike:01           # OAuth
 pnpm spike:02           # $5 top-up: approve the printed link as a sandbox buyer
 pnpm spike:03           # $0.25 Payouts batch to PUBLISHER_PAYPAL_EMAIL
 ```
+
+## Deploy
+
+[`render.yaml`](render.yaml) is a Render Blueprint for three resources:
+
+- `botfare-web`: builds the Next.js app and runs `pnpm db:migrate` before each deploy;
+- `botfare-demo`: reaches the app over Render's private network;
+- `botfare-db`: Postgres 17.
+
+Secrets are `sync: false`, so Render asks for them when the Blueprint is first applied.
 
 ## Built with
 

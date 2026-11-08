@@ -22,18 +22,26 @@ apps/web             Next.js: dashboards, wallet, research agent, /judge, facili
 apps/demo            Express demo publisher (original articles + /api/brew-ratio) behind @botfare/express
 packages/x402-paypal the plug-in: client, server and facilitator parts, JWS helpers, ledger port, in-memory ledger
 packages/contracts   shared wire contracts: IDs, site auth header, site config + pricing rules, agent key string, preview
-packages/express     botfare({ siteId, siteSecret }): humans free, dashboard prices (DynamicPrice), @x402/express
-packages/sdk         createBotFareFetch() on @x402/fetch, getOffer()
+packages/express     botfare({ siteId, siteSecret }): humans free, dashboard prices (cached site config), @x402/express
+packages/sdk         createBotFareAgent(): getOffer() + paying fetch on @x402/fetch
 packages/mcp         MCP server: get_offer, fetch_paid, wallet_balance, recent_receipts
 packages/paypal      typed PayPal REST client (sandbox only)
-packages/core        Drizzle schema, Postgres ledger implementing the ledger port, payouts
+packages/core        Drizzle schema, Postgres ledger implementing the ledger port, services (payouts next)
 scripts/spike        Day-0 PayPal and x402 spikes
+scripts/seed.ts      local demo data (publisher, site, wallet, agent key) -> .env
+scripts/e2e.ts       Phase 1 end-to-end PASS/FAIL checks on real processes
 ```
 
 ## Commands
-- `pnpm install` · `pnpm typecheck` · `pnpm lint` (Biome) · `pnpm format` · `pnpm test` (vitest)
+- `pnpm install` · `pnpm typecheck` · `pnpm lint` (Biome) · `pnpm format` · `pnpm test` (vitest; `*.db.test.ts` run against `botfare_test` in the "db" project)
 - `pnpm db:up` / `pnpm db:down`: Postgres 17 in Docker (`botfare` and `botfare_test` databases)
+- `pnpm db:migrate`: apply `packages/core/drizzle` to `DATABASE_URL` (regenerate with `pnpm --filter @botfare/core db:generate`)
+- `pnpm seed`: demo publisher, Crema Notes site (secret rotated each run), $5 wallet, agent key; writes `BOTFARE_URL`, `BOTFARE_SITE_ID`, `BOTFARE_SITE_SECRET`, `BOTFARE_AGENT_KEY` to `.env`
+- `pnpm e2e`: starts the web app (:3000, reused if up) and the demo (:4000), runs the Phase 1 PASS/FAIL checks, stops both; `E2E_VERBOSE=1` streams their logs
+- `pnpm dev:web` / `pnpm dev:demo`: run the app or the demo (both read the root `.env`)
+- `pnpm --filter @botfare/web build`: production build of the app
 - `pnpm spike:01`…`spike:05`: Day-0 spikes; results in `docs/SPIKE_RESULTS.md`
+- `render.yaml`: Render Blueprint (botfare-web, botfare-demo, botfare-db); not deployed yet
 - `pnpm --filter @botfare/web dev` (Next.js on :3000) · `pnpm --filter @botfare/demo dev` (demo publisher)
 - Workspace packages export TypeScript source; Next.js transpiles them (`transpilePackages`), everything else runs on tsx.
 - `apps/web` uses TypeScript 5.9 (Next's type checker); the rest of the repo uses TypeScript 7.
@@ -54,7 +62,7 @@ scripts/spike        Day-0 PayPal and x402 spikes
 2. Agent-chosen nonces; facilitator enforces single use per key + 60 s expiry.
 3. Settle after a successful response (SDK `authorization` flow); refunds are a publisher action.
 4. One demo publisher service (articles + brew API).
-5. Prices live in the dashboard and reach the middleware through the SDK's `DynamicPrice`.
+5. Prices live in the dashboard and reach the middleware through the site config (built: a per-request x402 route from the cached config instead of `DynamicPrice`, because the SDK's description and mimeType are fixed per route).
 6. Auth: judge personas + Log in with PayPal (verified payout email); no magic links.
 7. Research agent tools: `get_offer` (free 402 read incl. preview from `unpaidResponseBody`), `buy`/`skip` with a reason, `finish`; hard caps in SDK spend controls and the facilitator.
 8. Wire inspector next to the agent (PAYMENT-REQUIRED → signed payment → PAYMENT-RESPONSE).
