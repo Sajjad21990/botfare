@@ -55,6 +55,8 @@ export interface ResearchDeps {
   createAgent: (options: { maxPerRequestCents: number; onWire: WireListener }) => ResearchAgent;
   loadSites: () => Promise<ResearchSite[]>;
   fetchCatalog: (site: ResearchSite, signal: AbortSignal) => Promise<unknown>;
+  /** Runs before the agent starts (the demo wallet top-up); failures are only logged. */
+  prepare?: () => Promise<void>;
 }
 
 export interface ResearchInput {
@@ -191,6 +193,9 @@ export async function runResearch(
   };
 
   try {
+    await deps.prepare?.().catch((err: unknown) => {
+      console.error("[research] prepare failed", (err as Error)?.message);
+    });
     const onWire = wireListener(state, emit);
     const agent = deps.createAgent({ maxPerRequestCents: MAX_PER_REQUEST_CENTS, onWire });
     const capped = new Map<number, ResearchAgent>();

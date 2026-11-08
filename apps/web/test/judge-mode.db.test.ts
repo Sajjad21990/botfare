@@ -4,6 +4,7 @@ import {
   DEMO_SITE_NAME,
   DEMO_SITE_PRICING,
   type DemoPersona,
+  encodeAgentKey,
 } from "@botfare/contracts";
 import {
   authenticateSite,
@@ -12,12 +13,14 @@ import {
   createSite,
   createUser,
   DEMO_EARNINGS_FLOOR_CENTS,
+  DEMO_WALLET_FLOOR_CENTS,
   earningsBalanceMicros,
   getAgentKeyById,
   getSite,
   getUserByEmail,
   listSites,
   type User,
+  walletBalanceMicros,
 } from "@botfare/core";
 import type { PayPalClient } from "@botfare/paypal";
 import { generateAgentKeyPair } from "@botfare/x402-paypal";
@@ -53,6 +56,7 @@ import { GET as summary } from "../src/app/api/publisher/summary/route";
 import { POST as signInAsPersona } from "../src/app/api/session/persona/route";
 import { POST as revokeKey } from "../src/app/api/wallet/keys/[keyId]/revoke/route";
 import { closeDb, getDb } from "../src/lib/server/db";
+import { refillDemoAgentWallet } from "../src/lib/server/judge";
 import { setPayPalForTests } from "../src/lib/server/paypal-test-hooks";
 import { useTestDatabase } from "./helpers";
 
@@ -227,5 +231,36 @@ describe("judge mode", () => {
     expect(await earningsBalanceMicros(getDb(), publisher.id)).toBe(balance);
     expect((await getSite(getDb(), site.id))?.version).toBe(version);
     expect((await (await summary()).json()).judgeMode).toBe(true);
+  });
+
+  it("keeps the shared research agent's wallet at the demo floor, and never a real owner's", async () => {
+    const floor = DEMO_WALLET_FLOOR_CENTS * 10_000;
+    const owner = await signInAs("agentOwner");
+    expect(await walletBalanceMicros(getDb(), owner.id)).toBeGreaterThanOrEqual(floor);
+
+    const keyFor = async (user: User) => {
+      const { publicJwk, privateJwk } = await generateAgentKeyPair();
+      const key = await createAgentKey(getDb(), {
+        ownerUserId: user.id,
+        name: "Demo research agent",
+        publicJwk,
+      });
+      return encodeAgentKey({
+        v: 1,
+        keyId: key.id,
+        privateJwk: privateJwk as Parameters<typeof encodeAgentKey>[0]["privateJwk"],
+      });
+    };
+    // Before each run, the persona's wallet goes back up to the floor; a stranger's never does.
+    const demoKey = await keyFor(owner);
+    await refillDemoAgentWallet(demoKey);
+    expect(await walletBalanceMicros(getDb(), owner.id)).toBeGreaterThanOrEqual(floor);
+    const stranger = await createUser(getDb(), {
+      email: `real-owner-${Date.now()}@example.test`,
+      name: "Real owner",
+    });
+    await refillDemoAgentWallet(await keyFor(stranger));
+    expect(await walletBalanceMicros(getDb(), stranger.id)).toBe(0);
+    await refillDemoAgentWallet("bfk_not_a_key");
   });
 });

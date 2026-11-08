@@ -50,6 +50,7 @@ export {
   getAgentKeyById,
   listAgentKeys,
   revokeAgentKey,
+  updateAgentKeyLimits,
 } from "./services/agent-keys";
 export {
   type PublisherReceiptRow,
@@ -64,7 +65,9 @@ export {
 } from "./services/dashboards";
 export {
   DEMO_EARNINGS_FLOOR_CENTS,
+  DEMO_WALLET_FLOOR_CENTS,
   type DemoPublisherReset,
+  ensureDemoWalletFloor,
   resetDemoPublisher,
 } from "./services/demo";
 export {

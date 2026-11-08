@@ -795,6 +795,13 @@ async function getOffer(
   };
 }
 
+/** Facilitator refusals caused by the agent's own key or wallet, explained for the owner. */
+const KEY_LIMIT_REFUSALS: Record<string, string> = {
+  invalid_prepaid_over_daily_cap:
+    "the agent key has reached its daily cap, which resets at 00:00 UTC",
+  insufficient_funds: "the agent's wallet balance is too low; top it up with PayPal",
+};
+
 async function buy(
   ctx: ResearchToolContext,
   input: unknown,
@@ -881,6 +888,13 @@ async function buy(
 
   if (result.response.status === 402) {
     await result.response.body?.cancel().catch(() => {});
+    const keyLimit = result.failureReason ? KEY_LIMIT_REFUSALS[result.failureReason] : undefined;
+    if (keyLimit) {
+      return refuse(
+        "spend-limit",
+        `The payment was refused: ${keyLimit} (${result.failureReason}); nothing was charged`,
+      );
+    }
     return refuse(
       "publisher",
       `The payment was refused${result.failureReason ? `: ${result.failureReason}` : ""}; nothing was charged`,

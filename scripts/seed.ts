@@ -9,8 +9,11 @@
  * - registers the Crema Notes site with apps/demo's pricing and free paths at DEMO_ORIGIN
  *   (default http://localhost:4000), keeping the site secret in the environment while it still
  *   works and issuing a new one otherwise;
- * - gives the agent owner a one-time $5.00 demo balance;
- * - issues a demo agent key (10¢ per request, $1.00 a day), reusing the one in .env if it matches;
+ * - gives the agent owner a one-time $5.00 demo balance (in judge mode the app keeps it at $5.00:
+ *   lib/server/judge.ts);
+ * - issues the demo agent key (10¢ per request, $10.00 a day: every judge's research run shares
+ *   it), reusing the one in .env if it is this owner's, and raising its limits in place if they
+ *   changed;
  * - writes BOTFARE_URL, BOTFARE_SITE_ID, BOTFARE_SITE_SECRET and BOTFARE_AGENT_KEY to .env.
  *
  * Flags:
@@ -44,6 +47,7 @@ import {
   seedWallet,
   setPayoutEmail,
   type User,
+  updateAgentKeyLimits,
   walletBalanceMicros,
 } from "@botfare/core";
 import { generateAgentKeyPair } from "@botfare/x402-paypal";
@@ -55,7 +59,7 @@ const PUBLISHER = DEMO_PERSONAS.publisher;
 const AGENT_OWNER = DEMO_PERSONAS.agentOwner;
 const DEFAULT_BOTFARE_URL = "http://localhost:3000";
 const WALLET_CENTS = 500;
-const AGENT_KEY = { name: "Demo research agent", perRequestMaxCents: 10, dailyCapCents: 100 };
+const AGENT_KEY = { name: "Demo research agent", perRequestMaxCents: 10, dailyCapCents: 1_000 };
 
 async function findOrCreateUser(db: Db, input: { email: string; name: string }): Promise<User> {
   return (
@@ -64,7 +68,11 @@ async function findOrCreateUser(db: Db, input: { email: string; name: string }):
   );
 }
 
-/** The key in .env, if it is this owner's active key with the demo limits and its public key matches. */
+/**
+ * The key in .env, if it is this owner's active key and its public key matches; its limits are
+ * set to the demo's in place (so the secret survives a cap change). A key that is not this
+ * owner's, or whose public key differs, is revoked and null is returned.
+ */
 async function reusableAgentKey(db: Db, owner: User): Promise<AgentKey | null> {
   const existing = process.env.BOTFARE_AGENT_KEY?.trim();
   if (!existing) return null;
@@ -76,16 +84,21 @@ async function reusableAgentKey(db: Db, owner: User): Promise<AgentKey | null> {
   }
   const key = await getAgentKeyById(db, payload.keyId);
   if (!key || key.ownerUserId !== owner.id || key.status !== "active") return null;
-  const matches =
-    key.publicJwk.x === payload.privateJwk.x &&
-    key.perRequestMaxCents === AGENT_KEY.perRequestMaxCents &&
-    key.dailyCapCents === AGENT_KEY.dailyCapCents &&
-    key.allowedSiteIds === null;
-  if (!matches) {
+  if (key.publicJwk.x !== payload.privateJwk.x) {
     await revokeAgentKey(db, { keyId: key.id, ownerUserId: owner.id });
     return null;
   }
-  return key;
+  const limitsMatch =
+    key.perRequestMaxCents === AGENT_KEY.perRequestMaxCents &&
+    key.dailyCapCents === AGENT_KEY.dailyCapCents &&
+    key.allowedSiteIds === null;
+  if (limitsMatch) return key;
+  return updateAgentKeyLimits(db, {
+    keyId: key.id,
+    perRequestMaxCents: AGENT_KEY.perRequestMaxCents,
+    dailyCapCents: AGENT_KEY.dailyCapCents,
+    allowedSiteIds: null,
+  });
 }
 
 async function main(): Promise<void> {
@@ -162,7 +175,7 @@ async function main(): Promise<void> {
       agentKey = encodeAgentKey(agentKeyPayloadSchema.parse({ v: 1, keyId: key.id, privateJwk }));
       console.log(`Agent key    ${key.id} issued (${lastFour(agentKey)})`);
     }
-    console.log("             10¢ per request max, $1.00 daily cap, any site");
+    console.log("             10¢ per request max, $10.00 daily cap, any site");
 
     updateEnvFile({
       BOTFARE_URL: botfareUrl,

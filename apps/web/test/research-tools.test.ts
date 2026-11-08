@@ -202,6 +202,20 @@ describe("research tools", () => {
     expect(state.spentCents).toBe(0);
   });
 
+  it("explains a refusal by the key's own daily cap or wallet, and charges nothing", async () => {
+    const url = `${ORIGIN}/articles/capped`;
+    const { ctx, call, state } = setup(25);
+    const agents = fakeAgents({
+      [url]: { title: "Capped", priceCents: 3, refuse: "invalid_prepaid_over_daily_cap" },
+    });
+    ctx.agent = agents.create({ maxPerRequestCents: 10 });
+    ctx.agentWithCap = (cents) => agents.create({ maxPerRequestCents: cents });
+    const result = await call("buy", { url, reason: "Useful" });
+    expect(result.body).toMatchObject({ refused: true, by: "spend-limit" });
+    expect(String(result.body.message)).toMatch(/daily cap, which resets at 00:00 UTC/);
+    expect(state.spentCents).toBe(0);
+  });
+
   it("records skips with the reason", async () => {
     const { call, events } = setup(25);
     await call("get_offer", { url: URLS.latte });

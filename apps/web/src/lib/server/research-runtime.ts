@@ -5,6 +5,7 @@ import { schema } from "@botfare/core";
 import { createBotFareAgent } from "@botfare/sdk";
 import { getDb } from "./db";
 import { createRewritingFetch, demoOriginRewrite, demoPublicOrigin } from "./demo-origin";
+import { refillDemoAgentWallet } from "./judge";
 import { createGuardedFetch, isPrivateHostname } from "./outbound-guard";
 import { DEFAULT_MODEL, type ResearchDeps } from "./research-agent";
 import { normalizeUrl, type ResearchSite, readTextLimited } from "./research-tools";
@@ -161,6 +162,7 @@ export function createResearchDeps(
         fetch: serverFetch,
       }),
     loadSites: () => loadSites(viewer),
+    prepare: () => refillDemoAgentWallet(config.agentKey),
     fetchCatalog: (site, signal) => fetchCatalogWith(serverFetch, site, signal),
   };
 }

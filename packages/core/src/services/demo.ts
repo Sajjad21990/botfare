@@ -12,16 +12,18 @@ import {
   type PricingRule,
 } from "@botfare/contracts";
 import { centsToMicros } from "@botfare/x402-paypal";
-import { desc, eq } from "drizzle-orm";
+import { count, desc, eq } from "drizzle-orm";
 import { Accounts } from "../accounts";
 import type { Db } from "../db";
-import { earningsBalanceMicros, postTransaction } from "../ledger";
-import { payouts, users } from "../schema";
+import { earningsBalanceMicros, postTransaction, walletBalanceMicros } from "../ledger";
+import { ledgerEntries, payouts, users } from "../schema";
 import { setPayoutEmail } from "./payouts";
 import { listSites, siteDetection, updateSiteDetection, updateSitePricing } from "./sites";
 
 /** Earnings the publisher persona has at sign-in, so every judge can try a $1.00+ withdrawal. */
 export const DEMO_EARNINGS_FLOOR_CENTS = 200;
+/** Wallet balance the agent-owner persona keeps, so the shared research agent can always pay. */
+export const DEMO_WALLET_FLOOR_CENTS = 500;
 
 export interface DemoPublisherReset {
   /** Crema Notes sites whose prices were put back. */
@@ -131,4 +133,36 @@ function samePricing(a: PricingRule[], b: PricingRule[]): boolean {
       ),
     );
   return normalize(a) === normalize(b);
+}
+
+/**
+ * Tops the agent-owner persona's wallet back up to the floor with demo money, so judges who skip
+ * the PayPal top-up still see the shared research agent pay. Idempotent under concurrency: the
+ * posting is keyed by the number of entries the wallet has had, so two calls that saw the same
+ * wallet add the money once, and any later charge allows the next top-up.
+ */
+export async function ensureDemoWalletFloor(
+  db: Db,
+  input: { userId: string; floorCents?: number },
+): Promise<{ addedCents: number }> {
+  const floorMicros = centsToMicros(input.floorCents ?? DEMO_WALLET_FLOOR_CENTS);
+  const wallet = Accounts.wallet(input.userId);
+  const [entries] = await db
+    .select({ n: count() })
+    .from(ledgerEntries)
+    .where(eq(ledgerEntries.accountId, wallet));
+  const balance = await walletBalanceMicros(db, input.userId);
+  if (balance >= floorMicros) return { addedCents: 0 };
+  const cents = Math.ceil((floorMicros - balance) / centsToMicros(1));
+  const amount = centsToMicros(cents);
+  const posted = await postTransaction(db, {
+    kind: "seed",
+    idempotencyKey: `demo-wallet-floor:${input.userId}:${entries?.n ?? 0}`,
+    memo: "Demo balance so the next judge's research agent can pay",
+    entries: [
+      { accountId: wallet, amountMicros: amount },
+      { accountId: Accounts.paypalClearing, amountMicros: -amount },
+    ],
+  });
+  return { addedCents: posted.created ? cents : 0 };
 }

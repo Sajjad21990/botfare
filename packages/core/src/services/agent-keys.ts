@@ -54,6 +54,31 @@ export function listAgentKeys(db: DbOrTx, ownerUserId: string): Promise<AgentKey
     .orderBy(desc(agentKeys.createdAt));
 }
 
+/**
+ * Sets a key's limits in place (the facilitator reads them on every charge), so an operator can
+ * raise a seeded key's caps without issuing a new secret. Null if the key does not exist.
+ */
+export async function updateAgentKeyLimits(
+  db: DbOrTx,
+  input: {
+    keyId: string;
+    perRequestMaxCents: number | null;
+    dailyCapCents: number | null;
+    allowedSiteIds?: string[] | null;
+  },
+): Promise<AgentKey | null> {
+  const [key] = await db
+    .update(agentKeys)
+    .set({
+      perRequestMaxCents: limitSchema.parse(input.perRequestMaxCents) ?? null,
+      dailyCapCents: limitSchema.parse(input.dailyCapCents) ?? null,
+      allowedSiteIds: z.array(z.string()).max(100).nullish().parse(input.allowedSiteIds) ?? null,
+    })
+    .where(eq(agentKeys.id, input.keyId))
+    .returning();
+  return key ?? null;
+}
+
 /** Revokes a key (idempotent). With `ownerUserId`, only that user's key. Null if not found. */
 export async function revokeAgentKey(
   db: DbOrTx,
