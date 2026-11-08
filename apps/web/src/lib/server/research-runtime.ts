@@ -1,17 +1,20 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { isDemoPersonaEmail } from "@botfare/contracts";
 import { schema } from "@botfare/core";
 import { createBotFareAgent } from "@botfare/sdk";
 import { getDb } from "./db";
 import { createRewritingFetch, demoOriginRewrite, demoPublicOrigin } from "./demo-origin";
+import { createGuardedFetch, isPrivateHostname } from "./outbound-guard";
 import { DEFAULT_MODEL, type ResearchDeps } from "./research-agent";
 import { normalizeUrl, type ResearchSite, readTextLimited } from "./research-tools";
 
 /**
  * Wiring for the research agent on this server: the Anthropic client, the demo agent key
  * (BOTFARE_AGENT_KEY, seeded for the agent-owner persona; it never reaches the model or the
- * browser) and the BotFare sites from the database. Requests for the demo's public origin go to
- * DEMO_INTERNAL_URL when it is set (lib/server/demo-origin: the judge Docker stack).
+ * browser) and the BotFare sites it may read (the demo publisher, plus a real user's own sites).
+ * Requests for the demo's public origin go to DEMO_INTERNAL_URL when it is set
+ * (lib/server/demo-origin: the judge Docker stack); every request goes through the outbound guard.
  */
 
 const MAX_SITES = 10;
@@ -43,33 +46,38 @@ export function missingConfigMessage(missing: string[]): string {
   return `The research agent needs ${names} on the server. Set ${missing.length > 1 ? "them" : "it"} in .env (pnpm seed writes BOTFARE_AGENT_KEY) and restart the app.`;
 }
 
-/** Loopback, private and link-local hosts (IP literals and localhost names). */
-function isPrivateHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (host === "localhost" || host.endsWith(".localhost") || host === "::1") return true;
-  if (/^(fc|fd|fe80)/.test(host) && host.includes(":")) return true;
-  const v4 = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(host);
-  if (!v4) return false;
-  const [a, b] = [Number(v4[1]), Number(v4[2])];
-  return (
-    a === 10 ||
-    a === 127 ||
-    a === 0 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168)
-  );
+/** Where the seed registers Crema Notes when DEMO_ORIGIN is not set (local development only). */
+const LOCAL_DEMO_ORIGIN = "http://localhost:4000";
+
+/**
+ * The demo publisher's origins: DEMO_ORIGIN (what the seed registers) and DEMO_PUBLIC_URL, or the
+ * seed's local default outside production when neither is set.
+ */
+export function researchTrustedOrigins(
+  env: Record<string, string | undefined> = process.env,
+): string[] {
+  const configured = [env.DEMO_ORIGIN?.trim() ?? "", demoPublicOrigin(env) ?? ""].filter(Boolean);
+  if (configured.length > 0) return configured;
+  return env.NODE_ENV === "production" ? [] : [LOCAL_DEMO_ORIGIN];
+}
+
+/** Who is asking: their own sites are readable too, unless they are a shared judge persona. */
+export interface ResearchViewer {
+  userId: string;
+  email: string;
 }
 
 /**
- * Sites the agent may read: one per origin, oldest first. In production, origins on private or
- * loopback hosts are left out (other than the configured demo publisher: DEMO_PUBLIC_URL or
- * DEMO_ORIGIN), so a registered site cannot point the server at its own network. The demo's
- * DEMO_INTERNAL_URL is operator configuration and is reached only through that trusted origin.
+ * Sites the agent may read: the demo publisher (sites at a trusted origin) and, for a signed-in
+ * user with their own account, that user's own sites; never sites other people registered, so a
+ * site added through the shared publisher persona does not reach every judge's research run. One
+ * per origin, oldest first. In production, own sites on private or loopback hosts are left out
+ * (the guarded fetch also checks what every name resolves to); the trusted demo origin may be on
+ * a private network (the judge Docker stack) and is reached as configured.
  */
 export function selectSites(
-  rows: { id: string; name: string; origin: string; createdAt: Date }[],
-  options: { production: boolean; trustedOrigins: string[] },
+  rows: { id: string; name: string; origin: string; createdAt: Date; ownerUserId?: string }[],
+  options: { production: boolean; trustedOrigins: string[]; viewer?: ResearchViewer | null },
 ): ResearchSite[] {
   const trusted = new Set(
     options.trustedOrigins.flatMap((value) => {
@@ -77,6 +85,8 @@ export function selectSites(
       return url ? [new URL(url).origin] : [];
     }),
   );
+  const ownerId =
+    options.viewer && !isDemoPersonaEmail(options.viewer.email) ? options.viewer.userId : null;
   const seen = new Set<string>();
   const sites: ResearchSite[] = [];
   for (const row of [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
@@ -84,9 +94,9 @@ export function selectSites(
     if (!url) continue;
     const parsed = new URL(url);
     if (seen.has(parsed.origin)) continue;
-    if (options.production && isPrivateHost(parsed.hostname) && !trusted.has(parsed.origin)) {
-      continue;
-    }
+    const isTrusted = trusted.has(parsed.origin);
+    if (!isTrusted && (ownerId === null || row.ownerUserId !== ownerId)) continue;
+    if (options.production && !isTrusted && isPrivateHostname(parsed.hostname)) continue;
     seen.add(parsed.origin);
     sites.push({ id: row.id, name: row.name, origin: parsed.origin });
     if (sites.length >= MAX_SITES) break;
@@ -94,18 +104,20 @@ export function selectSites(
   return sites;
 }
 
-async function loadSites(): Promise<ResearchSite[]> {
+async function loadSites(viewer: ResearchViewer | null): Promise<ResearchSite[]> {
   const rows = await getDb()
     .select({
       id: schema.sites.id,
       name: schema.sites.name,
       origin: schema.sites.origin,
       createdAt: schema.sites.createdAt,
+      ownerUserId: schema.sites.ownerUserId,
     })
     .from(schema.sites);
   return selectSites(rows, {
     production: process.env.NODE_ENV === "production",
-    trustedOrigins: [process.env.DEMO_ORIGIN ?? "", demoPublicOrigin() ?? ""].filter(Boolean),
+    trustedOrigins: researchTrustedOrigins(),
+    viewer,
   });
 }
 
@@ -127,9 +139,17 @@ export async function fetchCatalogWith(
   return JSON.parse(await readTextLimited(response, MAX_CATALOG_BYTES));
 }
 
-export function createResearchDeps(config: Extract<ResearchConfig, { ok: true }>): ResearchDeps {
-  // Server-side only: the model and the browser keep seeing the public URLs.
-  const serverFetch = createRewritingFetch(demoOriginRewrite());
+export function createResearchDeps(
+  config: Extract<ResearchConfig, { ok: true }>,
+  viewer: ResearchViewer | null = null,
+): ResearchDeps {
+  // Server-side only: the model and the browser keep seeing the public URLs. Every request is
+  // checked against the registered origin (no redirects, no private addresses in production)
+  // before the demo's public origin is mapped to DEMO_INTERNAL_URL.
+  const serverFetch = createGuardedFetch(createRewritingFetch(demoOriginRewrite()), {
+    checkAddresses: process.env.NODE_ENV === "production",
+    trustedOrigins: researchTrustedOrigins(),
+  });
   return {
     client: new Anthropic({ apiKey: config.apiKey, maxRetries: 1, timeout: 60_000 }),
     model: config.model,
@@ -140,7 +160,7 @@ export function createResearchDeps(config: Extract<ResearchConfig, { ok: true }>
         onWire,
         fetch: serverFetch,
       }),
-    loadSites,
+    loadSites: () => loadSites(viewer),
     fetchCatalog: (site, signal) => fetchCatalogWith(serverFetch, site, signal),
   };
 }

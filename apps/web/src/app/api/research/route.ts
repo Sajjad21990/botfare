@@ -95,7 +95,7 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const deps = createResearchDeps(config);
+  const deps = createResearchDeps(config, { userId: auth.user.id, email: auth.user.email });
   const abort = new AbortController();
   const onAbort = () => abort.abort();
   request.signal.addEventListener("abort", onAbort, { once: true });

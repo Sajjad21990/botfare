@@ -348,25 +348,100 @@ describe("hard limits in the loop", () => {
 });
 
 describe("which sites the agent may read", () => {
-  it("keeps one site per origin and, in production, no private hosts but the demo's", async () => {
+  const at = (n: number) => new Date(Date.UTC(2026, 10, n));
+  const rows = [
+    {
+      id: "site_b",
+      name: "Copy",
+      origin: "https://crema.example/",
+      createdAt: at(3),
+      ownerUserId: "usr_x",
+    },
+    {
+      id: "site_a",
+      name: "Crema",
+      origin: "https://crema.example",
+      createdAt: at(1),
+      ownerUserId: "usr_pub",
+    },
+    {
+      id: "site_meta",
+      name: "Meta",
+      origin: "http://169.254.169.254",
+      createdAt: at(2),
+      ownerUserId: "usr_me",
+    },
+    {
+      id: "site_local",
+      name: "Local",
+      origin: "http://localhost:4000",
+      createdAt: at(4),
+      ownerUserId: "usr_pub",
+    },
+    {
+      id: "site_mine",
+      name: "Mine",
+      origin: "https://mine.example",
+      createdAt: at(5),
+      ownerUserId: "usr_me",
+    },
+    {
+      id: "site_mapped",
+      name: "Mapped",
+      origin: "http://[::ffff:127.0.0.1]:10000",
+      createdAt: at(6),
+      ownerUserId: "usr_me",
+    },
+    {
+      id: "site_junk",
+      name: "Judge test blog",
+      origin: "https://example.com",
+      createdAt: at(7),
+      ownerUserId: "usr_pub",
+    },
+    { id: "site_bad", name: "Bad", origin: "not a url", createdAt: at(8), ownerUserId: "usr_me" },
+  ];
+  const me = { userId: "usr_me", email: "me@example.test" };
+
+  it("reads the demo publisher and a real user's own sites, never other people's", async () => {
     const { selectSites } = await import("../src/lib/server/research-runtime");
-    const at = (n: number) => new Date(Date.UTC(2026, 10, n));
-    const rows = [
-      { id: "site_b", name: "Copy", origin: "https://crema.example/", createdAt: at(3) },
-      { id: "site_a", name: "Crema", origin: "https://crema.example", createdAt: at(1) },
-      { id: "site_meta", name: "Meta", origin: "http://169.254.169.254", createdAt: at(2) },
-      { id: "site_local", name: "Local", origin: "http://localhost:4000", createdAt: at(4) },
-      { id: "site_bad", name: "Bad", origin: "not a url", createdAt: at(5) },
-    ];
-    expect(selectSites(rows, { production: false, trustedOrigins: [] }).map((s) => s.id)).toEqual([
+    const trustedOrigins = ["https://crema.example", "http://localhost:4000"];
+    expect(selectSites(rows, { production: false, trustedOrigins }).map((s) => s.id)).toEqual([
       "site_a",
-      "site_meta",
       "site_local",
     ]);
     expect(
-      selectSites(rows, { production: true, trustedOrigins: ["http://localhost:4000"] }).map(
-        (s) => s.id,
-      ),
-    ).toEqual(["site_a", "site_local"]);
+      selectSites(rows, { production: false, trustedOrigins, viewer: me }).map((s) => s.id),
+    ).toEqual(["site_a", "site_meta", "site_local", "site_mine", "site_mapped"]);
+    // In production, own sites on private hosts are dropped (IPv4-mapped IPv6 included).
+    expect(
+      selectSites(rows, { production: true, trustedOrigins, viewer: me }).map((s) => s.id),
+    ).toEqual(["site_a", "site_local", "site_mine"]);
+  });
+
+  it("gives the shared judge personas only the demo publisher", async () => {
+    const { selectSites } = await import("../src/lib/server/research-runtime");
+    const { DEMO_PERSONAS } = await import("@botfare/contracts");
+    const persona = { userId: "usr_pub", email: DEMO_PERSONAS.publisher.email };
+    expect(
+      selectSites(rows, {
+        production: true,
+        trustedOrigins: ["https://crema.example"],
+        viewer: persona,
+      }).map((s) => s.id),
+    ).toEqual(["site_a"]);
+  });
+
+  it("trusts DEMO_ORIGIN and DEMO_PUBLIC_URL, or the local seed default outside production", async () => {
+    const { researchTrustedOrigins } = await import("../src/lib/server/research-runtime");
+    expect(researchTrustedOrigins({ NODE_ENV: "development" })).toEqual(["http://localhost:4000"]);
+    expect(researchTrustedOrigins({ NODE_ENV: "production" })).toEqual([]);
+    expect(
+      researchTrustedOrigins({
+        NODE_ENV: "production",
+        DEMO_ORIGIN: "https://demo.example",
+        DEMO_PUBLIC_URL: "https://crema.example/",
+      }),
+    ).toEqual(["https://demo.example", "https://crema.example"]);
   });
 });
