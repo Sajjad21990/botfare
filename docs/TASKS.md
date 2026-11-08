@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Mon 9 Nov 2026, early hours IST (Phase 3 builds done: research agent, MCP server, /judge, Docker stack, polish; agent-safety review fixed; Log in with PayPal waits on the sandbox app setup)
+**Last updated:** Mon 9 Nov 2026 (Fare Court and Fare Advisor added) · previously Mon 9 Nov 2026, early hours IST (Phase 3 builds done: research agent, MCP server, /judge, Docker stack, polish; agent-safety review fixed; Log in with PayPal waits on the sandbox app setup)
 
 ## Overview
 
@@ -14,10 +14,11 @@
 | 1. Protocol end to end | Mon 9 | ✅ Done (a day early) | 9 / 9 |
 | 2. Real money and dashboards | Tue 10 | ✅ Done (one optional item needs you) | 10 / 11 |
 | 3. Agent detection, AI and polish | Wed 11 | 🔄 Built two days early; Log in with PayPal needs you | 8 / 9 |
+| 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | 🔄 In progress | 0 / 7 |
 | 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
 | 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
 
-**Overall: about 70% done** (37 of 53 items), and ahead of the plan by about two days. Next: deploy to Render.
+**Overall: about 62% done** (37 of 60 items) after adding Fare Court and Fare Advisor; still ahead of the plan. Next: build Fare Court and Fare Advisor, then deploy to Render.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -83,6 +84,20 @@
 | ✅ | Agent-safety review: 8 findings confirmed and fixed (two were the same demo-key issue) | Linear `htmlToText` (a hostile 1 MB page took 10–50 s on the event loop, now ms); SDK cap is always min(10¢, remaining budget), unreceipted payments count; agent reads only the demo publisher and a real user's own sites; outbound guard (no redirects, no private/mapped-IPv6/DNS-to-private hosts in production); run lock per visitor; demo key $10/day, raised in place by `pnpm seed`; agent-owner wallet kept at $5 at sign-in and before each run; daily-cap refusals explained. 👤 Rerun `pnpm seed` to raise the existing demo key's cap |
 | ✅ | Polish: empty, loading, error and mobile states (hide revoked test keys in the wallet); feature freeze at 10 pm IST | Wallet "Show revoked" toggle, loading skeleton, error and 404 pages, card actions stack on phones; every page checked at 375 px with no horizontal scroll. Detection: non-browser user agents (no `Mozilla/`) now pay at standard/strict, chat link previews stay free |
 
+## Phase 3b: Fare Court and Fare Advisor (AI on every side) 🔄 (0 / 7)
+
+Why: micropayments fail on the *decision* cost, not the technology (Szabo 1999, Shirky 2000). BotFare puts AI on the decisions too small for a human, and keeps money movement in code. See [`docs/PLAN.md`](PLAN.md), "Decisions (9 Nov)".
+
+| | Task | Notes |
+| --- | --- | --- |
+| ⏳ | Shared contracts: dispute request and verdict, decline note, citation report, offer telemetry, declared offer fields | `packages/contracts` |
+| ⏳ | ⭐ Fare Court, proof of delivery: middleware attests a SHA-256 `Content-Digest` (RFC 9530) of the delivered body per receipt; the offer's title and preview are declared in the requirements at settle | Agent can't fake content; publisher can't deny it |
+| ⏳ | ⭐ Fare Court, disputes: agent-signed dispute API, Claude judge (zod verdict), refund in code via the existing ledger refund when confident, publisher review otherwise, per-key dispute-rate limits | 👤 needs `ANTHROPIC_API_KEY` for live verdicts |
+| ⏳ | ⭐ Fare Court, both sides of the UI: publisher Disputes tab with the AI's reasoning; SDK `dispute()`, MCP `dispute_purchase`, research agent disputes a stub; a Crema Notes stub page for the demo | Demo: 3¢ back in seconds |
+| ⏳ | ⭐ Fare Advisor, signals: middleware offer telemetry (402s shown), agent decline notes (SDK `decline()`, MCP `decline_offer`, research agent skip reasons), citation reports from research answers, disputes | Privacy: no personal data, aggregated per page |
+| ⏳ | ⭐ Fare Advisor, recommendations: Claude clusters reasons per page and proposes price, preview and audience changes with projected revenue; one-click Apply; "Citations are the new clicks" metrics on the dashboard and in analytics | Demo: 50¢ → 8¢, next agent buys |
+| ⏳ | Integration, e2e coverage, review and fixes | Same pattern as earlier phases |
+
 ## Phase 4: Deploy to Render ⏳
 
 Deploying is the last build step, by choice. It must happen by Wednesday night so the live demo can be checked before recording.
@@ -109,6 +124,16 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | ⏳ | 👤 APIMatic claim form | |
 | ⏳ | Keep Render services and sandbox credentials running until winners are announced (~21 Dec) | |
 
+## Backlog (later)
+
+| | Idea | Notes |
+| --- | --- | --- |
+| 💡 | **Allowance**: "Give your AI agent an allowance, not your wallet." Plain-English rules compiled by AI and enforced in code, `buy_product` over MCP, phone approvals, an intent check against prompt injection, PayPal Vault for a saved PayPal account, and an authorize-then-capture hold with an Undo (void) window | Decided 9 Nov: later. Nuvei survey (1,000 US consumers): 56% would never let AI spend without approval, 76% fear fraud, 61% want spending limits. The "84% want to reverse" figure was not found; don't use it without a source |
+| 💡 | Plain-English allowance on BotFare agent keys (Allowance-lite) | Smaller first step of Allowance |
+| 💡 | Publishers sell answers, not pages ("Ask Crema Notes", per cited answer) | |
+| 💡 | Paid MCP tools through BotFare (`@x402/mcp`) | |
+| 💡 | x402 Bazaar discovery search: "every result has a price" | Needs more than one publisher to look real |
+
 ## Decisions log
 
 | Date | Decision |
@@ -121,3 +146,4 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | 8 Nov | Add the agent detection layer (edge signals, signed agents, impostor checks, Turnstile escape hatch) after Phase 2 |
 | 8 Nov | One Web Bot Auth module (`@botfare/contracts/web-bot-auth`) for the SDK signer and the middleware verifier; Cloudflare's sf-string `Signature-Agent` form |
 | 8 Nov | Sites created before detection keep their behaviour (`chargeKnownBots` on → known-bots, off → off); new sites start at known-bots; Crema Notes runs at standard |
+| 9 Nov | AI on every side of the fare: build Fare Court (AI micro-dispute arbitration with digest-attested delivery) and Fare Advisor (pricing from agents' decline reasons, paid, cited and disputed reads) now; Allowance moves to the backlog |

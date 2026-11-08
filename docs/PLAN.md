@@ -46,6 +46,29 @@ These come from the research on 8 Nov and override anything older in this doc or
 
 **Fallback rule:** spike 05 on Sunday has a 3-hour timebox. If the plug-in can't complete a paid request through the official `@x402/express` and `@x402/fetch` in that time, we fall back to our own Express middleware and SDK fetch wrapper. They speak the same V2 headers and JSON, reuse the plug-in's JWS code and call the same facilitator endpoints; only those two thin layers change. We build the fallback only if the plug-in route blocks us.
 
+## Decisions (9 Nov): AI on every side of the fare
+
+**Why AI belongs in BotFare, not bolted on.** Micropayments have failed for 25 years because every tiny payment needs a decision that costs more human attention than the payment is worth: Nick Szabo's ["Micropayments and Mental Transaction Costs"](https://nakamotoinstitute.org/micropayments-and-mental-transaction-costs/) (1999) and Clay Shirky's "The Case Against Micropayments" (2000). x402 removes the technical cost and BotFare's batching removes PayPal's fee; the decision cost remains at every seat. **BotFare puts AI on the decisions that are too small for a human, and keeps money movement in code.**
+
+| Seat | The micro-decision | AI in BotFare |
+| --- | --- | --- |
+| Agent (buyer) | Is this page worth 3¢? | Research agent and MCP: Claude reads the free offer, buys or skips with a reason |
+| Publisher | What should this page cost an AI? | **Fare Advisor**: prices from what agents say and do |
+| BotFare (referee) | Was that 3¢ page what was promised? | **Fare Court**: AI arbitration of micro-disputes |
+| Agent owner | How much may my agent spend, and where? | Caps today; plain-English allowance later (backlog) |
+
+15. **Fare Court: PayPal-style Buyer Protection for purchases too small for a human to dispute.**
+    - Proof of delivery: the publisher's `botfare()` middleware attests a SHA-256 digest (RFC 9530 `Content-Digest`) of the body it actually delivered for each receipt, and declares the offer (title and preview) in the payment requirements at settle time. The agent cannot fake content; the publisher cannot deny it.
+    - The agent files a dispute signed with its key (Web Bot Auth) within 24 hours, with the delivered content; BotFare checks the digest.
+    - Claude compares what was declared with what was delivered and returns a zod-validated verdict. Policy lives in code: a confident "not as described" refunds instantly through the ledger's existing refund; anything uncertain goes to the publisher's Disputes tab with the AI's reasoning; dispute-rate limits per key stop "dispute everything".
+    - Demo: a Crema Notes page serves a "subscribe to keep reading" stub after payment; the research agent disputes and gets 3¢ back in seconds.
+16. **Fare Advisor: "Why didn't the bot buy?"**
+    - Signals: offers shown (middleware telemetry of 402s), paid, declined with a reason (an optional free note from agents: the research agent's skip reasons, an MCP `decline_offer`), cited (which receipts an answer actually used), disputed.
+    - Claude clusters the reasons per page and recommends price, preview and audience changes with a projected revenue effect; **Apply** updates the pricing rule and reaches the middleware within 30 s.
+    - "Citations are the new clicks": publishers see how often each paid page was used in an AI answer, the replacement for the clicks AI summaries took away.
+    - Demo: "0 of 23 agents bought Premium roundup at 50¢; 14 said thin listicle. Suggested 8¢." Apply, and the next agent run buys it.
+17. **Allowance (plain-English budgets, approvals, Vault, authorize-and-void undo window) moves to the backlog** and to "What's next" on Devpost; full Allowance is a second product domain and would dilute the x402 story this week.
+
 ## Problem
 
 AI agents read pages and call APIs for free, and the one open standard for paying per request can't settle to the payment accounts most people already have.
@@ -333,7 +356,9 @@ AI is the paying customer here, so the demo must show agents deciding, paying an
 | Worth-it check and guardrails | The agent skips a cheap but irrelevant page with a reason; a 50¢ page is blocked by the 10¢ cap in the SDK's spend controls and the facilitator's per-key checks | Must |
 | AG Studio Claude adapter | AG Studio's bring-your-own-model Agent Framework with our Claude adapter, so a publisher can ask "which pages earn most from agents?" | Must, cut last (cut order 5) |
 | MCP server | `get_offer`, `fetch_paid`, `wallet_balance`, `recent_receipts` tools on the same SDK, so Claude Desktop, Cursor or Claude Code can pay per request with a local key | Should |
-| Price suggestions | Publisher pastes a page; AI suggests a price tier with a one-line reason | Stretch |
+| Fare Court | AI arbitration of micro-disputes: compares the declared offer with the digest-attested delivered content; confident refunds in code, the rest to the publisher | Must (9 Nov) |
+| Fare Advisor | Clusters agents' decline reasons, paid and cited reads and disputes per page; recommends prices and previews with projected revenue; one-click apply | Must (9 Nov) |
+| Plain-English allowance | Owner writes the budget in English; Claude compiles it to the key's policy; code enforces | Backlog (Allowance) |
 
 The model never holds PayPal credentials or the agent's private key; tools call the SDK, and every AI output is validated with zod. The model ID comes from `ANTHROPIC_MODEL`.
 
