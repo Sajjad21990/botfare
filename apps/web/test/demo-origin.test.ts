@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 
 vi.mock("server-only", () => ({}));
 
+import type { ModelClient } from "../src/lib/server/ai/model-client";
 import {
   createRewritingFetch,
   demoOriginRewrite,
@@ -103,14 +104,17 @@ describe("demo origin mapping", () => {
     vi.stubEnv("DEMO_INTERNAL_URL", internalOrigin);
     const { privateJwk } = await generateAgentKeyPair();
     const deps = createResearchDeps({
-      ok: true,
-      apiKey: "test-key-not-used",
       agentKey: encodeAgentKey({
         v: 1,
         keyId: "ak_test",
         privateJwk: privateJwk as Parameters<typeof encodeAgentKey>[0]["privateJwk"],
       }),
-      model: "test-model",
+      ai: {
+        provider: "anthropic",
+        label: "Anthropic",
+        model: "test-model",
+        client: {} as ModelClient,
+      },
     });
     const site = { id: "site_demo", name: "Crema Notes", origin: PUBLIC };
     const catalog = await deps.fetchCatalog(site, new AbortController().signal);

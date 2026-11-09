@@ -1,13 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AgAiEvent, AgAiOutputItem, AgLlmResponse } from "ag-studio";
 import { z } from "zod";
+import type { ModelClient } from "./ai/model-client";
+import { DEFAULT_ANTHROPIC_MODEL } from "./ai/providers";
 
 /**
  * The AG Studio assistant's model call. AG Studio's Agent Framework runs its agent loop in the
  * browser and hands each turn to an adapter as an `AgLlmRequest` (conversation items, instructions,
  * tool schemas, tool choice, response format). The browser adapter posts that request here; this
  * module validates it, translates it to an Anthropic Messages request, and translates the streamed
- * answer back into AG Studio's events (AG-UI vocabulary) and its final `AgLlmResponse`.
+ * answer back into AG Studio's events (AG-UI vocabulary) and its final `AgLlmResponse`. The request
+ * runs on the server's default AI provider (./ai/providers): Claude, or another provider through
+ * the OpenAI-compatible adapter, which takes the same Messages request.
  * The API key never leaves the server, and the browser cannot pick the model or the token cap.
  */
 
@@ -19,7 +23,7 @@ type MessageParam = Anthropic.Beta.Messages.BetaMessageParam;
 type ContentBlockParam = Anthropic.Beta.Messages.BetaContentBlockParam;
 type ToolUnion = Anthropic.Beta.Messages.BetaToolUnion;
 
-export const DEFAULT_MODEL = "claude-sonnet-5-5";
+export const DEFAULT_MODEL = DEFAULT_ANTHROPIC_MODEL;
 /** Hard cap on the answer for one turn; the browser cannot raise it. */
 export const MAX_OUTPUT_TOKENS = 8192;
 /**
@@ -377,7 +381,9 @@ export function toAnthropicParams(
     model: options.model,
     max_tokens: Math.min(options.maxTokens ?? MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
     messages: merged,
-    cache_control: { type: "ephemeral" },
+    ...(options.model.startsWith("claude-")
+      ? { cache_control: { type: "ephemeral" as const } }
+      : {}),
     ...thinkingFor(options.model),
   };
   params.system = system.join("\n\n");
@@ -392,10 +398,11 @@ export function toAnthropicParams(
   return params;
 }
 
-/** Sonnet 5.5's lowest thinking setting keeps an interactive assistant quick. */
+/** Sonnet 5.5's lowest thinking setting keeps an interactive assistant quick (Claude only). */
 function thinkingFor(
   model: string,
 ): Partial<Pick<AnthropicTurnParams, "thinking" | "output_config">> {
+  if (!model.startsWith("claude-")) return {};
   if (model.startsWith("claude-sonnet-5-5")) {
     return { thinking: { type: "between_tools" }, output_config: { effort: "medium" } };
   }
@@ -610,10 +617,9 @@ export type AiStreamLine =
   | { complete: AgLlmResponse }
   | { error: { code: string; message: string } };
 
-export function anthropicConfig(): { apiKey: string; model: string } | null {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) return null;
-  return { apiKey, model: process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL };
+/** The slice of a model client a turn uses (the Anthropic SDK or the OpenAI-compatible adapter). */
+export interface AnalyticsModelClient {
+  beta: { messages: { stream: ModelClient["beta"]["messages"]["stream"] } };
 }
 
 /** True when the API rejected replayed thinking blocks (stale signature, edited history). */
@@ -623,7 +629,7 @@ function isThinkingRejection(error: unknown): boolean {
 
 function describeError(error: unknown): { code: string; message: string } {
   if (error instanceof Anthropic.AuthenticationError) {
-    return { code: "ai_auth", message: "The Anthropic API key was rejected." };
+    return { code: "ai_auth", message: "The AI provider rejected the API key." };
   }
   if (error instanceof Anthropic.RateLimitError) {
     return { code: "ai_rate_limited", message: "The AI assistant is busy. Try again in a moment." };
@@ -646,7 +652,7 @@ function describeError(error: unknown): { code: string; message: string } {
  * without them.
  */
 export async function* runAiTurn(
-  client: Anthropic,
+  client: AnalyticsModelClient,
   request: AiTurnRequest,
   options: { model: string; signal?: AbortSignal },
 ): AsyncGenerator<AiStreamLine> {

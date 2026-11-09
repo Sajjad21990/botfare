@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AnswerManifest } from "@botfare/contracts/receipts";
 import type { WireListener } from "@botfare/sdk";
+import type { ModelClient } from "./ai/model-client";
+import type { ProviderId } from "./ai/providers";
 import {
   MAX_DISPUTES_PER_RUN,
   MAX_PER_REQUEST_CENTS,
@@ -20,10 +22,11 @@ import {
 } from "./research-tools";
 
 /**
- * The research agent: a Claude tool-use loop that answers a question by reading free offers and
- * paying for the pages worth their price, within a budget. Claude picks what to read and why; this
- * module holds the agent key, enforces every limit in code (budget, per-request cap, tool calls,
- * tokens, time) and streams what happens as ResearchEvents.
+ * The research agent: a tool-use loop that answers a question by reading free offers and paying
+ * for the pages worth their price, within a budget. The model (Claude by default, or any provider
+ * in ./ai/providers) picks what to read and why; this module holds the agent key, enforces every
+ * limit in code (budget, per-request cap, tool calls, tokens, time) and streams what happens as
+ * ResearchEvents.
  */
 
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
@@ -45,14 +48,19 @@ export type ResearchStreamParams = Omit<
 type MessageParam = Anthropic.Beta.Messages.BetaMessageParam;
 type ToolResultBlockParam = Anthropic.Beta.Messages.BetaToolResultBlockParam;
 
-/** The slice of the Anthropic client the loop uses (a scripted fake in tests). */
+/**
+ * The slice of the Anthropic client the loop uses: the Anthropic SDK, the OpenAI-compatible
+ * adapter, or a scripted fake in tests.
+ */
 export interface ResearchModelClient {
-  beta: { messages: { stream: Anthropic["beta"]["messages"]["stream"] } };
+  beta: { messages: { stream: ModelClient["beta"]["messages"]["stream"] } };
 }
 
 export interface ResearchDeps {
   client: ResearchModelClient;
   model: string;
+  /** Which provider runs the model (shown in the run header; default anthropic). */
+  provider?: ProviderId;
   /** A BotFare agent on the server-held demo key, with the given per-request cap. */
   createAgent: (options: { maxPerRequestCents: number; onWire: WireListener }) => ResearchAgent;
   loadSites: () => Promise<ResearchSite[]>;
@@ -97,8 +105,12 @@ export function userPrompt(input: ResearchInput): string {
   ].join("\n");
 }
 
-/** Adaptive thinking with readable summaries; medium effort suits multi-step tool use. */
+/**
+ * Adaptive thinking with readable summaries; medium effort suits multi-step tool use. Claude only:
+ * other providers get no Anthropic-specific params.
+ */
 function thinkingFor(model: string): Partial<ResearchStreamParams> {
+  if (!model.startsWith("claude-")) return {};
   if (model.startsWith("claude-haiku-4") || model.startsWith("claude-3")) return {};
   return {
     thinking: { type: "adaptive", display: "summarized" },
@@ -121,7 +133,7 @@ export function buildParams(model: string, messages: MessageParam[]): ResearchSt
     tools: RESEARCH_TOOLS,
     tool_choice: { type: "auto" },
     messages,
-    cache_control: { type: "ephemeral" },
+    ...(model.startsWith("claude-") ? { cache_control: { type: "ephemeral" as const } } : {}),
     ...thinkingFor(model),
   };
   if (supportsServerFallback(model)) {
@@ -140,7 +152,7 @@ function weigh(usage: Anthropic.Beta.Messages.BetaUsage): number {
 
 function describeModelError(error: unknown): { code: string; message: string } {
   if (error instanceof Anthropic.AuthenticationError) {
-    return { code: "ai_auth", message: "The Anthropic API key was rejected." };
+    return { code: "ai_auth", message: "The AI provider rejected the API key." };
   }
   if (error instanceof Anthropic.RateLimitError) {
     return { code: "ai_rate_limited", message: "The model is busy. Try again in a moment." };
@@ -230,6 +242,7 @@ export async function runResearch(
       maxToolCalls: MAX_TOOL_CALLS,
       model: deps.model,
       agentKeyId: agent.keyId,
+      provider: deps.provider ?? "anthropic",
     });
     if (ctx.sites.length === 0) {
       return fail(

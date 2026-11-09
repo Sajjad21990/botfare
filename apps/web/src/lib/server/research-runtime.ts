@@ -1,17 +1,18 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import { isDemoPersonaEmail } from "@botfare/contracts";
 import { schema } from "@botfare/core";
 import { createBotFareAgent } from "@botfare/sdk";
+import { AI_KEY_HINT, defaultModelHint, type ProviderId, type ResolvedAi } from "./ai/providers";
 import { getDb } from "./db";
 import { createRewritingFetch, demoOriginRewrite, demoPublicOrigin } from "./demo-origin";
 import { refillDemoAgentWallet } from "./judge";
 import { createGuardedFetch, isPrivateHostname } from "./outbound-guard";
-import { DEFAULT_MODEL, type ResearchDeps } from "./research-agent";
+import type { ResearchDeps } from "./research-agent";
 import { normalizeUrl, type ResearchSite, readTextLimited } from "./research-tools";
 
 /**
- * Wiring for the research agent on this server: the Anthropic client, the demo agent key
+ * Wiring for the research agent on this server: the model client (./ai/providers: Claude by
+ * default, or the provider and model the owner picked), the demo agent key
  * (BOTFARE_AGENT_KEY, seeded for the agent-owner persona; it never reaches the model or the
  * browser) and the BotFare sites it may read (the demo publisher, plus a real user's own sites).
  * Requests for the demo's public origin go to DEMO_INTERNAL_URL when it is set
@@ -27,29 +28,30 @@ const MAX_SITES = 10;
 const CATALOG_TIMEOUT_MS = 5_000;
 const MAX_CATALOG_BYTES = 512_000;
 
+/** What `missing` lists when no AI provider is configured. */
+export const MISSING_AI_KEY = "AI provider key";
+
 export type ResearchConfig =
-  | { ok: true; apiKey: string; agentKey: string; model: string }
+  | {
+      ok: true;
+      agentKey: string;
+      /** The default provider, and its model when known without listing models. */
+      provider: ProviderId;
+      model: string | null;
+    }
   | { ok: false; missing: string[] };
 
 export function researchConfig(): ResearchConfig {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  const ai = defaultModelHint();
   const agentKey = process.env.BOTFARE_AGENT_KEY?.trim();
-  const missing = [
-    ...(apiKey ? [] : ["ANTHROPIC_API_KEY"]),
-    ...(agentKey ? [] : ["BOTFARE_AGENT_KEY"]),
-  ];
-  if (!apiKey || !agentKey) return { ok: false, missing };
-  return {
-    ok: true,
-    apiKey,
-    agentKey,
-    model: process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL,
-  };
+  const missing = [...(ai ? [] : [MISSING_AI_KEY]), ...(agentKey ? [] : ["BOTFARE_AGENT_KEY"])];
+  if (!ai || !agentKey) return { ok: false, missing };
+  return { ok: true, agentKey, provider: ai.provider, model: ai.model };
 }
 
 export function missingConfigMessage(missing: string[]): string {
-  const names = missing.join(" and ");
-  return `The research agent needs ${names} on the server. Set ${missing.length > 1 ? "them" : "it"} in .env (pnpm seed writes BOTFARE_AGENT_KEY) and restart the app.`;
+  const names = missing.map((name) => (name === MISSING_AI_KEY ? AI_KEY_HINT : name));
+  return `The research agent needs ${names.join(" and ")} on the server. Set ${missing.length > 1 ? "them" : "it"} in .env (pnpm seed writes BOTFARE_AGENT_KEY) and restart the app.`;
 }
 
 /** Where the seed registers Crema Notes when DEMO_ORIGIN is not set (local development only). */
@@ -145,8 +147,14 @@ export async function fetchCatalogWith(
   return JSON.parse(await readTextLimited(response, MAX_CATALOG_BYTES));
 }
 
+/** A run's configuration: the agent key and the resolved provider, model and client. */
+export interface ResearchRunConfig {
+  agentKey: string;
+  ai: ResolvedAi;
+}
+
 export function createResearchDeps(
-  config: Extract<ResearchConfig, { ok: true }>,
+  config: ResearchRunConfig,
   viewer: ResearchViewer | null = null,
 ): ResearchDeps {
   // Server-side only: the model and the browser keep seeing the public URLs. Every request is
@@ -159,8 +167,9 @@ export function createResearchDeps(
     trustedOrigins: researchTrustedOrigins(),
   });
   return {
-    client: new Anthropic({ apiKey: config.apiKey, maxRetries: 1, timeout: 60_000 }),
-    model: config.model,
+    client: config.ai.client,
+    model: config.ai.model,
+    provider: config.ai.provider,
     createAgent: ({ maxPerRequestCents, onWire }) =>
       createBotFareAgent({
         agentKey: config.agentKey,

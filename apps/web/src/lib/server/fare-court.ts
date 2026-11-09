@@ -8,19 +8,21 @@ import {
   disputeVerdictSchema,
 } from "@botfare/contracts/fare";
 import { type DisputeJudgeInput, normalizeMediaType } from "@botfare/core";
+import { aiAvailable, DEFAULT_ANTHROPIC_MODEL, resolveDefaultAi } from "./ai/providers";
 import { TokenBudget } from "./ai-budget";
 
 /**
- * Fare Court's AI judge. Claude reads what the publisher declared (title and preview, server-
+ * Fare Court's AI judge. The model (Claude by default, or the server's AI_PROVIDER; see
+ * ./ai/providers) reads what the publisher declared (title and preview, server-
  * authored at settle) against what was delivered (digest-checked bytes reduced to text) and
  * returns a verdict, which is validated with zod before core's applyVerdict decides what happens
  * to the money with DISPUTE_POLICY's thresholds. The judge never moves money and never sees a
- * credential. Without ANTHROPIC_API_KEY, after a model error, a refusal, a timeout or an exhausted
+ * credential. Without an AI provider, after a model error, a refusal, a timeout or an exhausted
  * AI budget, the verdict is null and the publisher decides.
  */
 
 /** Same default as the research agent and the analytics assistant; ANTHROPIC_MODEL overrides it. */
-export const DEFAULT_JUDGE_MODEL = "claude-sonnet-5-5";
+export const DEFAULT_JUDGE_MODEL = DEFAULT_ANTHROPIC_MODEL;
 /** Output cap for one verdict (thinking included): a verdict is a few hundred tokens. */
 export const JUDGE_MAX_TOKENS = 4_000;
 /** One model call; with one retry for invalid output the judge takes at most twice this. */
@@ -174,7 +176,7 @@ export const VERDICT_JSON_SCHEMA = {
 
 export type JudgeParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
 
-/** The slice of the Anthropic client the judge uses (a scripted fake in tests). */
+/** The slice of the Anthropic client the judge uses (any provider's ModelClient; a fake in tests). */
 export interface JudgeClient {
   beta: {
     messages: {
@@ -193,9 +195,16 @@ function supportsServerFallback(model: string): boolean {
   );
 }
 
-/** Older models reject `effort`; current ones take low effort for a quick, bounded verdict. */
+/**
+ * Older models reject `effort`; current ones take low effort for a quick, bounded verdict. Claude
+ * only: other providers get no Anthropic-specific params.
+ */
 function supportsEffort(model: string): boolean {
-  return !model.startsWith("claude-haiku-4") && !model.startsWith("claude-3");
+  return (
+    model.startsWith("claude-") &&
+    !model.startsWith("claude-haiku-4") &&
+    !model.startsWith("claude-3")
+  );
 }
 
 export function buildJudgeParams(
@@ -286,7 +295,7 @@ function weigh(usage: Anthropic.Beta.Messages.BetaUsage): number {
 }
 
 function describeError(error: unknown): string {
-  if (error instanceof Anthropic.AuthenticationError) return "the Anthropic API key was rejected";
+  if (error instanceof Anthropic.AuthenticationError) return "the AI provider rejected the API key";
   if (error instanceof Anthropic.RateLimitError) return "the model was rate limited";
   if (error instanceof Anthropic.BadRequestError) return "the model rejected the request";
   if (error instanceof Anthropic.APIError)
@@ -298,7 +307,7 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Asks Claude for a verdict: structured JSON output, validated with zod. Invalid output is retried
+ * Asks the model for a verdict: structured JSON output, validated with zod. Invalid output is retried
  * once; a second invalid answer becomes an explicit "unsure" (the publisher decides). A model
  * error, refusal, timeout or exhausted budget gives a null verdict.
  */
@@ -386,24 +395,28 @@ export async function judgeWithClaude(
 /** A judge: a dispute's case in, a verdict (or null) out. */
 export type Judge = (input: DisputeJudgeInput) => Promise<JudgeResult>;
 
-/** ANTHROPIC_API_KEY and the model, or null when Fare Court runs without AI. */
-export function judgeConfig(): { apiKey: string; model: string } | null {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) return null;
-  return { apiKey, model: process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_JUDGE_MODEL };
-}
-
 /**
- * The judge this server uses: Claude when ANTHROPIC_API_KEY is set, otherwise null (every
- * dispute that passes the checks goes to the publisher). Tests replace it with setJudgeForTests.
+ * The judge this server uses: the default AI provider's model (Claude when ANTHROPIC_API_KEY is
+ * set), otherwise null (every dispute that passes the checks goes to the publisher). Tests replace
+ * it with setJudgeForTests.
  */
 export function currentJudge(): Judge | null {
   if (globalForJudge.__botfareFareCourtJudge !== undefined)
     return globalForJudge.__botfareFareCourtJudge;
-  const config = judgeConfig();
-  if (!config) return null;
-  const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 1, timeout: JUDGE_TIMEOUT_MS });
-  return (input) => judgeWithClaude(input, { client, model: config.model });
+  if (!aiAvailable()) return null;
+  return async (input) => {
+    const ai = await resolveDefaultAi({ timeoutMs: JUDGE_TIMEOUT_MS });
+    if (!ai) {
+      return {
+        verdict: null,
+        source: "unavailable",
+        detail: "no AI judge is configured",
+        attempts: 0,
+        weightedTokens: 0,
+      };
+    }
+    return judgeWithClaude(input, { client: ai.client, model: ai.model });
+  };
 }
 
 /** Tests: a scripted judge, null for "no AI configured", or undefined to restore the default. */

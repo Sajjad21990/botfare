@@ -33,7 +33,9 @@ vi.mock("../src/lib/server/research-runtime", async (importOriginal) => {
   };
 });
 
+import { GET as GET_MODELS } from "../src/app/api/research/models/route";
 import { GET, POST } from "../src/app/api/research/route";
+import { resetModelListCache } from "../src/lib/server/ai/providers";
 import { runResearch } from "../src/lib/server/research-agent";
 
 const AGENT_KEY = "bfk_test_agent_key_never_shown_to_the_model";
@@ -78,14 +80,36 @@ const DEMO_SCRIPT: ScriptedTurn[] = [
   },
 ];
 
+/** Every other provider's settings, cleared so the developer's own environment does not leak in. */
+const OTHER_AI_ENV = [
+  "AI_PROVIDER",
+  "OPENAI_API_KEY",
+  "OPENAI_MODEL",
+  "GEMINI_API_KEY",
+  "GEMINI_MODEL",
+  "XAI_API_KEY",
+  "XAI_MODEL",
+  "GROQ_API_KEY",
+  "GROQ_MODEL",
+  "OPENROUTER_API_KEY",
+  "OPENROUTER_MODEL",
+  "OLLAMA_BASE_URL",
+  "OLLAMA_MODEL",
+];
+
 beforeEach(() => {
   vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
   vi.stubEnv("BOTFARE_AGENT_KEY", AGENT_KEY);
   vi.stubEnv("ANTHROPIC_MODEL", "");
+  for (const name of OTHER_AI_ENV) vi.stubEnv(name, "");
+  resetModelListCache();
   deps.current = null;
   deps.configs = [];
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("POST /api/research", () => {
   it("streams the run as Server-Sent Events, ending with a cited answer", async () => {
@@ -266,15 +290,17 @@ describe("POST /api/research", () => {
 });
 
 describe("missing keys", () => {
-  it("answers 503 with a clear message when ANTHROPIC_API_KEY or BOTFARE_AGENT_KEY is missing", async () => {
+  it("answers 503 with a clear message when no AI key or BOTFARE_AGENT_KEY is set", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.stubEnv("BOTFARE_AGENT_KEY", "");
     const response = await POST(post({ question: "Which grinder?" }));
     expect(response.status).toBe(503);
     const body = (await response.json()) as { error: string; message: string; missing: string[] };
     expect(body.error).toBe("research_unavailable");
-    expect(body.missing).toEqual(["ANTHROPIC_API_KEY", "BOTFARE_AGENT_KEY"]);
-    expect(body.message).toMatch(/ANTHROPIC_API_KEY and BOTFARE_AGENT_KEY/);
+    expect(body.missing).toEqual(["AI provider key", "BOTFARE_AGENT_KEY"]);
+    expect(body.message).toMatch(
+      /an AI key \(ANTHROPIC_API_KEY, or OPENAI\/GEMINI\/XAI\/GROQ\/OPENROUTER_API_KEY, or OLLAMA_BASE_URL\) and BOTFARE_AGENT_KEY/,
+    );
     expect(deps.configs).toEqual([]);
 
     vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
@@ -288,7 +314,137 @@ describe("missing keys", () => {
 
   it("reports the model when the agent can run", async () => {
     vi.stubEnv("ANTHROPIC_MODEL", "claude-opus-5-5");
-    expect(await (await GET()).json()).toEqual({ available: true, model: "claude-opus-5-5" });
+    expect(await (await GET()).json()).toEqual({
+      available: true,
+      model: "claude-opus-5-5",
+      provider: "anthropic",
+    });
+  });
+
+  it("runs on another provider when only its key is set", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("GROQ_API_KEY", "gsk_test_key_never_shown");
+    vi.stubEnv("GROQ_MODEL", "llama-test");
+    expect(await (await GET()).json()).toEqual({
+      available: true,
+      model: "llama-test",
+      provider: "groq",
+    });
+  });
+});
+
+describe("choosing the provider and model", () => {
+  /** A provider /models endpoint: OpenRouter's shape, two tool-capable models (one free). */
+  function stubModelLists() {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push(url);
+        // The key goes to the provider (server to server) and nowhere else.
+        expect((init?.headers as Record<string, string> | undefined)?.authorization).toBe(
+          "Bearer sk-or-never_shown_to_the_browser",
+        );
+        if (url === "https://openrouter.ai/api/v1/models") {
+          return Response.json({
+            data: [
+              {
+                id: "vendor/paid-model",
+                pricing: { prompt: "0.000001", completion: "0.000002" },
+                supported_parameters: ["tools", "tool_choice"],
+              },
+              {
+                id: "meta-llama/llama-test:free",
+                pricing: { prompt: "0", completion: "0" },
+                supported_parameters: ["tools"],
+              },
+              { id: "vendor/no-tools", pricing: { prompt: "0", completion: "0" } },
+            ],
+          });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    return calls;
+  }
+
+  it("lists configured providers and their models, never keys", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-never_shown_to_the_browser");
+    stubModelLists();
+    const response = await GET_MODELS();
+    const text = await response.text();
+    expect(text).not.toContain("never_shown_to_the_browser");
+    expect(text).not.toContain("test-anthropic-key");
+    expect(JSON.parse(text)).toEqual({
+      providers: [
+        {
+          provider: "anthropic",
+          label: "Anthropic",
+          models: [
+            { id: "claude-sonnet-5-5" },
+            { id: "claude-opus-5-5" },
+            { id: "claude-haiku-4-5" },
+          ],
+          default: "claude-sonnet-5-5",
+        },
+        {
+          provider: "openrouter",
+          label: "OpenRouter",
+          models: [{ id: "meta-llama/llama-test:free", free: true }, { id: "vendor/paid-model" }],
+          default: "meta-llama/llama-test:free",
+        },
+      ],
+      default: { provider: "anthropic", model: "claude-sonnet-5-5" },
+    });
+  });
+
+  it("runs the provider and model the owner picked", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-never_shown_to_the_browser");
+    stubModelLists();
+    deps.current = fakeDeps(scriptedClient([() => [text("x")], () => [text("y")]]).client);
+    const response = await POST(
+      post({ question: "Which grinder?", provider: "openrouter", model: "vendor/paid-model" }),
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(deps.configs).toMatchObject([
+      { agentKey: AGENT_KEY, ai: { provider: "openrouter", model: "vendor/paid-model" } },
+    ]);
+  });
+
+  it("uses the provider's default model when only the provider is given", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-never_shown_to_the_browser");
+    stubModelLists();
+    deps.current = fakeDeps(scriptedClient([() => [text("x")], () => [text("y")]]).client);
+    await (await POST(post({ question: "Which grinder?", provider: "openrouter" }))).text();
+    expect(deps.configs).toMatchObject([
+      { ai: { provider: "openrouter", model: "meta-llama/llama-test:free" } },
+    ]);
+  });
+
+  it("rejects providers that are not configured and models they do not list", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-never_shown_to_the_browser");
+    stubModelLists();
+    deps.current = fakeDeps(scriptedClient([]).client);
+    const notConfigured = await POST(post({ question: "Which grinder?", provider: "groq" }));
+    expect(notConfigured.status).toBe(400);
+    expect(await notConfigured.json()).toMatchObject({ error: "provider_unavailable" });
+
+    const unknown = await POST(post({ question: "Which grinder?", provider: "made-up" }));
+    expect(unknown.status).toBe(400);
+
+    const unlisted = await POST(
+      post({ question: "Which grinder?", provider: "openrouter", model: "vendor/no-tools" }),
+    );
+    expect(unlisted.status).toBe(400);
+    expect(await unlisted.json()).toMatchObject({ error: "model_unavailable" });
+
+    const otherProvidersModel = await POST(
+      post({ question: "Which grinder?", provider: "anthropic", model: "vendor/paid-model" }),
+    );
+    expect(otherProvidersModel.status).toBe(400);
+    expect(deps.configs).toEqual([]);
   });
 });
 

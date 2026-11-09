@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PROVIDER_IDS, resolveAiChoice } from "../../../lib/server/ai/providers";
 import { clientIp, TokenBudget, TurnLimiter } from "../../../lib/server/ai-budget";
 import { jsonError, readLimitedJson } from "../../../lib/server/http";
 import { runResearch } from "../../../lib/server/research-agent";
@@ -29,7 +30,13 @@ const bodySchema = z.object({
     .min(MIN_BUDGET_CENTS)
     .max(MAX_BUDGET_CENTS)
     .default(DEFAULT_BUDGET_CENTS),
+  /** Optional provider and model (GET /api/research/models lists what this server offers). */
+  provider: z.enum(PROVIDER_IDS).optional(),
+  model: z.string().trim().min(1).max(200).optional(),
 });
+
+/** Per-request timeout for one model turn. */
+const MODEL_TIMEOUT_MS = 60_000;
 
 /**
  * Runs per visitor (user and IP) per 10 minutes, one at a time per visitor, and a token budget for
@@ -55,9 +62,18 @@ export async function GET(): Promise<Response> {
   const auth = await requireApiUser();
   if ("response" in auth) return auth.response;
   const config = researchConfig();
-  const body: ResearchAvailability = config.ok
-    ? { available: true, model: config.model }
-    : { available: false, missing: config.missing, message: missingConfigMessage(config.missing) };
+  let body: ResearchAvailability;
+  if (config.ok) {
+    const choice = config.model ? null : await resolveAiChoice({});
+    const model = config.model ?? (choice?.ok ? choice.ai.model : null);
+    body = { available: true, ...(model ? { model } : {}), provider: config.provider };
+  } else {
+    body = {
+      available: false,
+      missing: config.missing,
+      message: missingConfigMessage(config.missing),
+    };
+  }
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }
 
@@ -81,6 +97,12 @@ export async function POST(request: Request): Promise<Response> {
   }
   const parsed = await readLimitedJson(request, bodySchema, 8_192);
   if (!parsed.ok) return parsed.response;
+  // Only configured providers, and only models that provider lists (or its default).
+  const choice = await resolveAiChoice(
+    { provider: parsed.data.provider, model: parsed.data.model },
+    { timeoutMs: MODEL_TIMEOUT_MS },
+  );
+  if (!choice.ok) return jsonError(400, choice.code, choice.message);
 
   const visitorKey = `${auth.user.id}:${clientIp(request)}`;
   if (limits.active.has(visitorKey)) {
@@ -98,7 +120,10 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const deps = createResearchDeps(config, { userId: auth.user.id, email: auth.user.email });
+  const deps = createResearchDeps(
+    { ...config, ai: choice.ai },
+    { userId: auth.user.id, email: auth.user.email },
+  );
   const abort = new AbortController();
   const onAbort = () => abort.abort();
   request.signal.addEventListener("abort", onAbort, { once: true });
@@ -119,7 +144,10 @@ export async function POST(request: Request): Promise<Response> {
         }
       };
       try {
-        const summary = await runResearch(deps, parsed.data, emit, { signal: abort.signal });
+        const { question, budgetCents } = parsed.data;
+        const summary = await runResearch(deps, { question, budgetCents }, emit, {
+          signal: abort.signal,
+        });
         limits.budget.settle(spend, summary.weightedTokens);
       } finally {
         limits.active.delete(visitorKey);

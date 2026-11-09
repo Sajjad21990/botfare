@@ -78,6 +78,8 @@ export type ResearchEvent =
       maxToolCalls: number;
       model: string;
       agentKeyId: string;
+      /** The AI provider running the model (added after `model`; absent in older streams). */
+      provider?: string;
     }
   | { type: "thinking"; delta: string }
   | { type: "text"; delta: string }
@@ -183,6 +185,8 @@ export type ResearchEventType = ResearchEvent["type"];
 export interface ResearchAvailability {
   available: boolean;
   model?: string;
+  /** The default AI provider (its ID). */
+  provider?: string;
   /** Environment variables that are not set (names only). */
   missing?: string[];
   message?: string;

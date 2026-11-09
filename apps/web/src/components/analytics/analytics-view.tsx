@@ -23,7 +23,8 @@ const EMPTY_POLL_MS = 5000;
 
 export interface AnalyticsViewProps {
   initial: ReceiptsResponse;
-  ai: { available: boolean; model?: string };
+  /** `provider`: the AI provider's label, e.g. "Anthropic" or "Groq". */
+  ai: { available: boolean; model?: string; provider?: string };
 }
 
 /** The analytics page body: toolbar, empty state, and the AG Studio dashboard. */
@@ -84,15 +85,18 @@ export function AnalyticsView({ initial, ai }: AnalyticsViewProps) {
           {ai.available ? (
             <Badge variant="secondary">
               <Sparkles data-icon="inline-start" />
-              Claude assistant
+              {!ai.provider || ai.provider === "Anthropic" ? "Claude" : ai.provider} assistant
             </Badge>
           ) : (
             <Tooltip>
               <TooltipTrigger render={<Badge variant="outline" />}>
                 <Bot data-icon="inline-start" />
-                AI assistant needs an Anthropic key
+                AI assistant needs an AI key
               </TooltipTrigger>
-              <TooltipContent>Set ANTHROPIC_API_KEY on the server and reload.</TooltipContent>
+              <TooltipContent>
+                Set ANTHROPIC_API_KEY (or OPENAI/GEMINI/XAI/GROQ/OPENROUTER_API_KEY, or
+                OLLAMA_BASE_URL) on the server and reload.
+              </TooltipContent>
             </Tooltip>
           )}
         </div>

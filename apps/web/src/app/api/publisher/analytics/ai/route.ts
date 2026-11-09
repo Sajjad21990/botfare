@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { resolveDefaultAi } from "../../../../../lib/server/ai/providers";
 import {
   clientIp,
   estimateTokens,
@@ -9,7 +9,6 @@ import {
 import {
   type AiStreamLine,
   aiTurnRequestSchema,
-  anthropicConfig,
   MAX_BODY_BYTES,
   runAiTurn,
 } from "../../../../../lib/server/analytics-ai";
@@ -20,7 +19,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const NO_KEY_MESSAGE = "AI assistant needs an Anthropic key";
+const NO_KEY_MESSAGE =
+  "AI assistant needs an AI key (ANTHROPIC_API_KEY, or OPENAI/GEMINI/XAI/GROQ/OPENROUTER_API_KEY, or OLLAMA_BASE_URL)";
+/** One turn, including a retry. */
+const TURN_TIMEOUT_MS = 110_000;
 
 /** Per visitor (user and IP), and a spend budget across everyone: see lib/server/ai-budget. */
 const globalForAi = globalThis as typeof globalThis & {
@@ -33,10 +35,10 @@ const limits = globalForAi.__botfareAiLimits;
 export async function GET(): Promise<Response> {
   const auth = await requireApiUser();
   if ("response" in auth) return auth.response;
-  const config = anthropicConfig();
+  const ai = await resolveDefaultAi();
   return Response.json(
-    config
-      ? { available: true, model: config.model }
+    ai
+      ? { available: true, model: ai.model, provider: ai.provider }
       : { available: false, message: NO_KEY_MESSAGE },
   );
 }
@@ -44,13 +46,13 @@ export async function GET(): Promise<Response> {
 /**
  * One AG Studio Agent Framework turn: the browser adapter posts the framework's `AgLlmRequest`
  * (conversation, instructions, tool schemas); the reply is NDJSON, one `AiStreamLine` per line:
- * content events as Claude streams them, then `{ complete: AgLlmResponse }` (or `{ error }`).
+ * content events as the model streams them, then `{ complete: AgLlmResponse }` (or `{ error }`).
  */
 export async function POST(request: Request): Promise<Response> {
   const auth = await requireApiUser();
   if ("response" in auth) return auth.response;
-  const config = anthropicConfig();
-  if (!config) return jsonError(503, "ai_unavailable", NO_KEY_MESSAGE);
+  const ai = await resolveDefaultAi({ timeoutMs: TURN_TIMEOUT_MS });
+  if (!ai) return jsonError(503, "ai_unavailable", NO_KEY_MESSAGE);
 
   const parsed = await readLimitedJson(request, aiTurnRequestSchema, MAX_BODY_BYTES);
   if (!parsed.ok) return parsed.response;
@@ -66,9 +68,8 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 1, timeout: 110_000 });
   const encoder = new TextEncoder();
-  const lines = runAiTurn(client, parsed.data, { model: config.model, signal: request.signal });
+  const lines = runAiTurn(ai.client, parsed.data, { model: ai.model, signal: request.signal });
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       const next = await lines.next();

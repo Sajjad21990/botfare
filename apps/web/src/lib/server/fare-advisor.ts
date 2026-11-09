@@ -27,13 +27,14 @@ import type {
   PathFunnel,
   RuleFunnel,
 } from "../../components/publisher/advisor/types";
+import { aiAvailable, resolveDefaultAi } from "./ai/providers";
 import { TokenBudget, TurnLimiter } from "./ai-budget";
-import { anthropicConfig } from "./analytics-ai";
 import { toSiteView } from "./publisher";
 
 /**
  * Fare Advisor: "why didn't the bot buy?". Reads what agents did on a publisher's pages (offers
- * shown, paid, declined with a reason, cited, disputed), asks Claude for at most six price, preview
+ * shown, paid, declined with a reason, cited, disputed), asks the model (Claude by default, or the
+ * server's AI_PROVIDER: ./ai/providers) for at most six price, preview
  * or audience recommendations, and checks every one in code before the publisher sees it:
  *
  * - The pattern must be one of the site's pricing rules, and the current price must be that rule's.
@@ -537,7 +538,7 @@ function checkOne(item: unknown, inputs: AdvisorInputs): AdvisorRecommendationVi
 
 export type AdvisorModelParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
 
-/** The slice of the Anthropic client the advisor uses (a scripted fake in tests). */
+/** The slice of the Anthropic client the advisor uses (any provider's ModelClient; a fake in tests). */
 export interface AdvisorModelClient {
   beta: {
     messages: {
@@ -554,14 +555,10 @@ export interface AdvisorModel {
   model: string;
 }
 
-/** The server's Anthropic model, or null without ANTHROPIC_API_KEY. */
-export function defaultAdvisorModel(): AdvisorModel | null {
-  const config = anthropicConfig();
-  if (!config) return null;
-  return {
-    client: new Anthropic({ apiKey: config.apiKey, maxRetries: 1 }),
-    model: config.model,
-  };
+/** The server's default AI provider and model, or null when no provider is configured. */
+export async function defaultAdvisorModel(): Promise<AdvisorModel | null> {
+  const ai = await resolveDefaultAi();
+  return ai ? { client: ai.client, model: ai.model } : null;
 }
 
 /** Models that take the server-side refusal fallback (`fallbacks: "default"`). */
@@ -578,7 +575,8 @@ export function buildAdvisorParams(model: string, inputs: AdvisorInputs): Adviso
     system: ADVISOR_SYSTEM_PROMPT,
     messages: [{ role: "user", content: advisorUserPrompt(inputs) }],
     output_config: {
-      effort: "low",
+      // Anthropic-only; other providers get the JSON schema alone.
+      ...(model.startsWith("claude-") ? { effort: "low" as const } : {}),
       format: { type: "json_schema", schema: ADVISOR_OUTPUT_SCHEMA as Record<string, unknown> },
     },
   };
@@ -606,7 +604,8 @@ interface AiResult {
 }
 
 function describeModelError(error: unknown): string {
-  if (error instanceof Anthropic.AuthenticationError) return "The Anthropic API key was rejected.";
+  if (error instanceof Anthropic.AuthenticationError)
+    return "The AI provider rejected the API key.";
   if (error instanceof Anthropic.RateLimitError) {
     return "The AI service is busy. Try again in a minute.";
   }
@@ -692,6 +691,24 @@ export async function generateRecommendations(
   return { status: "ready", ...checked, message: null, generatedAt };
 }
 
+/** Generates with the given model, or the server's default one. Never throws. */
+async function generateWith(
+  model: AdvisorModel | undefined,
+  inputs: AdvisorInputs,
+): Promise<AiResult> {
+  const resolved = model ?? (await defaultAdvisorModel().catch(() => null));
+  if (!resolved) {
+    return {
+      status: "error",
+      recommendations: [],
+      message: "No AI provider is configured.",
+      dropped: 0,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+  return generateRecommendations(resolved, inputs);
+}
+
 // --- Cache and entry points -----------------------------------------------------------------------
 
 interface CacheEntry {
@@ -739,7 +756,7 @@ export interface GetAdvisorOptions {
   refresh?: boolean;
   /** Who is asking (user and IP), for the per-visitor generation limit. */
   visitorKey?: string;
-  /** The model to use; defaults to the server's (null: no AI). */
+  /** The model to use; defaults to the server's default provider (null: no AI). */
   model?: AdvisorModel | null;
 }
 
@@ -758,21 +775,24 @@ export async function getAdvisor(
   });
   if (!inputs) return null;
   const summary = summarizeInputs(inputs);
-  const model = options.model === undefined ? defaultAdvisorModel() : options.model;
+  // The default model is resolved only when recommendations are generated.
+  const model = options.model;
+  const available = model === undefined ? aiAvailable() : model !== null;
   const base = {
     siteId: inputs.site.id,
     inputsSummary: summary,
-    aiAvailable: model !== null,
+    aiAvailable: available,
     recommendations: [] as AdvisorRecommendationView[],
     generatedAt: null as string | null,
     aiMessage: null as string | null,
     dropped: 0,
   };
-  if (!model) {
+  if (model === null || !available) {
     return {
       ...base,
       aiStatus: "unavailable",
-      aiMessage: "AI recommendations need an Anthropic key (ANTHROPIC_API_KEY on the server).",
+      aiMessage:
+        "AI recommendations need an AI key on the server: an Anthropic key (ANTHROPIC_API_KEY), or OPENAI/GEMINI/XAI/GROQ/OPENROUTER_API_KEY, or OLLAMA_BASE_URL.",
     };
   }
   if (!hasSignals(inputs) || rulesForModel(inputs).length === 0) {
@@ -805,7 +825,7 @@ export async function getAdvisor(
     const created: CacheEntry = {
       key,
       startedAt: now,
-      promise: generateRecommendations(model, inputs),
+      promise: generateWith(model, inputs),
     };
     created.promise.then((result) => {
       created.result = result;

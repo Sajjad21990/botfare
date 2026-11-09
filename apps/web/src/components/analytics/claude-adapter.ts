@@ -83,7 +83,7 @@ export function claudeAdapter(options: { endpoint: string }): AgLlmAdapter {
             const body = (await res.json().catch(() => ({}))) as { message?: string };
             const message =
               res.status === 503
-                ? `${body.message ?? "AI assistant needs an Anthropic key"}. Set \`ANTHROPIC_API_KEY\` on the server, then reload this page.`
+                ? `${body.message ?? "AI assistant needs an AI key"}. Set it on the server, then reload this page.`
                 : (body.message ?? `The assistant is unavailable (HTTP ${res.status}).`);
             const response = notice(`notice_${Date.now()}`, message);
             yield* noticeEvents(response);
