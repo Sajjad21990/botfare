@@ -384,9 +384,14 @@ describe("offered models", () => {
         { id: "vendor/cheap" },
         { id: "meta-llama/llama-test:free", free: true },
         { id: "anthropic/claude-opus-5" },
-        { id: "vendor/unlisted" },
       ],
     });
+    // An allowlisted id the provider does not list (a retired model) is not offered...
+    expect(withAllowlist.models.map((m) => m.id)).not.toContain("vendor/unlisted");
+    // ...unless the list itself is unavailable.
+    expect(
+      offeredModels(config(allowed, "openrouter"), [], "vendor/cheap").map((m) => m.id),
+    ).toEqual(["vendor/cheap", "anthropic/claude-opus-5", "vendor/unlisted"]);
     expect(
       await resolveAiChoice(
         { provider: "openrouter", model: "anthropic/claude-opus-5" },

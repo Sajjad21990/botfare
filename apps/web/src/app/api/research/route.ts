@@ -20,7 +20,7 @@ import { requireApiUser } from "../../../lib/server/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   question: z.string().trim().min(3, "Ask a question").max(MAX_QUESTION_CHARS),
@@ -35,6 +35,11 @@ const bodySchema = z.object({
   model: z.string().trim().min(1).max(200).optional(),
 });
 
+/**
+ * Run time limit for providers other than Anthropic: free tiers are slower and rate-limit tokens
+ * per minute (the adapter waits out a 429), so a run there gets longer than RUN_TIMEOUT_MS.
+ */
+const SLOW_PROVIDER_RUN_TIMEOUT_MS = 240_000;
 /** Per-request timeout for one model turn. */
 const MODEL_TIMEOUT_MS = 60_000;
 
@@ -147,6 +152,9 @@ export async function POST(request: Request): Promise<Response> {
         const { question, budgetCents } = parsed.data;
         const summary = await runResearch(deps, { question, budgetCents }, emit, {
           signal: abort.signal,
+          ...(choice.ai.provider === "anthropic"
+            ? {}
+            : { timeoutMs: SLOW_PROVIDER_RUN_TIMEOUT_MS }),
         });
         limits.budget.settle(spend, summary.weightedTokens);
       } finally {

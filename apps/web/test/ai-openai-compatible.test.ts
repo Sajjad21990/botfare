@@ -5,7 +5,9 @@ import {
   createOpenAICompatibleClient,
   GEMINI_SKIP_SIGNATURE,
   isReasoningModel,
+  isToolCallRejection,
   type OpenAICompatibleOptions,
+  rateLimitHintMs,
   ToolInputParseError,
   toChatRequest,
 } from "../src/lib/server/ai/openai-compatible";
@@ -512,6 +514,93 @@ describe("errors", () => {
     const message = await client(fetch, { maxRetries: 1 }).beta.messages.create(BASE);
     expect(seen).toHaveLength(2);
     expect(message.content).toMatchObject([{ type: "text", text: "ok" }]);
+  });
+
+  it("waits out a free tier's per-minute limit from the message, up to three times", async () => {
+    const limited = () =>
+      status(429, {
+        error: {
+          message: "Rate limit reached on tokens per minute (TPM). Please try again in 5ms.",
+        },
+      });
+    const { fetch, seen } = fakeFetch([limited(), limited(), limited(), chat({ content: "ok" })]);
+    const message = await client(fetch, { maxRetries: 1 }).beta.messages.create(BASE);
+    expect(seen).toHaveLength(4);
+    expect(message.content).toMatchObject([{ type: "text", text: "ok" }]);
+  });
+
+  it("fails at once when the provider asks for a wait longer than a minute window", async () => {
+    const { fetch, seen } = fakeFetch([
+      status(
+        429,
+        { error: { message: "Daily limit reached. Please try again in 7m12s." } },
+        {
+          "retry-after": "432",
+        },
+      ),
+      chat({ content: "never" }),
+    ]);
+    const error = await client(fetch, { maxRetries: 1 })
+      .beta.messages.create(BASE)
+      .then(
+        () => null,
+        (e) => e,
+      );
+    expect(error).toBeInstanceOf(Anthropic.RateLimitError);
+    expect(seen).toHaveLength(1);
+  });
+
+  it("asks again when the provider rejects a made-up tool call, at most twice", async () => {
+    const rejected = () =>
+      status(400, {
+        error: {
+          message:
+            "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
+          code: "tool_use_failed",
+        },
+      });
+    const { fetch, seen } = fakeFetch([rejected(), chat({ content: "ok" })]);
+    const message = await client(fetch, { maxRetries: 0 }).beta.messages.create(BASE);
+    expect(seen).toHaveLength(2);
+    expect(message.content).toMatchObject([{ type: "text", text: "ok" }]);
+
+    const stuck = fakeFetch([rejected(), rejected(), rejected(), chat({ content: "never" })]);
+    const error = await client(stuck.fetch, { maxRetries: 0 })
+      .beta.messages.create(BASE)
+      .then(
+        () => null,
+        (e) => e,
+      );
+    expect(error).toBeInstanceOf(Anthropic.BadRequestError);
+    expect(stuck.seen).toHaveLength(3);
+    expect(isToolCallRejection(error)).toBe(true);
+    const malformed = Anthropic.APIError.generate(
+      400,
+      {
+        type: "error",
+        error: {
+          type: "invalid_request_error",
+          message: "Groq: Failed to parse tool call arguments as JSON",
+        },
+      },
+      undefined,
+      new Headers(),
+    );
+    expect(isToolCallRejection(malformed)).toBe(true);
+  });
+
+  it("reads rate-limit hints in seconds and milliseconds", () => {
+    const err = (message: string, headers: Record<string, string> = {}) =>
+      Anthropic.APIError.generate(
+        429,
+        { type: "error", error: { type: "rate_limit_error", message } },
+        undefined,
+        new Headers(headers),
+      );
+    expect(rateLimitHintMs(err("Please try again in 22.904999999s."))).toBeCloseTo(22_905, 0);
+    expect(rateLimitHintMs(err("try again in 850ms"))).toBe(850);
+    expect(rateLimitHintMs(err("slow down", { "retry-after": "3" }))).toBe(3_000);
+    expect(rateLimitHintMs(err("slow down"))).toBeNull();
   });
 
   it("maps network failures, timeouts and aborts", async () => {

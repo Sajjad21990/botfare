@@ -585,6 +585,14 @@ export interface OpenAICompatibleOptions {
 
 const MAX_RESPONSE_CHARS = 8_000_000;
 const MAX_RETRY_DELAY_MS = 4_000;
+/**
+ * Free tiers limit tokens per minute (Groq: 8,000) and say how long to wait. A 429 waits that long
+ * (plus a moment), up to a full minute window, and retries up to RATE_LIMIT_RETRIES times; a
+ * longer wait (a daily cap) fails at once.
+ */
+export const MAX_RATE_LIMIT_WAIT_MS = 60_000;
+const RATE_LIMIT_RETRIES = 3;
+const RATE_LIMIT_BUFFER_MS = 250;
 
 /** Replaces the key and anything shaped like a provider key or bearer token. */
 export function redactSecrets(value: string, secrets: (string | null | undefined)[]): string {
@@ -661,15 +669,43 @@ function retryable(error: unknown): boolean {
   return false;
 }
 
+/** How long the provider asked us to wait: Retry-After, else "try again in 22.9s" / "in 850ms". */
+export function rateLimitHintMs(error: unknown): number | null {
+  if (!(error instanceof Anthropic.APIError)) return null;
+  const header = error.headers?.get("retry-after");
+  const seconds = header ? Number(header) : Number.NaN;
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const match = /try again in\s+([\d.]+)\s*(ms|s)\b/i.exec(error.message);
+  if (!match?.[1]) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return match[2]?.toLowerCase() === "ms" ? value : value * 1000;
+}
+
+/**
+ * The provider rejected a tool call the model made up (Groq: "tool call validation failed", code
+ * tool_use_failed, e.g. gpt-oss calling `commentary`). A sampling glitch: asking again usually works.
+ */
+export function isToolCallRejection(error: unknown): boolean {
+  return (
+    error instanceof Anthropic.BadRequestError &&
+    /tool call validation failed|tool_use_failed|failed to call a function|failed to parse tool call arguments/i.test(
+      error.message,
+    )
+  );
+}
+
+const TOOL_REJECTION_RETRIES = 2;
+
+function isRateLimit(error: unknown): boolean {
+  return error instanceof Anthropic.APIError && error.status === 429;
+}
+
 function retryDelay(error: unknown, attempt: number): number {
-  if (error instanceof Anthropic.APIError) {
-    const header = error.headers?.get("retry-after");
-    const seconds = header ? Number(header) : Number.NaN;
-    if (Number.isFinite(seconds) && seconds >= 0) {
-      return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
-    }
-  }
-  return Math.min(500 * 2 ** attempt, MAX_RETRY_DELAY_MS);
+  const hint = rateLimitHintMs(error);
+  if (hint === null) return Math.min(500 * 2 ** attempt, MAX_RETRY_DELAY_MS);
+  if (isRateLimit(error)) return Math.ceil(hint + RATE_LIMIT_BUFFER_MS);
+  return Math.min(hint, MAX_RETRY_DELAY_MS);
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -772,10 +808,25 @@ async function withRetries<T>(
     try {
       return await run();
     } catch (error) {
-      if (attempt >= maxRetries || !retryable(error) || requestOptions.signal?.aborted) {
+      // A 429 that says how long to wait (a per-minute limit) gets extra retries; others do not.
+      const timed = isRateLimit(error) && rateLimitHintMs(error) !== null;
+      const rejectedTool = isToolCallRejection(error);
+      const limit = timed
+        ? Math.max(maxRetries, RATE_LIMIT_RETRIES)
+        : rejectedTool
+          ? Math.max(maxRetries, TOOL_REJECTION_RETRIES)
+          : maxRetries;
+      if (
+        attempt >= limit ||
+        (!retryable(error) && !rejectedTool) ||
+        requestOptions.signal?.aborted
+      ) {
         throw error;
       }
-      await sleep(retryDelay(error, attempt), requestOptions.signal);
+      const delay = retryDelay(error, attempt);
+      // A wait longer than a free tier's minute window means a daily cap: fail now.
+      if (isRateLimit(error) && delay > MAX_RATE_LIMIT_WAIT_MS + RATE_LIMIT_BUFFER_MS) throw error;
+      await sleep(delay, requestOptions.signal);
     }
   }
 }

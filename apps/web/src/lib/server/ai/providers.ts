@@ -88,7 +88,7 @@ const OPENAI_NON_CHAT =
   /embed|audio|tts|whisper|dall-e|image|realtime|transcribe|moderation|search|instruct|computer-use|codex|sora|davinci|babbage/i;
 const GEMINI_NON_CHAT = /embed|imagen|tts|aqa|veo|image|audio|live|robotics|computer-use/i;
 const XAI_NON_CHAT = /image|imagine|embed|video/i;
-const GROQ_NON_CHAT = /whisper|tts|guard|playai|orpheus|embed|distil/i;
+const GROQ_NON_CHAT = /whisper|tts|guard|playai|orpheus|embed|distil/i; // guard: prompt-guard, safeguard
 /** Ollama serves embedding and rerank models from the same list: not chat models. */
 export const OLLAMA_NON_CHAT = /embed|bge|minilm|(^|[-/:])e5[-:]|nomic-embed|rerank/i;
 
@@ -453,7 +453,11 @@ export function offeredModels(
   for (const m of listed) {
     if (config.id === "anthropic" || m.free || approved.has(m.id)) add(m.id);
   }
-  for (const id of extra) add(id);
+  // An allowlisted id the provider no longer lists (a retired model) is offered only while the
+  // list itself is unavailable.
+  for (const id of extra) {
+    if (config.id === "anthropic" || listed.length === 0 || byId.has(id)) add(id);
+  }
   return out;
 }
 
