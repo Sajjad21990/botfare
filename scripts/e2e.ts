@@ -84,6 +84,19 @@ const WEB_MODE = process.env.E2E_WEB === "start" ? "start" : "dev";
 const WEB_URL = `http://localhost:${WEB_PORT}`;
 const DEMO_URL = `http://localhost:${DEMO_PORT}`;
 const VERBOSE = process.env.E2E_VERBOSE === "1";
+/** Every AI provider setting, blanked for the web app this run starts unless E2E_AI is on. */
+const NO_AI_PROVIDERS = Object.fromEntries(
+  [
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "XAI_API_KEY",
+    "GROQ_API_KEY",
+    "OPENROUTER_API_KEY",
+    "OLLAMA_BASE_URL",
+  ].map((name) => [name, ""]),
+);
+
 /** Start the web app with ANTHROPIC_API_KEY and run the optional AI judge check (never required). */
 const E2E_AI = process.env.E2E_AI === "1" && Boolean(process.env.ANTHROPIC_API_KEY?.trim());
 /** True when this run started the web app (so it knows whether an AI judge is configured). */
@@ -398,8 +411,9 @@ async function main(): Promise<void> {
         ["--filter", "@botfare/web", "exec", "next", WEB_MODE, "--port", String(WEB_PORT)],
         {
           ...process.env,
-          // Without E2E_AI the judge is off, so disputes go to the publisher (checked below).
-          ANTHROPIC_API_KEY: E2E_AI ? process.env.ANTHROPIC_API_KEY : "",
+          // Without E2E_AI the judge is off (no AI provider at all), so disputes go to the
+          // publisher (checked below).
+          ...(E2E_AI ? {} : NO_AI_PROVIDERS),
           BOTFARE_URL: WEB_URL,
           // next start refuses to run without one; a throwaway secret is fine for this run.
           SESSION_SECRET: process.env.SESSION_SECRET || randomBytes(32).toString("hex"),

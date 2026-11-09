@@ -10,6 +10,14 @@ import {
 } from "@/lib/server/research-events";
 import { AnswerCard } from "./answer-card";
 import { CostMeter } from "./cost-meter";
+import {
+  fetchModels,
+  initialChoice,
+  type ModelChoice,
+  ModelPicker,
+  type ModelsResponse,
+  rememberChoice,
+} from "./model-picker";
 import { QuestionCard, SUGGESTED_QUESTIONS } from "./question-card";
 import { isInspectable } from "./run-state";
 import { Timeline } from "./timeline";
@@ -21,6 +29,8 @@ export function ResearchView() {
   const [question, setQuestion] = useState(SUGGESTED_QUESTIONS[0] ?? "");
   const [budgetCents, setBudgetCents] = useState(DEFAULT_BUDGET_CENTS);
   const [availability, setAvailability] = useState<ResearchAvailability | null>(null);
+  const [models, setModels] = useState<ModelsResponse | null>(null);
+  const [choice, setChoice] = useState<ModelChoice | null>(null);
   const { view, start, stop } = useResearchRun(DEFAULT_BUDGET_CENTS);
   const [selected, setSelected] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
@@ -30,6 +40,11 @@ export function ResearchView() {
     let live = true;
     fetchAvailability().then((result) => {
       if (live) setAvailability(result);
+    });
+    fetchModels().then((result) => {
+      if (!live) return;
+      setModels(result);
+      setChoice(initialChoice(result));
     });
     return () => {
       live = false;
@@ -83,18 +98,25 @@ export function ResearchView() {
   function run() {
     setFollow(true);
     setSelected(null);
-    void start(question.trim(), budgetCents);
+    void start(question.trim(), budgetCents, choice);
+  }
+
+  function choose(next: ModelChoice) {
+    setChoice(next);
+    rememberChoice(next);
   }
 
   const unavailable = availability && !availability.available ? availability : null;
+  const providerLabel = (id: string | null) =>
+    models?.providers.find((p) => p.provider === id)?.label ?? id;
 
   return (
     <div className="flex flex-col gap-6">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Research agent</h1>
         <p className="text-sm text-muted-foreground">
-          A Claude agent with a BotFare key and a budget. It pays per page over x402, settled from a
-          PayPal-funded wallet, and shows its work.
+          An AI agent (Claude by default) with a BotFare key and a budget. It pays per page over
+          x402, settled from a PayPal-funded wallet, and shows its work.
         </p>
       </div>
 
@@ -125,6 +147,16 @@ export function ResearchView() {
             disabled={!availability || Boolean(unavailable)}
             onRun={run}
             onStop={stop}
+            modelPicker={
+              models && models.providers.length > 0 && choice && !unavailable ? (
+                <ModelPicker
+                  providers={models.providers}
+                  value={choice}
+                  onChange={choose}
+                  disabled={running}
+                />
+              ) : null
+            }
           />
         </div>
         <div className="flex flex-col gap-4 lg:col-span-2">
@@ -135,6 +167,13 @@ export function ResearchView() {
           {view.status !== "idle" && view.question ? (
             <p className="line-clamp-3 px-1 text-sm text-muted-foreground">
               <span className="font-medium text-foreground">Question:</span> {view.question}
+            </p>
+          ) : null}
+          {view.status !== "idle" && view.model ? (
+            <p className="truncate px-1 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Model:</span>{" "}
+              {view.provider ? `${providerLabel(view.provider)} · ` : ""}
+              <span className="font-mono">{view.model}</span>
             </p>
           ) : null}
         </div>

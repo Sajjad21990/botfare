@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Play, Square } from "lucide-react";
-import { type FormEvent, useId } from "react";
+import { type FormEvent, type ReactNode, useId } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -29,6 +29,8 @@ interface QuestionCardProps {
   disabled: boolean;
   onRun: () => void;
   onStop: () => void;
+  /** The provider and model picker, when the server offers a choice. */
+  modelPicker?: ReactNode;
 }
 
 /** The question, a few suggestions, the budget slider and Run / Stop. */
@@ -80,6 +82,8 @@ export function QuestionCard(props: QuestionCardProps) {
               ))}
             </div>
           </div>
+
+          {props.modelPicker}
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="flex flex-1 flex-col gap-2">

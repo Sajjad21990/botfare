@@ -41,6 +41,8 @@ export interface RunView {
   maxPerRequestCents: number;
   maxToolCalls: number;
   model: string | null;
+  /** The AI provider that ran the model (its ID). */
+  provider: string | null;
   agentKeyId: string | null;
   spentCents: number;
   toolCalls: number;
@@ -66,6 +68,7 @@ export function initialRun(
     maxPerRequestCents,
     maxToolCalls,
     model: null,
+    provider: null,
     agentKeyId: null,
     spentCents: 0,
     toolCalls: 0,
@@ -139,6 +142,7 @@ function applyEvent(view: RunView, event: ResearchEvent): RunView {
         maxPerRequestCents: event.maxPerRequestCents,
         maxToolCalls: event.maxToolCalls,
         model: event.model,
+        provider: event.provider ?? null,
         agentKeyId: event.agentKeyId,
       };
     case "thinking":
