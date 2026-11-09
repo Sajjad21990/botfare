@@ -1,4 +1,5 @@
 import { isDemoPersonaEmail, isLockedDemoSite } from "@botfare/contracts";
+import { DISPUTE_POLICY } from "@botfare/contracts/fare";
 import {
   type Db,
   DEFAULT_PAYOUT_MINIMUM_CENTS,
@@ -64,6 +65,10 @@ export async function getPublisherDashboard(db: Db, userId: string): Promise<Pub
   const stats = new Map(summary.sites.map((site) => [site.id, site]));
   return {
     earningsMicros: summary.earningsMicros,
+    availableMicros: summary.availableMicros,
+    clearingMicros: summary.clearingMicros,
+    nextReleaseAt: summary.nextReleaseAt?.toISOString() ?? null,
+    disputeWindowHours: DISPUTE_POLICY.windowHours,
     lifetimeEarningsMicros: summary.lifetimeEarningsMicros,
     paidRequests: summary.paidRequests,
     payoutEmail: summary.payoutEmail,

@@ -19,14 +19,17 @@ import { centsToMicros, PAYPAL_SANDBOX } from "@botfare/x402-paypal";
 import { and, count, desc, eq, isNotNull } from "drizzle-orm";
 import { Accounts } from "../accounts";
 import type { Db } from "../db";
-import { earningsBalanceMicros, postTransaction, walletBalanceMicros } from "../ledger";
+import { postTransaction, walletBalanceMicros } from "../ledger";
 import { PostgresPrepaidLedger } from "../postgres-ledger";
 import { disputes, ledgerEntries, payouts, receipts, users } from "../schema";
 import { applyVerdict, attestReceipt, openDispute } from "./fare-court";
-import { setPayoutEmail } from "./payouts";
+import { publisherEarningsSplit, setPayoutEmail } from "./payouts";
 import { listSites, siteDetection, updateSiteDetection, updateSitePricing } from "./sites";
 
-/** Earnings the publisher persona has at sign-in, so every judge can try a $1.00+ withdrawal. */
+/**
+ * Available earnings (not counting fares still clearing in the dispute window) the publisher
+ * persona has at sign-in, so every judge can try a $1.00+ withdrawal.
+ */
 export const DEMO_EARNINGS_FLOOR_CENTS = 200;
 /** Wallet balance the agent-owner persona keeps, so the shared research agent can always pay. */
 export const DEMO_WALLET_FLOOR_CENTS = 500;
@@ -37,7 +40,7 @@ export interface DemoPublisherReset {
   /** Crema Notes sites whose bot detection was put back. */
   detectionReset: number;
   payoutEmailReset: boolean;
-  /** Demo earnings added this time (0 when the balance already reached the floor). */
+  /** Demo earnings added this time (0 when available earnings already reached the floor). */
   earningsAddedCents: number;
   /** Fare Court disputes put back in the publisher's review queue (one per Crema Notes site at most). */
   pendingDisputesAdded: number;
@@ -94,10 +97,11 @@ export async function resetDemoPublisher(
     }
   }
 
+  // The floor applies to what Withdraw can pay now: fares bought minutes ago are still clearing.
   const floorMicros = centsToMicros(input.earningsFloorCents ?? DEMO_EARNINGS_FLOOR_CENTS);
-  const balance = await earningsBalanceMicros(db, input.userId);
+  const { availableMicros: available } = await publisherEarningsSplit(db, input.userId);
   let earningsAddedCents = 0;
-  if (balance < floorMicros) {
+  if (available < floorMicros) {
     const [latest] = await db
       .select({ id: payouts.id })
       .from(payouts)
@@ -105,7 +109,7 @@ export async function resetDemoPublisher(
       .orderBy(desc(payouts.createdAt), desc(payouts.id))
       .limit(1);
     // Whole cents, so the ledger stays in step with what a payout can send.
-    const cents = Math.ceil((floorMicros - balance) / centsToMicros(1));
+    const cents = Math.ceil((floorMicros - available) / centsToMicros(1));
     const amount = centsToMicros(cents);
     const posted = await postTransaction(db, {
       kind: "seed",

@@ -71,6 +71,17 @@ async function earn(publisher: Publisher, requests: number, cents: number): Prom
   }
 }
 
+/**
+ * Moves the publisher's fares out of the dispute window (settled 25 hours ago), so their earnings
+ * are available to withdraw. IDs come from createUser, never from input.
+ */
+async function matureEarnings(publisher: Publisher): Promise<void> {
+  if (!/^[A-Za-z0-9_-]+$/.test(publisher.owner.id)) throw new Error("unexpected user ID");
+  await getDb().execute(
+    `update receipts set created_at = now() - interval '25 hours' where publisher_user_id = '${publisher.owner.id}'`,
+  );
+}
+
 function mockPayPal(overrides: Partial<PayPalClient>): Partial<PayPalClient> {
   setPayPalForTests(overrides);
   return overrides;
@@ -256,6 +267,7 @@ describe("payout email and payouts API", () => {
 
     await savePayoutEmail(json("PUT", "/x", { email: "crema@example.test" }));
     await earn(publisher, 2, 50); // $0.95 after BotFare's 5%
+    await matureEarnings(publisher);
     const below = await withdraw();
     expect(below.status).toBe(422);
     expect((await below.json()).error).toBe("below_minimum");
@@ -274,6 +286,29 @@ describe("payout email and payouts API", () => {
     await savePayoutEmail(json("PUT", "/x", { email: "crema@example.test" }));
     await earn(publisher, 2, 60); // 120¢ gross, 114¢ net
 
+    // Fresh fares stay clearing for the dispute window: nothing to withdraw yet.
+    const fresh = await (await summary()).json();
+    expect(fresh).toMatchObject({
+      earningsMicros: 1_140_000,
+      clearingMicros: 1_140_000,
+      availableMicros: 0,
+      disputeWindowHours: 24,
+    });
+    expect(Date.parse(fresh.nextReleaseAt) - Date.now()).toBeGreaterThan(23 * 3_600_000);
+    const clearing = await withdraw();
+    expect(clearing.status).toBe(422);
+    expect(await clearing.json()).toMatchObject({
+      error: "below_minimum",
+      message: expect.stringContaining("$1.14 is still clearing (24-hour dispute window)"),
+    });
+    expect(createPayoutBatch).not.toHaveBeenCalled();
+
+    await matureEarnings(publisher);
+    expect(await (await summary()).json()).toMatchObject({
+      availableMicros: 1_140_000,
+      clearingMicros: 0,
+      nextReleaseAt: null,
+    });
     const res = await withdraw();
     expect(res.status).toBe(201);
     const { payout } = await res.json();
@@ -299,7 +334,7 @@ describe("payout email and payouts API", () => {
     ]);
 
     const after = await (await summary()).json();
-    expect(after.earningsMicros).toBe(0);
+    expect(after).toMatchObject({ earningsMicros: 0, availableMicros: 0 });
     expect(after.payouts[0].id).toBe(payout.id);
 
     // Another publisher's refresh never touches this payout.
@@ -382,6 +417,7 @@ describe("PayPal webhook route", () => {
     signIn(publisher.owner);
     await savePayoutEmail(json("PUT", "/x", { email: "crema@example.test" }));
     await earn(publisher, 2, 60);
+    await matureEarnings(publisher);
     const { payout } = await (await withdraw()).json();
 
     const itemEvent = {

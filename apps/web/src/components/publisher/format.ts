@@ -29,6 +29,20 @@ export function withdrawableCents(micros: number): number {
   return Math.max(0, Math.floor(micros / MICROS_PER_CENT));
 }
 
+/**
+ * When clearing earnings become available, relative to `nowMs`: "in 45 min", "in 3 h 20 min",
+ * "any moment now" once the time has passed (the next refresh moves them to available).
+ */
+export function formatClearsIn(iso: string, nowMs: number): string {
+  const ms = new Date(iso).getTime() - nowMs;
+  if (!Number.isFinite(ms) || ms <= 0) return "any moment now";
+  const minutes = Math.ceil(ms / 60_000);
+  if (minutes < 60) return `in ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `in ${hours} h` : `in ${hours} h ${rest} min`;
+}
+
 const dateTime = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",

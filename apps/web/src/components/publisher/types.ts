@@ -49,8 +49,16 @@ export interface SiteView {
 }
 
 export interface PublisherDashboard {
-  /** Available to withdraw now. */
+  /** The whole earnings balance: available plus clearing. */
   earningsMicros: number;
+  /** What Withdraw can pay now (the balance minus what is clearing). */
+  availableMicros: number;
+  /** Earnings from fares agents can still dispute (or with an undecided dispute). */
+  clearingMicros: number;
+  /** ISO time the next clearing fare becomes available; null when none waits on the window. */
+  nextReleaseAt: string | null;
+  /** How long a fare stays disputable (DISPUTE_POLICY.windowHours). */
+  disputeWindowHours: number;
   lifetimeEarningsMicros: number;
   paidRequests: number;
   /** The user's payout email, falling back to their first site's. */

@@ -181,7 +181,10 @@ export function LiveReceiptsWidget(params: AgWidgetParams<LiveReceiptsWidgetStat
   );
 }
 
-/** "Earnings & payout": the withdrawable balance, what the current view earned, and the way out. */
+/**
+ * "Earnings & payout": the earnings balance (available plus still clearing in the dispute window),
+ * what the current view earned, and the way out.
+ */
 export function EarningsWidget(params: AgWidgetParams<EarningsWidgetState>) {
   const live = useLiveState();
   const now = useNow();
@@ -223,12 +226,12 @@ export function EarningsWidget(params: AgWidgetParams<EarningsWidgetState>) {
         aside={timeAgo(live.lastSyncAt, now)}
       />
       <div className="flex min-h-0 flex-1 flex-col justify-center gap-0.5 px-1">
-        <span className={`text-xs ${subtle}`}>Ready to withdraw</span>
+        <span className={`text-xs ${subtle}`}>Earnings balance</span>
         <span className={`truncate text-3xl font-semibold tracking-tight tabular-nums ${text}`}>
           {usd(live.earningsUsd, 4)}
         </span>
         <span className={`line-clamp-1 text-xs ${subtle}`}>
-          Paid to your PayPal account via Payouts
+          Fares clear for PayPal Payouts after 24 hours
         </span>
       </div>
       <dl className={`grid grid-cols-2 gap-2 border-t ${border} px-1 py-2 text-xs`}>

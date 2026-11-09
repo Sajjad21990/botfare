@@ -13,21 +13,41 @@
  *   reversed automatically: PayPal may hold the first attempt, so it waits for review instead.
  * - One caller at a time sends a batch (`submit_locked_until`), so Withdraw, Refresh and the cron
  *   cannot POST it concurrently.
+ * - Dispute-window hold: only *available* earnings are paid. A fare stays *clearing* while an
+ *   agent can still dispute it (DISPUTE_POLICY.windowHours after settle) and while a dispute on it
+ *   is undecided, so a Fare Court refund always finds the publisher's share still in earnings.
  */
 import { IdPrefix, newId } from "@botfare/contracts";
+import { DISPUTE_POLICY } from "@botfare/contracts/fare";
 import type { PayoutItem, PayPalClient } from "@botfare/paypal";
 import { PayPalApiError } from "@botfare/paypal";
 import { centsToMicros } from "@botfare/x402-paypal";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  not,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { Accounts } from "../accounts";
 import type { Db, DbOrTx, Tx } from "../db";
-import { postTransaction } from "../ledger";
+import { earningsBalanceMicros, postTransaction } from "../ledger";
 import {
+  disputes,
   ledgerAccounts,
   type Payout,
   type PayoutStatus,
   payouts,
+  receipts,
   sites,
   type User,
   users,
@@ -92,6 +112,111 @@ export async function getPayoutEmail(db: DbOrTx, userId: string): Promise<string
 }
 
 // ---------------------------------------------------------------------------------------------
+// Available and clearing earnings (the dispute-window hold)
+
+const HOUR_MS = 3_600_000;
+const MICROS_PER_CENT = centsToMicros(1);
+
+/** Dispute statuses that hold a fare's earnings back from payouts until they are decided. */
+export const PAYOUT_HOLD_DISPUTE_STATUSES = ["open", "pending_publisher"] as const;
+
+export interface EarningsSplit {
+  /** The publisher's whole earnings balance (ledger). */
+  balanceMicros: number;
+  /**
+   * The publisher's share (amount minus BotFare's fee) of settled, unrefunded fares that an agent
+   * may still dispute (settled less than DISPUTE_POLICY.windowHours ago) or whose dispute is
+   * undecided (`open` or `pending_publisher`, any age).
+   */
+  clearingMicros: number;
+  /** What a payout may take now: max(0, balance - clearing). */
+  availableMicros: number;
+  /** When the oldest in-window fare without an undecided dispute stops clearing; null if none. */
+  nextReleaseAt: Date | null;
+}
+
+/**
+ * How much of a publisher's earnings a payout may take at `now`, and how much is still clearing.
+ * Read-only; reservePayout runs the same split inside its transaction after locking the earnings.
+ */
+export async function publisherEarningsSplit(
+  db: DbOrTx,
+  publisherUserId: string,
+  now: Date = new Date(),
+): Promise<EarningsSplit> {
+  const balanceMicros = await earningsBalanceMicros(db, publisherUserId);
+  return splitEarnings(db, publisherUserId, balanceMicros, now);
+}
+
+async function splitEarnings(
+  db: DbOrTx,
+  publisherUserId: string,
+  balanceMicros: number,
+  now: Date,
+): Promise<EarningsSplit> {
+  const windowMs = DISPUTE_POLICY.windowHours * HOUR_MS;
+  // Fare Court accepts a dispute while now - createdAt <= window, so a fare exactly at the
+  // boundary still counts as clearing.
+  const inWindow = gte(receipts.createdAt, new Date(now.getTime() - windowMs));
+  const undecidedDispute = exists(
+    db
+      .select({ one: sql`1` })
+      .from(disputes)
+      .where(
+        and(
+          eq(disputes.receiptId, receipts.id),
+          inArray(disputes.status, [...PAYOUT_HOLD_DISPUTE_STATUSES]),
+        ),
+      ),
+  );
+  const [row] = await db
+    .select({
+      clearing: sql<string>`coalesce(sum(${receipts.amountMicros} - ${receipts.feeMicros}), 0)`,
+      oldest: sql<string | Date | null>`min(${receipts.createdAt}) filter (where ${and(
+        inWindow,
+        not(undecidedDispute),
+      )})`,
+    })
+    .from(receipts)
+    .where(
+      and(
+        eq(receipts.publisherUserId, publisherUserId),
+        eq(receipts.status, "settled"),
+        or(inWindow, undecidedDispute),
+      ),
+    );
+  const clearingMicros = Number(row?.clearing ?? 0);
+  const oldest = row?.oldest ? new Date(row.oldest) : null;
+  return {
+    balanceMicros,
+    clearingMicros,
+    availableMicros: Math.max(0, balanceMicros - clearingMicros),
+    nextReleaseAt: oldest ? new Date(oldest.getTime() + windowMs) : null,
+  };
+}
+
+/** $1.23, or $0.0285 when the amount has a sub-cent part. */
+function formatUsdMicros(micros: number): string {
+  const digits = micros % MICROS_PER_CENT === 0 ? 2 : 4;
+  return `$${(micros / 1_000_000).toFixed(digits)}`;
+}
+
+function belowMinimumError(split: EarningsSplit, minimumCents: number): MoneyFlowError {
+  if (split.clearingMicros <= 0) {
+    return new MoneyFlowError(
+      "below_minimum",
+      `Payouts start at ${centsToPayPalAmount(minimumCents)} USD`,
+    );
+  }
+  const availableCents = Math.floor(split.availableMicros / MICROS_PER_CENT);
+  return new MoneyFlowError(
+    "below_minimum",
+    `${formatUsdMicros(split.clearingMicros)} is still clearing (${DISPUTE_POLICY.windowHours}-hour dispute window); ` +
+      `available now: $${centsToPayPalAmount(availableCents)}. Payouts start at $${centsToPayPalAmount(minimumCents)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
 // Creating payouts
 
 /** A fresh PayPal `sender_batch_id`; one per "Withdraw now" or per daily run. */
@@ -100,11 +225,14 @@ export function newPayoutBatchKey(kind: "withdraw" | "daily"): string {
   return `botfare-${kind}-${day}-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
 }
 
-/** "Withdraw now": pays out the publisher's whole-cent earnings in a batch of its own. */
+/**
+ * "Withdraw now": pays out the publisher's whole-cent *available* earnings (not those still
+ * clearing in the dispute window) in a batch of its own.
+ */
 export async function requestPayout(
   db: Db,
   paypal: PayoutPayPal,
-  input: { publisherUserId: string; minimumCents?: number },
+  input: { publisherUserId: string; minimumCents?: number; now?: Date },
 ): Promise<Payout> {
   const minimumCents = validMinimum(input.minimumCents);
   const receiverEmail = await getPayoutEmail(db, input.publisherUserId);
@@ -112,20 +240,16 @@ export async function requestPayout(
     throw new MoneyFlowError("no_payout_email", "Add a PayPal payout email first");
   }
   const batchKey = newPayoutBatchKey("withdraw");
-  const payout = await db.transaction((tx) =>
+  const { payout, split } = await db.transaction((tx) =>
     reservePayout(tx, {
       publisherUserId: input.publisherUserId,
       receiverEmail,
       batchKey,
       minimumCents,
+      now: input.now ?? new Date(),
     }),
   );
-  if (!payout) {
-    throw new MoneyFlowError(
-      "below_minimum",
-      `Payouts start at ${centsToPayPalAmount(minimumCents)} USD`,
-    );
-  }
+  if (!payout) throw belowMinimumError(split, minimumCents);
   await submitPayoutBatch(db, paypal, batchKey);
   return (await getPayout(db, payout.id)) ?? payout;
 }
@@ -136,15 +260,32 @@ export interface DailyPayoutRun {
   payouts: Payout[];
   /** Publishers with enough earnings but no payout email. */
   skippedNoEmail: string[];
+  /**
+   * Candidates with earnings still clearing in the dispute window: held back from their payout
+   * (`payoutId` set) or the reason there is none (`payoutId` null: available is below the minimum).
+   */
+  clearing: ClearingHold[];
 }
 
-/** One Payouts batch with one item per publisher whose earnings reach the minimum. */
+export interface ClearingHold {
+  publisherUserId: string;
+  payoutId: string | null;
+  clearingMicros: number;
+  availableMicros: number;
+  nextReleaseAt: Date | null;
+}
+
+/**
+ * One Payouts batch with one item per publisher whose *available* earnings reach the minimum.
+ * Candidates are picked by balance; the reservation pays only what is available.
+ */
 export async function runDailyPayouts(
   db: Db,
   paypal: PayoutPayPal,
-  input: { minimumCents?: number } = {},
+  input: { minimumCents?: number; now?: Date } = {},
 ): Promise<DailyPayoutRun> {
   const minimumCents = validMinimum(input.minimumCents);
+  const now = input.now ?? new Date();
   const candidates = await db
     .select({ userId: ledgerAccounts.ownerUserId })
     .from(ledgerAccounts)
@@ -159,6 +300,7 @@ export async function runDailyPayouts(
   const batchKey = newPayoutBatchKey("daily");
   const created: Payout[] = [];
   const skippedNoEmail: string[] = [];
+  const clearing: ClearingHold[] = [];
   for (const { userId } of candidates) {
     if (!userId) continue;
     const receiverEmail = await getPayoutEmail(db, userId);
@@ -166,34 +308,52 @@ export async function runDailyPayouts(
       skippedNoEmail.push(userId);
       continue;
     }
-    const payout = await db.transaction((tx) =>
-      reservePayout(tx, { publisherUserId: userId, receiverEmail, batchKey, minimumCents }),
+    const { payout, split } = await db.transaction((tx) =>
+      reservePayout(tx, { publisherUserId: userId, receiverEmail, batchKey, minimumCents, now }),
     );
     if (payout) created.push(payout);
+    if (split.clearingMicros > 0) {
+      clearing.push({
+        publisherUserId: userId,
+        payoutId: payout?.id ?? null,
+        clearingMicros: split.clearingMicros,
+        availableMicros: split.availableMicros,
+        nextReleaseAt: split.nextReleaseAt,
+      });
+    }
   }
-  if (created.length === 0) return { batchKey: null, payouts: [], skippedNoEmail };
+  if (created.length === 0) return { batchKey: null, payouts: [], skippedNoEmail, clearing };
 
   await submitPayoutBatch(db, paypal, batchKey);
   const rows = await db.select().from(payouts).where(eq(payouts.batchKey, batchKey));
-  return { batchKey, payouts: rows, skippedNoEmail };
+  return { batchKey, payouts: rows, skippedNoEmail, clearing };
 }
 
 /**
- * Locks the earnings account, takes its whole cents, posts the payout and inserts the row.
- * Returns null when the amount is below the minimum.
+ * Locks the earnings account, takes the whole cents of what is available (the balance minus what
+ * is still clearing in the dispute window), posts the payout and inserts the row. The payout is
+ * null when that amount is below the minimum; the split says why.
  */
 async function reservePayout(
   tx: Tx,
-  input: { publisherUserId: string; receiverEmail: string; batchKey: string; minimumCents: number },
-): Promise<Payout | null> {
+  input: {
+    publisherUserId: string;
+    receiverEmail: string;
+    batchKey: string;
+    minimumCents: number;
+    now: Date;
+  },
+): Promise<{ payout: Payout | null; split: EarningsSplit }> {
   const earningsId = Accounts.earnings(input.publisherUserId);
   const [account] = await tx
     .select({ balance: ledgerAccounts.balanceMicros })
     .from(ledgerAccounts)
     .where(eq(ledgerAccounts.id, earningsId))
     .for("update");
-  const amountCents = Math.floor((account?.balance ?? 0) / centsToMicros(1));
-  if (amountCents < input.minimumCents || amountCents <= 0) return null;
+  // After the lock: a refund (which also takes this lock) cannot change the balance meanwhile.
+  const split = await splitEarnings(tx, input.publisherUserId, account?.balance ?? 0, input.now);
+  const amountCents = Math.floor(split.availableMicros / MICROS_PER_CENT);
+  if (amountCents < input.minimumCents || amountCents <= 0) return { payout: null, split };
 
   const id = newId(IdPrefix.payout);
   const amountMicros = centsToMicros(amountCents);
@@ -219,7 +379,7 @@ async function reservePayout(
     })
     .returning();
   if (!row) throw new Error(`Failed to insert payout ${id}`);
-  return row;
+  return { payout: row, split };
 }
 
 /**

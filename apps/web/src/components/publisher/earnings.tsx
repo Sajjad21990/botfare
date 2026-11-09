@@ -1,7 +1,17 @@
 "use client";
 
-import { ArrowUpRight, Banknote, Check, Info, Loader2, Lock, Mail, RefreshCw } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import {
+  ArrowUpRight,
+  Banknote,
+  Check,
+  Hourglass,
+  Info,
+  Loader2,
+  Lock,
+  Mail,
+  RefreshCw,
+} from "lucide-react";
+import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +35,13 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { api, errorText } from "./api";
-import { formatCents, formatCount, formatMicros, withdrawableCents } from "./format";
+import {
+  formatCents,
+  formatClearsIn,
+  formatCount,
+  formatMicros,
+  withdrawableCents,
+} from "./format";
 import { LocalTime } from "./local-time";
 import type { PayoutStatusView, PayoutView, PublisherDashboard } from "./types";
 
@@ -40,14 +56,16 @@ export function EarningsCard({
   onPayout: (payout: PayoutView) => void;
 }) {
   const [withdrawing, setWithdrawing] = useState(false);
-  const cents = withdrawableCents(data.earningsMicros);
+  // Only available earnings can be withdrawn; clearing fares wait out the dispute window.
+  const cents = withdrawableCents(data.availableMicros);
+  const clearing = data.clearingMicros > 0;
   const belowMinimum = cents < data.minimumPayoutCents;
   const reason = !data.payoutEmail
     ? "Add a PayPal payout email to withdraw."
     : belowMinimum
       ? `Payouts start at ${formatCents(data.minimumPayoutCents)}. You need ${formatCents(
           data.minimumPayoutCents - cents,
-        )} more.`
+        )} more${clearing ? " available" : ""}.`
       : null;
 
   async function withdraw() {
@@ -89,12 +107,24 @@ export function EarningsCard({
           <div className="space-y-1">
             <div className="text-xs font-medium text-muted-foreground">Available to withdraw</div>
             <div className="text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
-              {formatMicros(data.earningsMicros)}
+              {formatMicros(data.availableMicros)}
             </div>
+            {clearing && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Hourglass className="size-3.5 shrink-0" />
+                <span>
+                  <span className="font-medium text-foreground tabular-nums">
+                    {formatMicros(data.clearingMicros)}
+                  </span>{" "}
+                  clearing
+                </span>
+              </div>
+            )}
           </div>
           <Stat label="Lifetime earnings" value={formatMicros(data.lifetimeEarningsMicros)} />
           <Stat label="Paid requests" value={formatCount(data.paidRequests)} />
         </div>
+        {clearing && <ClearingNote data={data} />}
         <div className="flex flex-col gap-3 rounded-lg bg-muted/50 p-3 sm:flex-row sm:items-center">
           <Button
             size="lg"
@@ -114,13 +144,52 @@ export function EarningsCard({
             ) : (
               <>
                 <ArrowUpRight className="mt-px size-3.5 shrink-0" />
-                Sends to {data.payoutEmail}. Sub-cent amounts stay in your balance.
+                Sends to {data.payoutEmail}.{" "}
+                {clearing
+                  ? "Clearing fares and sub-cent amounts stay in your balance."
+                  : "Sub-cent amounts stay in your balance."}
               </>
             )}
           </p>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** Why some earnings cannot be withdrawn yet, and when the next ones clear. */
+function ClearingNote({ data }: { data: PublisherDashboard }) {
+  return (
+    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+      <Hourglass className="mt-px size-3.5 shrink-0" />
+      <span>
+        Fares stay clearing for {data.disputeWindowHours} hours so agents can dispute them, and
+        while a dispute waits for a decision.{" "}
+        {data.nextReleaseAt ? (
+          <>
+            More clears <ClearsIn iso={data.nextReleaseAt} />.
+          </>
+        ) : (
+          "The rest clears once its disputes are decided."
+        )}
+      </span>
+    </p>
+  );
+}
+
+/** "in 3 h 20 min", rendered after mount (and every minute) so server and browser agree. */
+function ClearsIn({ iso }: { iso: string }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    const update = () => setText(formatClearsIn(iso, Date.now()));
+    update();
+    const id = setInterval(update, 60_000);
+    return () => clearInterval(id);
+  }, [iso]);
+  return (
+    <time dateTime={iso} title={iso} className="font-medium text-foreground tabular-nums">
+      {text ?? "soon"}
+    </time>
   );
 }
 

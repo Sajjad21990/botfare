@@ -2,9 +2,9 @@
 import { type DetectionSignal, detectionSignalSchema } from "@botfare/contracts";
 import { and, asc, count, desc, eq, gte, sql } from "drizzle-orm";
 import type { DbOrTx } from "../db";
-import { earningsBalanceMicros, walletBalanceMicros } from "../ledger";
+import { walletBalanceMicros } from "../ledger";
 import { agentKeys, type Payout, receipts, sites, type TopUp, topups } from "../schema";
-import { getPayoutEmail, listPayouts } from "./payouts";
+import { getPayoutEmail, listPayouts, publisherEarningsSplit } from "./payouts";
 
 export interface WalletSummary {
   balanceMicros: number;
@@ -52,8 +52,14 @@ export interface PublisherSiteSummary {
 }
 
 export interface PublisherSummary {
-  /** Earnings available to pay out now. */
+  /** The whole earnings balance: available plus clearing. */
   earningsMicros: number;
+  /** What a payout may take now (balance minus clearing). */
+  availableMicros: number;
+  /** Earnings from fares still in the dispute window or with an undecided dispute. */
+  clearingMicros: number;
+  /** When the next clearing fare becomes available; null when none is waiting on the window. */
+  nextReleaseAt: Date | null;
   /** Everything earned after BotFare's fee, from settled receipts. */
   lifetimeEarningsMicros: number;
   paidRequests: number;
@@ -66,8 +72,8 @@ export interface PublisherSummary {
 
 export async function publisherSummary(db: DbOrTx, userId: string): Promise<PublisherSummary> {
   const net = sql<string>`coalesce(sum(${receipts.amountMicros} - ${receipts.feeMicros}), 0)`;
-  const [earningsMicros, payoutEmail, recentPayouts, siteRows, perSite] = await Promise.all([
-    earningsBalanceMicros(db, userId),
+  const [split, payoutEmail, recentPayouts, siteRows, perSite] = await Promise.all([
+    publisherEarningsSplit(db, userId),
     getPayoutEmail(db, userId),
     listPayouts(db, userId, { limit: 20 }),
     db
@@ -93,7 +99,10 @@ export async function publisherSummary(db: DbOrTx, userId: string): Promise<Publ
     earningsMicros: Number(bySite.get(site.id)?.earnings ?? 0),
   }));
   return {
-    earningsMicros,
+    earningsMicros: split.balanceMicros,
+    availableMicros: split.availableMicros,
+    clearingMicros: split.clearingMicros,
+    nextReleaseAt: split.nextReleaseAt,
     lifetimeEarningsMicros: perSite.reduce((sum, row) => sum + Number(row.earnings), 0),
     paidRequests: perSite.reduce((sum, row) => sum + Number(row.paidRequests), 0),
     payoutEmail,
