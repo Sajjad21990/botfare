@@ -1,17 +1,22 @@
 /**
  * Dispute-window payout hold: a fare's earnings stay clearing while an agent can still dispute
- * it (DISPUTE_POLICY.windowHours) and while a dispute on it is undecided, so Withdraw and the
- * daily run pay only what is available and a later Fare Court refund still finds the money.
+ * it (DISPUTE_POLICY.windowHours, plus PAYOUT_HOLD_MARGIN_MS) and while a dispute on it is
+ * undecided, so Withdraw and the daily run pay only what is available, a publisher refund of an
+ * old fare cannot spend that reserve, and a later Fare Court refund still finds the money.
  */
-import { DISPUTE_POLICY } from "@botfare/contracts/fare";
+import { DISPUTE_POLICY, type DisputeVerdict } from "@botfare/contracts/fare";
 import type { CreatePayoutBatchResult, PayPalClient } from "@botfare/paypal";
 import { centsToMicros } from "@botfare/x402-paypal";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
+  applyVerdict,
   type DisputeRowStatus,
   earningsBalanceMicros,
+  getReceipt,
   MoneyFlowError,
+  PAYOUT_HOLD_MARGIN_MS,
+  PAYOUT_HOLD_MS,
   PostgresPrepaidLedger,
   platformFeeMicros,
   publisherEarningsSplit,
@@ -36,6 +41,7 @@ afterEach(() => expectLedgerHealthy(db));
 afterAll(close);
 
 const HOUR_MS = 3_600_000;
+const MINUTE_MS = 60_000;
 const WINDOW_MS = DISPUTE_POLICY.windowHours * HOUR_MS;
 
 function mockPayPal() {
@@ -109,35 +115,43 @@ async function moneyError(promise: Promise<unknown>): Promise<MoneyFlowError> {
 }
 
 describe("publisherEarningsSplit", () => {
-  it("counts fares inside the dispute window as clearing and says when the oldest clears", async () => {
+  it("counts fares inside the dispute window (plus the margin) as clearing and says when the oldest clears", async () => {
+    expect(PAYOUT_HOLD_MS).toBe(WINDOW_MS + PAYOUT_HOLD_MARGIN_MS);
     const now = new Date();
     const publisher = await makePublisher(db);
     const agent = await makeAgent(db, { balanceCents: 2_000 });
-    await fare(agent, publisher, 200, new Date(now.getTime() - WINDOW_MS - HOUR_MS));
-    const edge = new Date(now.getTime() - WINDOW_MS); // Fare Court still accepts a dispute here
+    await fare(agent, publisher, 200, new Date(now.getTime() - PAYOUT_HOLD_MS - HOUR_MS));
+    const edge = new Date(now.getTime() - PAYOUT_HOLD_MS); // the last moment it is still held
     await fare(agent, publisher, 100, edge);
+    // Fare Court no longer accepts a dispute here, but one filed a moment ago may not be visible.
+    const pastWindowAt = new Date(now.getTime() - WINDOW_MS - 5 * MINUTE_MS);
+    await fare(agent, publisher, 250, pastWindowAt);
     const freshAt = new Date(now.getTime() - HOUR_MS);
     await fare(agent, publisher, 300, freshAt);
 
     const split = await publisherEarningsSplit(db, publisher.owner.id, now);
     expect(split).toEqual({
-      balanceMicros: net(200) + net(100) + net(300),
-      clearingMicros: net(100) + net(300),
+      balanceMicros: net(200) + net(100) + net(250) + net(300),
+      clearingMicros: net(100) + net(250) + net(300),
       availableMicros: net(200),
-      nextReleaseAt: new Date(edge.getTime() + WINDOW_MS),
+      nextReleaseAt: new Date(edge.getTime() + PAYOUT_HOLD_MS),
     });
 
-    // A fare matures exactly one window after it settled.
+    // A fare matures exactly one window plus the margin after it settled.
     const later = await publisherEarningsSplit(db, publisher.owner.id, new Date(now.getTime() + 1));
-    expect(later).toMatchObject({ clearingMicros: net(300), availableMicros: net(200) + net(100) });
+    expect(later).toMatchObject({
+      clearingMicros: net(250) + net(300),
+      availableMicros: net(200) + net(100),
+      nextReleaseAt: new Date(pastWindowAt.getTime() + PAYOUT_HOLD_MS),
+    });
 
     // The dashboard reads the split at the current time (the edge fare has matured by now).
     const summary = await publisherSummary(db, publisher.owner.id);
     expect(summary).toMatchObject({
       earningsMicros: split.balanceMicros,
-      clearingMicros: net(300),
+      clearingMicros: net(250) + net(300),
       availableMicros: net(200) + net(100),
-      nextReleaseAt: new Date(freshAt.getTime() + WINDOW_MS),
+      nextReleaseAt: new Date(pastWindowAt.getTime() + PAYOUT_HOLD_MS),
     });
   });
 
@@ -219,7 +233,7 @@ describe("payouts pay only available earnings", () => {
     expect(await earningsBalanceMicros(db, publisher.owner.id)).toBe(0);
   });
 
-  it("pays a fare once its window has passed", async () => {
+  it("pays a fare once its window and the safety margin have passed", async () => {
     const now = new Date();
     const paypal = mockPayPal();
     const publisher = await publisherWithEmail();
@@ -228,7 +242,19 @@ describe("payouts pay only available earnings", () => {
     await fare(agent, publisher, 300, at);
 
     await moneyError(requestPayout(db, paypal, { publisherUserId: publisher.owner.id, now }));
-    const later = new Date(at.getTime() + WINDOW_MS + 1);
+    // Just past the dispute window (a payout on a clock a few minutes ahead of Fare Court's, or
+    // racing a dispute that is not committed yet): still held.
+    for (const pastWindow of [1, PAYOUT_HOLD_MARGIN_MS - 1, PAYOUT_HOLD_MARGIN_MS]) {
+      const err = await moneyError(
+        requestPayout(db, paypal, {
+          publisherUserId: publisher.owner.id,
+          now: new Date(at.getTime() + WINDOW_MS + pastWindow),
+        }),
+      );
+      expect(err.code).toBe("below_minimum");
+    }
+    expect(paypal.createPayoutBatch).not.toHaveBeenCalled();
+    const later = new Date(at.getTime() + PAYOUT_HOLD_MS + 1);
     const payout = await requestPayout(db, paypal, {
       publisherUserId: publisher.owner.id,
       now: later,
@@ -311,7 +337,7 @@ describe("payouts pay only available earnings", () => {
     expect(clearing[mixed.owner.id]).toMatchObject({
       payoutId: expect.stringMatching(/^po_/),
       clearingMicros: net(big),
-      nextReleaseAt: new Date(freshAt.getTime() + WINDOW_MS),
+      nextReleaseAt: new Date(freshAt.getTime() + PAYOUT_HOLD_MS),
     });
     expect(clearing[onlyFresh.owner.id]).toMatchObject({
       payoutId: null,
@@ -329,6 +355,98 @@ describe("payouts pay only available earnings", () => {
     // Nothing more is available today.
     const again = await runDailyPayouts(db, paypal, { minimumCents, now });
     expect(again.payouts.filter((p) => mine.has(p.publisherUserId))).toEqual([]);
+  });
+});
+
+describe("publisher refunds keep the clearing reserve", () => {
+  const confidentRefund: DisputeVerdict = {
+    decision: "refund",
+    confidence: 0.95,
+    category: "stub_or_paywall",
+    rationale: "The page shows a subscribe prompt instead of the declared guide.",
+    evidence: [{ declared: "Grinder maintenance guide", delivered: "Subscribe to keep reading." }],
+  };
+
+  async function refundRows(receiptId: string) {
+    return db
+      .select()
+      .from(schema.ledgerTransactions)
+      .where(eq(schema.ledgerTransactions.idempotencyKey, `refund:${receiptId}`));
+  }
+
+  it("refuses an old, paid-out fare's refund that would eat the clearing money a Fare Court refund needs", async () => {
+    const now = new Date();
+    const paypal = mockPayPal();
+    const publisher = await publisherWithEmail();
+    const agent = await makeAgent(db, { balanceCents: 1_000 });
+    const old = new Date(now.getTime() - 2 * WINDOW_MS);
+    const paidOut = await fare(agent, publisher, 300, old);
+    const fresh = await fare(agent, publisher, 200, new Date(now.getTime() - HOUR_MS));
+
+    // Withdraw takes everything available: the balance is now exactly the clearing reserve.
+    const payout = await requestPayout(db, paypal, { publisherUserId: publisher.owner.id, now });
+    expect(payout.amountCents).toBe(285);
+    expect(await publisherEarningsSplit(db, publisher.owner.id, now)).toMatchObject({
+      balanceMicros: net(200),
+      clearingMicros: net(200),
+      availableMicros: 0,
+    });
+
+    // Another old fare comes in (late-recorded), so a little is available, but not enough.
+    const small = await fare(agent, publisher, 100, old);
+
+    // POST /api/x402/refund of the paid-out fare: the reserve is not the publisher's to spend.
+    const refused = await refundReceipt(db, { receiptId: paidOut, siteId: publisher.site.id, now });
+    expect(refused).toMatchObject({ ok: false, reason: "insufficient_earnings" });
+    if (!refused.ok) expect(refused.message).toMatch(/held for fares agents can still dispute/);
+    expect((await getReceipt(db, paidOut))?.status).toBe("settled");
+    expect(await refundRows(paidOut)).toHaveLength(0);
+    expect(await earningsBalanceMicros(db, publisher.owner.id)).toBe(net(200) + net(100));
+
+    // An old fare whose share fits in what is available still refunds.
+    const smallRefund = await refundReceipt(db, {
+      receiptId: small,
+      siteId: publisher.site.id,
+      now,
+    });
+    expect(smallRefund).toMatchObject({ ok: true, alreadyRefunded: false });
+    expect(await earningsBalanceMicros(db, publisher.owner.id)).toBe(net(200));
+
+    // Fare Court's automatic refund of the in-window fare finds its money.
+    const disputeId = await disputeOn(agent, publisher, fresh, "open");
+    const decided = await applyVerdict(db, { disputeId, verdict: confidentRefund, now });
+    expect(decided).toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: { status: "refunded", refundedCents: 200 },
+    });
+    expect((await getReceipt(db, fresh))?.status).toBe("refunded");
+    expect(await earningsBalanceMicros(db, publisher.owner.id)).toBe(0);
+  });
+
+  it("refunds an old fare from available earnings, and an in-window one from its clearing share", async () => {
+    const now = new Date();
+    const publisher = await makePublisher(db);
+    const agent = await makeAgent(db, { balanceCents: 1_000 });
+    const old = new Date(now.getTime() - 2 * WINDOW_MS);
+    const oldFare = await fare(agent, publisher, 300, old);
+    await fare(agent, publisher, 100, old);
+    // Past the dispute window but inside the margin: still held, so it draws on its own share.
+    const marginAt = new Date(now.getTime() - WINDOW_MS - PAYOUT_HOLD_MARGIN_MS / 2);
+    const marginFare = await fare(agent, publisher, 200, marginAt);
+
+    const refund = await refundReceipt(db, { receiptId: oldFare, siteId: publisher.site.id, now });
+    expect(refund).toMatchObject({ ok: true, alreadyRefunded: false });
+    expect(await publisherEarningsSplit(db, publisher.owner.id, now)).toEqual({
+      balanceMicros: net(100) + net(200),
+      clearingMicros: net(200),
+      availableMicros: net(100),
+      nextReleaseAt: new Date(marginAt.getTime() + PAYOUT_HOLD_MS),
+    });
+
+    const held = await refundReceipt(db, { receiptId: marginFare, siteId: publisher.site.id, now });
+    expect(held).toMatchObject({ ok: true, alreadyRefunded: false });
+    expect(await earningsBalanceMicros(db, publisher.owner.id)).toBe(net(100));
   });
 });
 

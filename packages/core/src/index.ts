@@ -142,20 +142,25 @@ export {
   payPalAmountToCents,
 } from "./services/money";
 export {
+  type EarningsSplit,
+  isReceiptHeld,
+  PAYOUT_HOLD_DISPUTE_STATUSES,
+  PAYOUT_HOLD_MARGIN_MS,
+  PAYOUT_HOLD_MS,
+} from "./services/payout-hold";
+export {
   applyBatchStatus,
   applyPayoutUpdate,
   type ClearingHold,
   type DailyPayoutRun,
   DEFAULT_PAYOUT_MINIMUM_CENTS,
   duplicateBatch,
-  type EarningsSplit,
   getPayout,
   getPayoutEmail,
   listPayouts,
   listUnsubmittedPayouts,
   newPayoutBatchKey,
   OPEN_PAYOUT_STATUSES,
-  PAYOUT_HOLD_DISPUTE_STATUSES,
   PAYOUT_NOTE,
   type PayoutItemUpdate,
   payoutStatusFromPayPal,

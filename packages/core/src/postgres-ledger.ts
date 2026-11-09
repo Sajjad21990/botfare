@@ -29,6 +29,7 @@ import {
   type Site,
   sites,
 } from "./schema";
+import { isReceiptHeld, splitEarnings } from "./services/payout-hold";
 import { issueAfterCommit, issueReceiptStatementQuietly } from "./services/receipt-statements";
 
 /** A refusal from the ledger port (not exported by the plug-in by name). */
@@ -270,23 +271,29 @@ export type RefundResult =
 /**
  * Reverses a settled receipt of `siteId` exactly once: the wallet gets the full amount back,
  * taken from the publisher's earnings and BotFare's fee. A second call returns the first refund.
- * Fails with `insufficient_earnings` if the publisher was already paid out. Inside an open
- * transaction it runs as a savepoint, so a failed refund leaves the caller's transaction usable.
+ * Fails with `insufficient_earnings` if the publisher was already paid out, and for a receipt the
+ * dispute-window hold no longer covers (past its window, no undecided dispute) whose publisher
+ * share exceeds the publisher's *available* earnings: such a refund must not spend the money held
+ * for fares an agent may still dispute. Held receipts (Fare Court verdicts, in-window publisher
+ * refunds) draw on the clearing money set aside for them. Inside an open transaction it runs as a
+ * savepoint, so a failed refund leaves the caller's transaction usable.
  */
-export async function refundReceipt(
-  db: DbOrTx,
-  input: { receiptId: string; siteId: string; memo?: string },
-): Promise<RefundResult> {
+export async function refundReceipt(db: DbOrTx, input: RefundInput): Promise<RefundResult> {
   const result = await refundReceiptOnce(db, input);
   // Signed refund statement (skipped inside a transaction: the caller issues it after commit).
   if (result.ok) await issueAfterCommit(db, result.receipt.id, "refund");
   return result;
 }
 
-async function refundReceiptOnce(
-  db: DbOrTx,
-  input: { receiptId: string; siteId: string; memo?: string },
-): Promise<RefundResult> {
+interface RefundInput {
+  receiptId: string;
+  siteId: string;
+  memo?: string;
+  /** The time the dispute-window hold is judged at (now by default). */
+  now?: Date;
+}
+
+async function refundReceiptOnce(db: DbOrTx, input: RefundInput): Promise<RefundResult> {
   try {
     return await db.transaction(async (tx): Promise<RefundResult> => {
       const [receipt] = await tx
@@ -311,16 +318,41 @@ async function refundReceiptOnce(
         .from(ledgerAccounts)
         .where(eq(ledgerAccounts.id, wallet))
         .for("update");
+      // Then the earnings, as a payout does, so neither can move the balance under the check.
+      const earnings = Accounts.earnings(receipt.publisherUserId);
+      const [earningsAccount] = await tx
+        .select({ balance: ledgerAccounts.balanceMicros })
+        .from(ledgerAccounts)
+        .where(eq(ledgerAccounts.id, earnings))
+        .for("update");
+      const share = receipt.amountMicros - receipt.feeMicros;
+      const now = input.now ?? new Date();
+      if (!(await isReceiptHeld(tx, receipt.id, now))) {
+        // An old fare's refund may take only what is available, never the clearing reserve.
+        const split = await splitEarnings(
+          tx,
+          receipt.publisherUserId,
+          earningsAccount?.balance ?? 0,
+          now,
+        );
+        if (share > split.availableMicros) {
+          return {
+            ok: false,
+            reason: "insufficient_earnings",
+            message:
+              split.clearingMicros > 0
+                ? "Publisher earnings available now are too low to refund this receipt; the rest is held for fares agents can still dispute"
+                : "Publisher earnings are too low to refund this receipt",
+          };
+        }
+      }
       const posted = await postTransaction(tx, {
         kind: "refund",
         idempotencyKey: `refund:${receipt.id}`,
         memo: input.memo ?? `Refund of ${receipt.id}`,
         entries: [
           { accountId: wallet, amountMicros: receipt.amountMicros },
-          {
-            accountId: Accounts.earnings(receipt.publisherUserId),
-            amountMicros: -(receipt.amountMicros - receipt.feeMicros),
-          },
+          { accountId: earnings, amountMicros: -share },
           { accountId: Accounts.platformFees, amountMicros: -receipt.feeMicros },
         ],
       });

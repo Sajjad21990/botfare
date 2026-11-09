@@ -434,6 +434,8 @@ export async function openDispute(
         return { ok: false as const, reason, message, dispute: row };
       };
 
+      // `now` was taken before this transaction and the row stays invisible until commit; payouts
+      // hold fares PAYOUT_HOLD_MARGIN_MS past this window (services/payout-hold.ts) to cover that.
       if (now.getTime() - receipt.createdAt.getTime() > DISPUTE_POLICY.windowHours * HOUR_MS) {
         return storeInvalid(
           "window_closed",
@@ -632,6 +634,7 @@ export async function applyVerdict(
           receiptId: dispute.receiptId,
           siteId: dispute.siteId,
           memo: `Fare Court refund (dispute ${dispute.id})`,
+          now,
         });
         if (!refund.ok) {
           if (refund.reason === "insufficient_earnings") {
@@ -730,6 +733,7 @@ export async function publisherDecide(
         receiptId: dispute.receiptId,
         siteId: dispute.siteId,
         memo: `Fare Court refund by the publisher (dispute ${dispute.id})`,
+        now,
       });
       if (!refund.ok) {
         if (refund.reason !== "insufficient_earnings") {

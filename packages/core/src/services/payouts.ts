@@ -14,40 +14,25 @@
  * - One caller at a time sends a batch (`submit_locked_until`), so Withdraw, Refresh and the cron
  *   cannot POST it concurrently.
  * - Dispute-window hold: only *available* earnings are paid. A fare stays *clearing* while an
- *   agent can still dispute it (DISPUTE_POLICY.windowHours after settle) and while a dispute on it
- *   is undecided, so a Fare Court refund always finds the publisher's share still in earnings.
+ *   agent can still dispute it (DISPUTE_POLICY.windowHours after settle, plus PAYOUT_HOLD_MARGIN_MS)
+ *   and while a dispute on it is undecided, so a Fare Court refund always finds the publisher's
+ *   share still in earnings. The split lives in ./payout-hold (publisher refunds use it too).
  */
 import { IdPrefix, newId } from "@botfare/contracts";
 import { DISPUTE_POLICY } from "@botfare/contracts/fare";
 import type { PayoutItem, PayPalClient } from "@botfare/paypal";
 import { PayPalApiError } from "@botfare/paypal";
 import { centsToMicros } from "@botfare/x402-paypal";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  exists,
-  gte,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  not,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { Accounts } from "../accounts";
 import type { Db, DbOrTx, Tx } from "../db";
 import { earningsBalanceMicros, postTransaction } from "../ledger";
 import {
-  disputes,
   ledgerAccounts,
   type Payout,
   type PayoutStatus,
   payouts,
-  receipts,
   sites,
   type User,
   users,
@@ -58,6 +43,7 @@ import {
   isDefinitivePayPalFailure,
   MoneyFlowError,
 } from "./money";
+import { type EarningsSplit, splitEarnings } from "./payout-hold";
 
 export const DEFAULT_PAYOUT_MINIMUM_CENTS = 100;
 export const PAYOUT_NOTE = "BotFare earnings";
@@ -114,26 +100,7 @@ export async function getPayoutEmail(db: DbOrTx, userId: string): Promise<string
 // ---------------------------------------------------------------------------------------------
 // Available and clearing earnings (the dispute-window hold)
 
-const HOUR_MS = 3_600_000;
 const MICROS_PER_CENT = centsToMicros(1);
-
-/** Dispute statuses that hold a fare's earnings back from payouts until they are decided. */
-export const PAYOUT_HOLD_DISPUTE_STATUSES = ["open", "pending_publisher"] as const;
-
-export interface EarningsSplit {
-  /** The publisher's whole earnings balance (ledger). */
-  balanceMicros: number;
-  /**
-   * The publisher's share (amount minus BotFare's fee) of settled, unrefunded fares that an agent
-   * may still dispute (settled less than DISPUTE_POLICY.windowHours ago) or whose dispute is
-   * undecided (`open` or `pending_publisher`, any age).
-   */
-  clearingMicros: number;
-  /** What a payout may take now: max(0, balance - clearing). */
-  availableMicros: number;
-  /** When the oldest in-window fare without an undecided dispute stops clearing; null if none. */
-  nextReleaseAt: Date | null;
-}
 
 /**
  * How much of a publisher's earnings a payout may take at `now`, and how much is still clearing.
@@ -146,53 +113,6 @@ export async function publisherEarningsSplit(
 ): Promise<EarningsSplit> {
   const balanceMicros = await earningsBalanceMicros(db, publisherUserId);
   return splitEarnings(db, publisherUserId, balanceMicros, now);
-}
-
-async function splitEarnings(
-  db: DbOrTx,
-  publisherUserId: string,
-  balanceMicros: number,
-  now: Date,
-): Promise<EarningsSplit> {
-  const windowMs = DISPUTE_POLICY.windowHours * HOUR_MS;
-  // Fare Court accepts a dispute while now - createdAt <= window, so a fare exactly at the
-  // boundary still counts as clearing.
-  const inWindow = gte(receipts.createdAt, new Date(now.getTime() - windowMs));
-  const undecidedDispute = exists(
-    db
-      .select({ one: sql`1` })
-      .from(disputes)
-      .where(
-        and(
-          eq(disputes.receiptId, receipts.id),
-          inArray(disputes.status, [...PAYOUT_HOLD_DISPUTE_STATUSES]),
-        ),
-      ),
-  );
-  const [row] = await db
-    .select({
-      clearing: sql<string>`coalesce(sum(${receipts.amountMicros} - ${receipts.feeMicros}), 0)`,
-      oldest: sql<string | Date | null>`min(${receipts.createdAt}) filter (where ${and(
-        inWindow,
-        not(undecidedDispute),
-      )})`,
-    })
-    .from(receipts)
-    .where(
-      and(
-        eq(receipts.publisherUserId, publisherUserId),
-        eq(receipts.status, "settled"),
-        or(inWindow, undecidedDispute),
-      ),
-    );
-  const clearingMicros = Number(row?.clearing ?? 0);
-  const oldest = row?.oldest ? new Date(row.oldest) : null;
-  return {
-    balanceMicros,
-    clearingMicros,
-    availableMicros: Math.max(0, balanceMicros - clearingMicros),
-    nextReleaseAt: oldest ? new Date(oldest.getTime() + windowMs) : null,
-  };
 }
 
 /** $1.23, or $0.0285 when the amount has a sub-cent part. */
