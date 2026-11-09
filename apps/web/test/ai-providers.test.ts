@@ -200,6 +200,21 @@ describe("model lists", () => {
     expect(pickDefaultModel(openrouter, [{ id: "paid" }, { id: "free:free", free: true }])).toBe(
       "free:free",
     );
+    // OpenRouter's free router beats tiny listed free models, and is the fallback (never the paid auto router).
+    expect(
+      pickDefaultModel(openrouter, [
+        { id: "tiny-1.7b:free", free: true },
+        { id: "openrouter/free", free: true },
+      ]),
+    ).toBe("openrouter/free");
+    expect(pickDefaultModel(openrouter, [])).toBe("openrouter/free");
+    const groqDefault = config({ GROQ_API_KEY: "g" }, "groq");
+    expect(
+      pickDefaultModel(groqDefault, [
+        { id: "llama-3.3-70b-versatile" },
+        { id: "openai/gpt-oss-120b" },
+      ]),
+    ).toBe("openai/gpt-oss-120b");
     const xai = config({ XAI_API_KEY: "k" }, "xai");
     expect(pickDefaultModel(xai, [{ id: "grok-x" }, { id: "grok-y" }])).toBe("grok-x");
     expect(pickDefaultModel(xai, [])).toBe("grok-4");

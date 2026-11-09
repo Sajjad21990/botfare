@@ -181,7 +181,7 @@ const SPECS: Record<ProviderId, ProviderSpec> = {
     modelEnv: "GROQ_MODEL",
     modelsEnv: "GROQ_MODELS",
     baseUrl: () => "https://api.groq.com/openai/v1",
-    preferred: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"],
+    preferred: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile"],
     fallback: "llama-3.3-70b-versatile",
     filter: (data) => plain(ids(data).filter((id) => !GROQ_NON_CHAT.test(id))),
   },
@@ -198,8 +198,10 @@ const SPECS: Record<ProviderId, ProviderSpec> = {
         env.BOTFARE_URL?.trim() || env.RENDER_EXTERNAL_URL?.trim() || "http://localhost:3000",
       "X-Title": "BotFare",
     }),
-    preferred: [],
-    fallback: "openrouter/auto",
+    // OpenRouter's free router picks a capable free model per call; listed free models are often
+    // tiny (1-3B) and weak at tool use, and openrouter/auto is a paid router.
+    preferred: ["openrouter/free"],
+    fallback: "openrouter/free",
     filter: filterOpenRouterModels,
   },
   ollama: {
@@ -396,8 +398,8 @@ export async function listProviderModels(
 }
 
 /**
- * The provider's default model: <P>_MODEL, else a preferred model it lists, else (OpenRouter) the
- * first free tool-capable model, else the first listed, else a fixed fallback.
+ * The provider's default model: <P>_MODEL, else a preferred model it lists (OpenRouter: its free
+ * router), else (OpenRouter) the first free tool-capable model, else the first listed, else a fixed fallback.
  */
 export function pickDefaultModel(config: ProviderConfig, listed: ModelInfo[]): string {
   if (config.configuredModel) return config.configuredModel;
