@@ -83,21 +83,28 @@ services:
       DEMO_INTERNAL_URL: http://demo:4000
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      ANTHROPIC_MODELS: ${ANTHROPIC_MODELS:-}
       # Other AI providers (optional; see .env.example). Ollama on the host is
       # http://host.docker.internal:11434/v1 from inside this container.
       AI_PROVIDER: ${AI_PROVIDER:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_MODELS: ${OPENAI_MODELS:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_MODELS: ${GEMINI_MODELS:-}
       XAI_API_KEY: ${XAI_API_KEY:-}
       XAI_MODEL: ${XAI_MODEL:-}
+      XAI_MODELS: ${XAI_MODELS:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-}
+      GROQ_MODELS: ${GROQ_MODELS:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      OPENROUTER_MODELS: ${OPENROUTER_MODELS:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
+      OLLAMA_MODELS: ${OLLAMA_MODELS:-}
       # Optional: the PayPal sandbox buyer (fake money) /judge shows for approving a top-up, and
       # Log in with PayPal (return URL http://localhost:3300/api/auth/paypal/callback).
       JUDGE_SANDBOX_BUYER_EMAIL: ${JUDGE_SANDBOX_BUYER_EMAIL:-}

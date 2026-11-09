@@ -65,6 +65,10 @@ services:
       # Optional: model for the analytics assistant, research agent, Fare Court and Fare Advisor (the app has a default).
       - key: ANTHROPIC_MODEL
         sync: false
+      # Optional <P>_MODELS allowlists (comma-separated): extra models the research agent may
+      # offer beyond each provider's default, <P>_MODEL and free models (e.g. claude-opus-5-5).
+      - key: ANTHROPIC_MODELS
+        sync: false
       # Optional: other AI providers (any one is enough; Claude stays the default when its key is set).
       # AI_PROVIDER picks the default: anthropic, openai, gemini, xai, groq, openrouter or ollama.
       - key: AI_PROVIDER
@@ -73,26 +77,38 @@ services:
         sync: false
       - key: OPENAI_MODEL
         sync: false
+      - key: OPENAI_MODELS
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
+        sync: false
+      - key: GEMINI_MODELS
         sync: false
       - key: XAI_API_KEY
         sync: false
       - key: XAI_MODEL
         sync: false
+      - key: XAI_MODELS
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
+        sync: false
+      - key: GROQ_MODELS
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
         sync: false
+      - key: OPENROUTER_MODELS
+        sync: false
       # A reachable Ollama server's OpenAI-compatible URL (https://<host>/v1), if you run one.
       - key: OLLAMA_BASE_URL
         sync: false
       - key: OLLAMA_MODEL
+        sync: false
+      - key: OLLAMA_MODELS
         sync: false
       # Optional: AG Studio licence key; read at build time, removes the watermark.
       - key: NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY

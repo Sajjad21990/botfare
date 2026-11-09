@@ -10,6 +10,11 @@ import { createOpenAICompatibleClient, fetchModelList } from "./openai-compatibl
  * The default provider (Fare Court, Fare Advisor, the analytics assistant and the research agent's
  * default) is AI_PROVIDER when that provider is configured, else Anthropic when ANTHROPIC_API_KEY
  * is set, else the first configured provider in PROVIDER_IDS order.
+ *
+ * The research agent's picker (and POST /api/research) offers only what is cheap or chosen by the
+ * operator: each provider's default model, its <P>_MODEL, models flagged free, and the ids in an
+ * optional <P>_MODELS allowlist (comma-separated, e.g. OPENROUTER_MODELS). Judge personas are
+ * public and the run budgets are sized for Sonnet prices, so premium models stay off unless listed.
  */
 
 export const PROVIDER_IDS = [
@@ -42,12 +47,18 @@ interface ProviderSpec {
   /** Environment variable holding the key (Ollama has none). */
   keyEnv?: string;
   modelEnv: string;
+  /** Optional comma-separated allowlist of extra models the research agent may pick. */
+  modelsEnv: string;
   baseUrl: (env: Env) => string | null;
   maxTokensParam?: "max_tokens" | "max_completion_tokens";
   headers?: (env: Env) => Record<string, string>;
   thoughtSignatures?: boolean;
+  /** OpenAI: send `reasoning_effort` to reasoning models. */
+  reasoningEffort?: boolean;
   /** Preferred defaults, used when the provider lists them (first match wins). */
   preferred: string[];
+  /** Then preferred families: `qwen3` matches `qwen3` and `qwen3:<tag>` (first family wins). */
+  preferredFamilies?: string[];
   /** The default when <P>_MODEL is unset and the model list cannot be read. */
   fallback: string;
   /** Chat models from the provider's GET /models `data`. */
@@ -78,6 +89,8 @@ const OPENAI_NON_CHAT =
 const GEMINI_NON_CHAT = /embed|imagen|tts|aqa|veo|image|audio|live|robotics|computer-use/i;
 const XAI_NON_CHAT = /image|imagine|embed|video/i;
 const GROQ_NON_CHAT = /whisper|tts|guard|playai|orpheus|embed|distil/i;
+/** Ollama serves embedding and rerank models from the same list: not chat models. */
+export const OLLAMA_NON_CHAT = /embed|bge|minilm|(^|[-/:])e5[-:]|nomic-embed|rerank/i;
 
 /** Free on OpenRouter: zero prompt and completion prices, or a `:free` variant. */
 export function isFreeOpenRouterModel(item: Record<string, unknown>): boolean {
@@ -109,6 +122,7 @@ const SPECS: Record<ProviderId, ProviderSpec> = {
     label: "Anthropic",
     keyEnv: "ANTHROPIC_API_KEY",
     modelEnv: "ANTHROPIC_MODEL",
+    modelsEnv: "ANTHROPIC_MODELS",
     baseUrl: () => null,
     preferred: [DEFAULT_ANTHROPIC_MODEL],
     fallback: DEFAULT_ANTHROPIC_MODEL,
@@ -119,8 +133,10 @@ const SPECS: Record<ProviderId, ProviderSpec> = {
     label: "OpenAI",
     keyEnv: "OPENAI_API_KEY",
     modelEnv: "OPENAI_MODEL",
+    modelsEnv: "OPENAI_MODELS",
     baseUrl: () => "https://api.openai.com/v1",
     maxTokensParam: "max_completion_tokens",
+    reasoningEffort: true,
     preferred: ["gpt-5-mini", "gpt-4.1-mini", "gpt-4o-mini"],
     fallback: "gpt-5-mini",
     filter: (data) =>
@@ -135,6 +151,7 @@ const SPECS: Record<ProviderId, ProviderSpec> = {
     label: "Google Gemini",
     keyEnv: "GEMINI_API_KEY",
     modelEnv: "GEMINI_MODEL",
+    modelsEnv: "GEMINI_MODELS",
     baseUrl: () => "https://generativelanguage.googleapis.com/v1beta/openai",
     thoughtSignatures: true,
     preferred: ["gemini-flash-latest", "gemini-2.5-flash"],
@@ -151,6 +168,7 @@ const SPECS: Record<ProviderId, ProviderSpec> = {
     label: "xAI Grok",
     keyEnv: "XAI_API_KEY",
     modelEnv: "XAI_MODEL",
+    modelsEnv: "XAI_MODELS",
     baseUrl: () => "https://api.x.ai/v1",
     preferred: ["grok-4-fast", "grok-4", "grok-3-mini"],
     fallback: "grok-4",
@@ -161,6 +179,7 @@ const SPECS: Record<ProviderId, ProviderSpec> = {
     label: "Groq",
     keyEnv: "GROQ_API_KEY",
     modelEnv: "GROQ_MODEL",
+    modelsEnv: "GROQ_MODELS",
     baseUrl: () => "https://api.groq.com/openai/v1",
     preferred: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"],
     fallback: "llama-3.3-70b-versatile",
@@ -171,6 +190,7 @@ const SPECS: Record<ProviderId, ProviderSpec> = {
     label: "OpenRouter",
     keyEnv: "OPENROUTER_API_KEY",
     modelEnv: "OPENROUTER_MODEL",
+    modelsEnv: "OPENROUTER_MODELS",
     baseUrl: () => "https://openrouter.ai/api/v1",
     // OpenRouter's app attribution: this server's public URL and the app name.
     headers: (env) => ({
@@ -186,20 +206,45 @@ const SPECS: Record<ProviderId, ProviderSpec> = {
     id: "ollama",
     label: "Ollama (local)",
     modelEnv: "OLLAMA_MODEL",
+    modelsEnv: "OLLAMA_MODELS",
     baseUrl: (env) => env.OLLAMA_BASE_URL?.trim().replace(/\/+$/, "") || null,
     preferred: [],
+    preferredFamilies: ["qwen3", "llama3.1", "llama3.2", "qwen2.5"],
     fallback: "llama3.2",
-    filter: (data) => plain(ids(data)).map((m) => ({ ...m, free: true })),
+    filter: (data) =>
+      plain(ids(data).filter((id) => !OLLAMA_NON_CHAT.test(id))).map((m) => ({ ...m, free: true })),
   },
 };
 
-/** The static Anthropic list: the configured model, the default and two alternatives. */
-function anthropicModels(configured: string | null): ModelInfo[] {
+/** The cheaper Claude alternative always offered next to the default. */
+export const CHEAPER_ANTHROPIC_MODEL = "claude-haiku-4-5";
+
+/**
+ * The static Anthropic list: the configured model, the default, the cheaper alternative and
+ * ANTHROPIC_MODELS (premium models such as Opus only when configured or allowlisted).
+ */
+function anthropicModels(config: ProviderConfig): ModelInfo[] {
   return plain(
-    [configured, DEFAULT_ANTHROPIC_MODEL, "claude-opus-5-5", "claude-haiku-4-5"].filter(
-      (id): id is string => Boolean(id),
-    ),
+    [
+      config.configuredModel,
+      DEFAULT_ANTHROPIC_MODEL,
+      CHEAPER_ANTHROPIC_MODEL,
+      ...config.allowedModels,
+    ].filter((id): id is string => Boolean(id)),
   );
+}
+
+/** A comma-separated model list from the environment (blank entries dropped, no duplicates). */
+export function parseModelList(value: string | undefined): string[] {
+  if (!value) return [];
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 export interface ProviderConfig {
@@ -210,6 +255,8 @@ export interface ProviderConfig {
   baseUrl: string | null;
   /** <P>_MODEL when set. */
   configuredModel: string | null;
+  /** <P>_MODELS: extra models the research agent may offer (beyond the default and free ones). */
+  allowedModels: string[];
   /** Extra request headers (OpenRouter's app attribution). */
   headers: Record<string, string>;
 }
@@ -228,6 +275,7 @@ export function aiProviders(env: Env = process.env): ProviderConfig[] {
       apiKey,
       baseUrl,
       configuredModel: env[spec.modelEnv]?.trim() || null,
+      allowedModels: parseModelList(env[spec.modelsEnv]),
       headers: spec.headers?.(env) ?? {},
     });
   }
@@ -301,19 +349,21 @@ function clientOptions(config: ProviderConfig, deps: AiDeps = {}) {
     headers: config.headers,
     maxTokensParam: spec.maxTokensParam,
     thoughtSignatures: spec.thoughtSignatures,
+    reasoningEffort: spec.reasoningEffort,
     ...(deps.fetch ? { fetch: deps.fetch } : {}),
   };
 }
 
 /**
- * The provider's chat models (cached ten minutes; a failed list is retried after a minute and
- * reads as empty). Anthropic's is a static list.
+ * The provider's chat models (cached ten minutes). A failed list is retried after a minute; until
+ * then it reads as the last good list (empty when there never was one), and so do callers that
+ * waited on the failed refetch. Anthropic's is a static list.
  */
 export async function listProviderModels(
   config: ProviderConfig,
   deps: AiDeps = {},
 ): Promise<ModelInfo[]> {
-  if (config.id === "anthropic") return anthropicModels(config.configuredModel);
+  if (config.id === "anthropic") return anthropicModels(config);
   const now = deps.now?.() ?? Date.now();
   const key = `${config.id} ${config.baseUrl}`;
   const cache = listCache();
@@ -336,8 +386,10 @@ export async function listProviderModels(
         `[ai] could not list ${SPECS[config.id].label} models:`,
         error instanceof Error ? error.message : "unknown error",
       );
-      cache.set(key, { at: now, ok: false, models: [] });
-      return [] as ModelInfo[];
+      // Keep the last good list (previously valid picks stay valid); retry after a minute.
+      const stale = entry?.models ?? [];
+      cache.set(key, { at: now, ok: false, models: stale });
+      return stale;
     });
   cache.set(key, { at: entry?.at ?? 0, ok: false, models: entry?.models ?? [], pending });
   return pending;
@@ -354,6 +406,10 @@ export function pickDefaultModel(config: ProviderConfig, listed: ModelInfo[]): s
   const available = new Set(listed.map((m) => m.id));
   const preferred = spec.preferred.find((id) => available.has(id));
   if (preferred) return preferred;
+  for (const family of spec.preferredFamilies ?? []) {
+    const match = listed.find((m) => m.id === family || m.id.startsWith(`${family}:`));
+    if (match) return match.id;
+  }
   if (config.id === "openrouter") {
     const free = listed.find((m) => m.free);
     if (free) return free.id;
@@ -364,21 +420,49 @@ export function pickDefaultModel(config: ProviderConfig, listed: ModelInfo[]): s
 export interface ProviderModels {
   provider: ProviderId;
   label: string;
-  /** The default first, then the provider's other chat models. */
+  /** The default first, then the other offered models in the provider's order. */
   models: ModelInfo[];
   default: string;
 }
 
-/** A provider's models for the picker: never its key. */
+/**
+ * The models the research agent may use from this provider: the default, <P>_MODEL, listed models
+ * flagged free, and <P>_MODELS (offered even when the provider does not list them: the operator
+ * chose them). Anthropic's static list is offered as it is. Default first.
+ */
+export function offeredModels(
+  config: ProviderConfig,
+  listed: ModelInfo[],
+  chosen: string,
+): ModelInfo[] {
+  const extra = [config.configuredModel, ...config.allowedModels].filter((id): id is string =>
+    Boolean(id),
+  );
+  const approved = new Set([chosen, ...extra]);
+  const byId = new Map(listed.map((m) => [m.id, m]));
+  const out: ModelInfo[] = [];
+  const seen = new Set<string>();
+  const add = (id: string) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push(byId.get(id) ?? { id, ...(config.id === "ollama" ? { free: true } : {}) });
+  };
+  add(chosen);
+  for (const m of listed) {
+    if (config.id === "anthropic" || m.free || approved.has(m.id)) add(m.id);
+  }
+  for (const id of extra) add(id);
+  return out;
+}
+
+/** A provider's offered models for the picker: never its key. */
 export async function providerModels(
   config: ProviderConfig,
   deps: AiDeps = {},
 ): Promise<ProviderModels> {
   const listed = await listProviderModels(config, deps);
   const chosen = pickDefaultModel(config, listed);
-  const models = listed.some((m) => m.id === chosen)
-    ? [...listed.filter((m) => m.id === chosen), ...listed.filter((m) => m.id !== chosen)]
-    : [{ id: chosen, ...(config.id === "ollama" ? { free: true } : {}) }, ...listed];
+  const models = offeredModels(config, listed, chosen);
   return { provider: config.id, label: config.label, models, default: chosen };
 }
 
@@ -453,8 +537,8 @@ export type ChoiceResult =
   | { ok: false; code: "provider_unavailable" | "model_unavailable"; message: string };
 
 /**
- * An explicit choice, checked against the configured providers and that provider's listed models
- * (or its default). With no provider the default provider is used; with no model, its default.
+ * An explicit choice, checked against the configured providers and that provider's offered models
+ * (see offeredModels). With no provider the default provider is used; with no model, its default.
  */
 export async function resolveAiChoice(
   choice: { provider?: string; model?: string },

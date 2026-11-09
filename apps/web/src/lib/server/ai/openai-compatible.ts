@@ -20,7 +20,9 @@ import type {
  * their logic and their `instanceof` checks.
  *
  * - Anthropic-only params are ignored: thinking, output_config.effort, cache_control, betas,
- *   fallbacks, metadata. Thinking blocks in the history are dropped.
+ *   fallbacks, metadata. Thinking blocks in the history are dropped. Exception: on OpenAI's own
+ *   API (`reasoningEffort`), reasoning models get `output_config.effort` as `reasoning_effort`
+ *   ("low" when absent), so reasoning tokens do not eat the whole `max_completion_tokens`.
  * - `output_config.format` (JSON schema) becomes `response_format: json_schema`; a provider that
  *   rejects it with a 400 is asked again with `json_object` and the schema in the system prompt,
  *   then with the schema in the prompt alone (remembered per model).
@@ -61,8 +63,11 @@ export interface ChatRequest {
     | { type: "json_schema"; json_schema: { name: string; schema: unknown; strict: false } }
     | { type: "json_object" };
   stop?: string[];
+  reasoning_effort?: ReasoningEffort;
   stream: false;
 }
+
+export type ReasoningEffort = "low" | "medium" | "high";
 
 interface ChatResponse {
   id?: string;
@@ -101,6 +106,21 @@ export interface TranslateOptions {
   jsonMode?: JsonMode;
   /** Gemini: every assistant step with tool calls carries a thought signature. */
   thoughtSignatures?: boolean;
+  /** OpenAI: send `reasoning_effort` to reasoning models (see isReasoningModel). */
+  reasoningEffort?: boolean;
+}
+
+/** OpenAI reasoning models (gpt-5*, o1/o3/o4…), not the gpt-5 chat models. */
+export function isReasoningModel(model: string): boolean {
+  return /^(gpt-5|o\d)/.test(model) && !/-chat/.test(model);
+}
+
+/** Anthropic's effort as OpenAI's `reasoning_effort` ("low" when none was asked for). */
+export function reasoningEffortFor(params: ModelStreamParams): ReasoningEffort {
+  const effort = params.output_config?.effort;
+  if (effort === "medium") return "medium";
+  if (effort === "high" || effort === "xhigh" || effort === "max") return "high";
+  return "low";
 }
 
 /** The model's tool input was not valid JSON: the caller may re-issue the turn. */
@@ -329,6 +349,9 @@ export function toChatRequest(
     request.response_format = { type: "json_object" };
   }
   if (params.stop_sequences?.length) request.stop = params.stop_sequences.slice(0, 4);
+  if (options.reasoningEffort && isReasoningModel(params.model)) {
+    request.reasoning_effort = reasoningEffortFor(params);
+  }
   return request;
 }
 
@@ -408,6 +431,10 @@ export function fromChatResponse(
   if (options.json) text = unwrapJsonFence(text).trim();
   if (text) content.push({ type: "text", text, citations: null });
 
+  // A turn cut off by the token limit may end in half-written tool arguments: keep the call with
+  // `{}` input and stop_reason max_tokens (callers never run tool input from such a turn) instead of
+  // throwing, so the turn's usage is still counted and the caller sees why it stopped.
+  const truncated = choice?.finish_reason === "length";
   const seen = new Set<string>();
   for (const call of message?.tool_calls ?? []) {
     const name = call.function?.name ?? "";
@@ -420,11 +447,15 @@ export function fromChatResponse(
       try {
         input = JSON.parse(String(raw));
       } catch {
-        throw new ToolInputParseError(name);
+        if (!truncated) throw new ToolInputParseError(name);
+        input = {};
       }
     }
     if (input === null) input = {};
-    if (typeof input !== "object" || Array.isArray(input)) throw new ToolInputParseError(name);
+    if (typeof input !== "object" || Array.isArray(input)) {
+      if (!truncated) throw new ToolInputParseError(name);
+      input = {};
+    }
     let id = typeof call.id === "string" && call.id ? call.id : randomId("call_");
     if (seen.has(id)) id = randomId("call_");
     seen.add(id);
@@ -543,6 +574,8 @@ export interface OpenAICompatibleOptions {
   headers?: Record<string, string>;
   maxTokensParam?: "max_tokens" | "max_completion_tokens";
   thoughtSignatures?: boolean;
+  /** OpenAI's own API: `reasoning_effort` for reasoning models. */
+  reasoningEffort?: boolean;
   /** Default per-request timeout (60 s). */
   timeoutMs?: number;
   /** Retries for 408/409/429/5xx and connection failures (default 1). */
@@ -769,6 +802,7 @@ export function createOpenAICompatibleClient(options: OpenAICompatibleOptions): 
       const body = toChatRequest(params, {
         maxTokensParam: options.maxTokensParam,
         thoughtSignatures: options.thoughtSignatures,
+        reasoningEffort: options.reasoningEffort,
         jsonMode: JSON_MODES[index],
       });
       try {

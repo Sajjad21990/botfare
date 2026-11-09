@@ -4,6 +4,7 @@ import type { BetaRawStreamEvent, ModelCreateParams } from "../src/lib/server/ai
 import {
   createOpenAICompatibleClient,
   GEMINI_SKIP_SIGNATURE,
+  isReasoningModel,
   type OpenAICompatibleOptions,
   ToolInputParseError,
   toChatRequest,
@@ -225,6 +226,44 @@ describe("Messages request -> Chat Completions request", () => {
     expect(prompt).not.toHaveProperty("response_format");
     expect(prompt.messages[0]?.content).toContain("Reply with only a JSON object");
   });
+
+  it("sends reasoning_effort to OpenAI reasoning models only (low unless effort says more)", () => {
+    for (const id of ["gpt-5-mini", "gpt-5", "gpt-5.1", "o1", "o3-mini", "o4-mini"]) {
+      expect(isReasoningModel(id), id).toBe(true);
+    }
+    for (const id of ["gpt-4.1-mini", "gpt-4o-mini", "gpt-5-chat-latest", "llama-3.3-70b"]) {
+      expect(isReasoningModel(id), id).toBe(false);
+    }
+    const on = { reasoningEffort: true, maxTokensParam: "max_completion_tokens" as const };
+    const effort = (model: string, output_config?: ModelCreateParams["output_config"]) =>
+      toChatRequest({ ...BASE, model, ...(output_config ? { output_config } : {}) }, on)
+        .reasoning_effort;
+    expect(effort("gpt-5-mini")).toBe("low");
+    expect(effort("gpt-5-mini", { effort: "low" })).toBe("low");
+    expect(effort("o4-mini", { effort: "medium" })).toBe("medium");
+    expect(effort("gpt-5", { effort: "high" })).toBe("high");
+    expect(effort("gpt-5", { effort: "max" })).toBe("high");
+    expect(effort("gpt-4.1-mini", { effort: "high" })).toBeUndefined();
+    // Other providers (no reasoningEffort option) never get it, whatever the model id.
+    const groq = toChatRequest({ ...BASE, model: "gpt-5-mini", output_config: { effort: "high" } });
+    expect(groq).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("puts reasoning_effort on the wire for the OpenAI client", async () => {
+    const { fetch, seen } = fakeFetch([chat({ content: "ok" }), chat({ content: "ok" })]);
+    const openai = client(fetch, {
+      reasoningEffort: true,
+      maxTokensParam: "max_completion_tokens",
+    });
+    await openai.beta.messages.create({ ...BASE, model: "gpt-5-mini" });
+    expect(seen[0]?.body).toMatchObject({
+      model: "gpt-5-mini",
+      max_completion_tokens: 500,
+      reasoning_effort: "low",
+    });
+    await client(fetch).beta.messages.create({ ...BASE, model: "gpt-5-mini" });
+    expect(seen[1]?.body).not.toHaveProperty("reasoning_effort");
+  });
 });
 
 describe("Chat Completions response -> Messages message", () => {
@@ -319,6 +358,34 @@ describe("Chat Completions response -> Messages message", () => {
       );
     expect(error).toBeInstanceOf(ToolInputParseError);
     expect(error).not.toBeInstanceOf(Anthropic.APIError);
+  });
+
+  it("returns a max_tokens turn with truncated tool arguments as `{}` input and its usage", async () => {
+    const { fetch } = fakeFetch([
+      chat(
+        {
+          content: "Buying.",
+          tool_calls: [
+            { id: "a", function: { name: "skip", arguments: '{"url":"https://a.test"}' } },
+            { id: "b", function: { name: "buy", arguments: '{"url": "https://b.te' } },
+            { id: "c", function: { name: "buy", arguments: "[1, 2]" } },
+          ],
+        },
+        "length",
+        { prompt_tokens: 900, completion_tokens: 8000 },
+      ),
+    ]);
+    const message = await client(fetch).beta.messages.create(BASE);
+    expect(message).toMatchObject({
+      stop_reason: "max_tokens",
+      usage: { input_tokens: 900, output_tokens: 8000 },
+      content: [
+        { type: "text", text: "Buying." },
+        { type: "tool_use", id: "a", name: "skip", input: { url: "https://a.test" } },
+        { type: "tool_use", id: "b", name: "buy", input: {} },
+        { type: "tool_use", id: "c", name: "buy", input: {} },
+      ],
+    });
   });
 
   it("echoes Gemini thought signatures, with a placeholder when none was kept", async () => {
@@ -682,6 +749,43 @@ describe("the research agent on an OpenAI-compatible provider", () => {
     );
     // The bad turn was asked again (not reported as an API error).
     expect(n).toBe(3);
+    expect(events.find((e) => e.type === "error")).toMatchObject({ code: "no_answer" });
+  });
+
+  it("counts a turn cut off mid tool call, never runs its input, and asks again", async () => {
+    const requests: { messages: { role: string; content: string | null }[] }[] = [];
+    const fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)));
+      if (requests.length === 1) {
+        return Response.json(
+          chat(
+            {
+              tool_calls: [{ id: "x", function: { name: "buy", arguments: '{"url": "https://' } }],
+            },
+            "length",
+            { prompt_tokens: 100, completion_tokens: 7000 },
+          ),
+        );
+      }
+      return Response.json(chat({ content: "No answer." }));
+    }) as unknown as typeof globalThis.fetch;
+    const agents = fakeAgents();
+    const events: ResearchEvent[] = [];
+    const summary = await runResearch(
+      fakeDeps(client(fetch), agents),
+      { question: "q", budgetCents: 25 },
+      (e) => events.push(e),
+    );
+    // One request for the cut-off turn (not re-issued blindly), then the follow-up turns.
+    expect(requests).toHaveLength(3);
+    expect(agents.calls.fetch).toEqual([]);
+    expect(events.some((e) => e.type === "tool-call")).toBe(false);
+    // The cut-off call was answered with an error asking the model to call it again.
+    const second = requests[1]?.messages ?? [];
+    expect(second.map((m) => m.role)).toEqual(["system", "user", "assistant", "tool", "user"]);
+    expect(second[3]?.content).toMatch(/cut off/);
+    // Its tokens were counted.
+    expect(summary.weightedTokens).toBeGreaterThanOrEqual(7_100);
     expect(events.find((e) => e.type === "error")).toMatchObject({ code: "no_answer" });
   });
 });

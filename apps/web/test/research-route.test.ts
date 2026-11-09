@@ -95,6 +95,14 @@ const OTHER_AI_ENV = [
   "OPENROUTER_MODEL",
   "OLLAMA_BASE_URL",
   "OLLAMA_MODEL",
+  // The <P>_MODELS allowlists.
+  "ANTHROPIC_MODELS",
+  "OPENAI_MODELS",
+  "GEMINI_MODELS",
+  "XAI_MODELS",
+  "GROQ_MODELS",
+  "OPENROUTER_MODELS",
+  "OLLAMA_MODELS",
 ];
 
 beforeEach(() => {
@@ -369,7 +377,7 @@ describe("choosing the provider and model", () => {
     return calls;
   }
 
-  it("lists configured providers and their models, never keys", async () => {
+  it("lists configured providers and their offered models, never keys", async () => {
     vi.stubEnv("OPENROUTER_API_KEY", "sk-or-never_shown_to_the_browser");
     stubModelLists();
     const response = await GET_MODELS();
@@ -381,17 +389,14 @@ describe("choosing the provider and model", () => {
         {
           provider: "anthropic",
           label: "Anthropic",
-          models: [
-            { id: "claude-sonnet-5-5" },
-            { id: "claude-opus-5-5" },
-            { id: "claude-haiku-4-5" },
-          ],
+          models: [{ id: "claude-sonnet-5-5" }, { id: "claude-haiku-4-5" }],
           default: "claude-sonnet-5-5",
         },
         {
           provider: "openrouter",
           label: "OpenRouter",
-          models: [{ id: "meta-llama/llama-test:free", free: true }, { id: "vendor/paid-model" }],
+          // The paid model is not offered: it is neither the default, free, nor allowlisted.
+          models: [{ id: "meta-llama/llama-test:free", free: true }],
           default: "meta-llama/llama-test:free",
         },
       ],
@@ -399,8 +404,38 @@ describe("choosing the provider and model", () => {
     });
   });
 
+  it("offers premium models only from the <P>_MODELS allowlists", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-never_shown_to_the_browser");
+    vi.stubEnv("OPENROUTER_MODELS", "vendor/paid-model");
+    vi.stubEnv("ANTHROPIC_MODELS", "claude-opus-5-5");
+    stubModelLists();
+    const listed = (await (await GET_MODELS()).json()) as {
+      providers: { provider: string; models: { id: string }[] }[];
+    };
+    expect(listed.providers.map((p) => [p.provider, p.models.map((m) => m.id)])).toEqual([
+      ["anthropic", ["claude-sonnet-5-5", "claude-haiku-4-5", "claude-opus-5-5"]],
+      ["openrouter", ["meta-llama/llama-test:free", "vendor/paid-model"]],
+    ]);
+  });
+
+  it("rejects premium models that are not allowlisted, before any run starts", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-never_shown_to_the_browser");
+    stubModelLists();
+    deps.current = fakeDeps(scriptedClient([]).client);
+    for (const [provider, model] of [
+      ["openrouter", "vendor/paid-model"],
+      ["anthropic", "claude-opus-5-5"],
+    ]) {
+      const response = await POST(post({ question: "Which grinder?", provider, model }));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: "model_unavailable" });
+    }
+    expect(deps.configs).toEqual([]);
+  });
+
   it("runs the provider and model the owner picked", async () => {
     vi.stubEnv("OPENROUTER_API_KEY", "sk-or-never_shown_to_the_browser");
+    vi.stubEnv("OPENROUTER_MODELS", "vendor/paid-model");
     stubModelLists();
     deps.current = fakeDeps(scriptedClient([() => [text("x")], () => [text("y")]]).client);
     const response = await POST(
