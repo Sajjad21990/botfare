@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Mon 9 Nov 2026, 12:20 am IST (signed-receipts review: 7 confirmed findings fixed; e2e 30/30, 650 unit and DB tests) · previously Sun 8 Nov, 11:55 pm (Phase 3c done: signed receipts end to end)
+**Last updated:** Mon 9 Nov 2026, 10:50 am IST (Phase 3d: dispute-window payout hold and any-model AI providers, review fixed; 711 unit and DB tests, e2e 30/30) · previously 12:20 am (signed-receipts review: 7 confirmed findings fixed; e2e 30/30)
 
 ## Overview
 
@@ -16,10 +16,11 @@
 | 3. Agent detection, AI and polish | Wed 11 | 🔄 Built two days early; Log in with PayPal needs you | 8 / 9 |
 | 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 8 / 8 |
 | 3c. Signed receipts (proof of payment, delivery, sourcing) | Mon 9 | ✅ Done (a day early) | 5 / 5 |
+| 3d. Payout hold and any-model AI | Mon 9 | ✅ Done | 2 / 2 |
 | 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
 | 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
 
-**Overall: about 76% done** (50 of 66 items); ahead of the plan. Next: deploy to Render, then run one live Fare Court verdict and one Fare Advisor recommendation with `ANTHROPIC_API_KEY` set.
+**Overall: about 76% done** (52 of 68 items); ahead of the plan. Next: deploy to Render, then run one live research run, Fare Court verdict and Fare Advisor recommendation with any AI provider key set (`OPENROUTER_API_KEY` gives free models).
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -111,6 +112,13 @@ Why: everything else proves agents and publishers are honest; signed receipts le
 | ✅ | Agent side: SDK `verifyReceipt()`, signed receipts in MCP results, research agent sources manifest | `PaidResult.receiptStatement` and `readDigest`; `agent.verifyReceipt`/`fetchStatements` (cached JWKS, refetch on rotation); MCP `fetch_paid` shows the statement and its check, new `verify_receipt`; the answer event carries an `AnswerManifest` |
 | ✅ | ⭐ Public `/verify` page and "Verify sources" panel on the research agent's answer (verification runs in the browser) | `/verify?receipt=…` or pasted JWS, claims in plain words, raw JWS, "Check your copy" digest; Verify links on wallet receipts and disputes; Paid ✓ Delivered ✓ Bytes match ✓ per source from the answer's manifest (falls back to the public statements) |
 | ✅ | Integration, e2e, review, "Trust and cryptography" write-up (README, landing) | Field names from the contract everywhere; manifest wired into the answer card; 5 new e2e checks (JWKS public only, payment statement in `PAYMENT-RESPONSE` verifies, tampering fails, delivery digest = bytes received with three green checks, `/verify`) and refund statements asserted in the facilitator and Fare Court refund checks; README "Trust and cryptography", PROTOCOL "Signed receipts", landing Trust section. Honest limit: proves issuance, not that history is never edited (tamper-evident ledger is the stretch). Review (9 Nov), all fixed with regression tests: the signed `resource` is now the URL the publisher's server declares in `extra.botfareResource` (a dynamic extra field), never the agent's unsigned `resource.url`; `checkAnswerSource` fails Paid for `resource: null` and for a valid refund statement (Verify sources fetches refunds); `/verify` shows the resource's own host when it differs from the site's; the public statements limiter keys on `True-Client-IP` or the last `X-Forwarded-For` hop and keeps at most 10,000 keys; PROTOCOL security notes list every process holding the receipt seed |
+
+## Phase 3d: Payout hold and any-model AI ✅ (2 / 2)
+
+| | Task | Notes |
+| --- | --- | --- |
+| ✅ | Dispute-window payout hold: Withdraw now and the daily batch pay only cleared earnings; dashboard shows Available and Clearing | `publisherEarningsSplit` in core; a fare clears 24 h after purchase (`DISPUTE_POLICY.windowHours`) and stays held while a dispute is `open` or `pending_publisher`; clear `below_minimum` message; `pnpm payouts:run` prints what is still clearing; the judge demo floor counts available earnings. Review (6 confirmed, all fixed with tests): a 10-minute margin past the window closes a dispute-vs-payout race; refunds of older fares use only available earnings, never the reserve. PLAN decision 19 |
+| ✅ | Any model: research agent, Fare Court, Fare Advisor and the analytics assistant on Claude (default) or OpenAI, Gemini, xAI Grok, Groq, OpenRouter (free models) and local Ollama; model picker on `/agent` | One OpenAI-compatible adapter behind the Anthropic client shape (`lib/server/ai`), so the tool loop, limits and zod checks are unchanged; `AI_PROVIDER` picks the default; `/api/research` accepts only a configured provider's listed model; keys never reach the browser; the picker offers only defaults, free models and `<P>_MODELS` allowlists (judge personas are public); length-truncated tool calls end the turn as `max_tokens`; a failed model-list refresh keeps the last good list; Ollama skips embedding models; OpenAI reasoning models get `reasoning_effort`. 👤 Live runs need any one provider key. PLAN decision 20 |
 
 ## Phase 4: Deploy to Render ⏳
 

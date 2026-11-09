@@ -69,7 +69,8 @@ Compose reads the repo's `.env` if there is one, and passes on only these variab
 | --- | --- |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | PayPal top-ups and payouts (sandbox). |
 | `PUBLISHER_PAYPAL_EMAIL` | The sandbox account that receives test Payouts. |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | The analytics assistant and the research agent (`/agent`). |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | The analytics assistant, Fare Court, Fare Advisor and the research agent (`/agent`); Claude is the default. |
+| `AI_PROVIDER`, `OPENAI_*`, `GEMINI_*`, `XAI_*`, `GROQ_*`, `OPENROUTER_*`, `OLLAMA_*` | Other model providers (key and optional `_MODEL` each). Ollama on the host is `OLLAMA_BASE_URL=http://host.docker.internal:11434/v1`. |
 | `JUDGE_SANDBOX_BUYER_EMAIL`, `JUDGE_SANDBOX_BUYER_PASSWORD` | The PayPal sandbox buyer (fake money) `/judge` shows for approving a top-up. |
 | `PAYPAL_LOGIN_ENABLED` | Log in with PayPal; the sandbox app's return URL must be `http://localhost:3300/api/auth/paypal/callback`. |
 | `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` | Removes the AG Studio watermark (build time). |
