@@ -29,7 +29,7 @@ describe("How it works flow (server HTML)", () => {
     // Every panel is in the HTML; all but the first are collapsed and inert (out of the tab
     // order and the accessibility tree) until opened.
     for (let i = 1; i <= 8; i++) expect(html).toContain(`Detail ${i}`);
-    const panels = [...html.matchAll(/<div id="([^"]+-panel-\d+)"([^>]*)>/g)];
+    const panels = [...html.matchAll(/<section id="([^"]+-panel-\d+)"([^>]*)>/g)];
     expect(panels).toHaveLength(8);
     expect(panels.map(([, , attrs]) => attrs.includes('data-open="true"'))).toEqual([
       true,

@@ -238,9 +238,8 @@ export function HowFlow({ header, steps }: { header: ReactNode; steps: FlowStep[
                     />
                   </button>
                 </h3>
-                <div
+                <section
                   id={panelId}
-                  role="region"
                   aria-labelledby={buttonId}
                   data-open={isOpen}
                   inert={!isOpen}
@@ -249,7 +248,7 @@ export function HowFlow({ header, steps }: { header: ReactNode; steps: FlowStep[
                   <div className={styles.panelInner}>
                     <div className="px-3.5 pt-1 pb-5 sm:px-4">{step.detail}</div>
                   </div>
-                </div>
+                </section>
               </div>
             </li>
           );
