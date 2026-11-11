@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { SMOOTH_PATHS } from "./smooth-scroll";
 
 /** How far the follower closes the gap to the pointer each frame (0 to 1): lower trails more. */
-const FOLLOW = 0.2;
+const FOLLOW = 0.4;
 
 /** What counts as something to click, for the follower to swell over. */
 const INTERACTIVE = "a, button, [role='button'], input, textarea, select, summary, label";
@@ -34,6 +34,7 @@ export function CursorFollower() {
     let targetY = -100;
     let frame = 0;
     let shown = false;
+    let hovering = false;
 
     const draw = () => {
       x += (targetX - x) * FOLLOW;
@@ -55,8 +56,12 @@ export function CursorFollower() {
         shown = true;
         el.dataset.shown = "true";
       }
-      const over = (event.target as Element | null)?.closest?.(INTERACTIVE);
-      el.dataset.hover = over ? "true" : "false";
+      // Write only on a change: a data attribute write recalculates styles on every move.
+      const over = Boolean((event.target as Element | null)?.closest?.(INTERACTIVE));
+      if (over !== hovering) {
+        hovering = over;
+        el.dataset.hover = over ? "true" : "false";
+      }
       wake();
     };
     const leave = () => {

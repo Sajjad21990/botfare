@@ -44,7 +44,8 @@ export function SmoothScroll() {
     if (!enabled) return;
     const lenis = new Lenis({
       autoRaf: true,
-      lerp: 0.12,
+      // 0.25 keeps the glide but follows the wheel closely; lower values felt laggy.
+      lerp: 0.25,
       anchors: { offset: -16 },
       allowNestedScroll: true,
     });
