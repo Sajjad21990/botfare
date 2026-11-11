@@ -2,20 +2,52 @@
 
 **Every bot pays its fare.**
 
-BotFare is pay-per-request for AI agents, settled on PayPal: **x402 for PayPal's 440 million accounts.**
+BotFare lets websites charge AI agents a few cents a page, paid through PayPal, while people keep reading free.
+
+- **Websites and APIs** add one line of code, set prices in a dashboard, and get paid to their PayPal account.
+- **AI agent owners** top up once with PayPal and give each agent a key with a budget: a daily limit, a top price per page and the sites it may pay.
+- **AI makes the 3¢ decisions:** the agent buys only the pages worth their price, [Fare Court](#fare-court-buyer-protection-for-3-purchases) refunds a page that wasn't as promised, and [Fare Advisor](#fare-advisor-why-didnt-the-bot-buy) suggests prices. Code, not the model, moves the money.
+
+Why now: AI answers take the clicks that paid for the writing. With a Google AI Overview on the page, people click a result on 8% of visits instead of 15% ([Pew Research Center, 2025](https://www.seroundtable.com/pew-google-ai-overviews-39808.html)).
+
+**Try it in 2 minutes:** https://botfare-web.onrender.com/judge
+
+Three steps, no sign-up: watch an AI agent pay, see the website's dashboard, and top up a wallet with PayPal. Everything runs in the PayPal sandbox with test money. The demo website is [Crema Notes](https://botfare-demo.onrender.com), and one [Docker command](#run-everything-in-docker) runs the whole stack on your machine.
+
+## Quick start
+
+Install from this repo; not on npm yet. Clone it, add your app under `apps/` with `"@botfare/express": "workspace:*"` or `"@botfare/sdk": "workspace:*"` in its `package.json` (as [`apps/demo`](apps/demo) does), and run `pnpm install`. The packages ship TypeScript source, so run your app with `tsx`, for example `tsx --env-file=.env server.ts`.
+
+**Your website** (Express). Click **Add a site** in the publisher dashboard for a site ID and secret, then:
+
+```ts
+import { botfare } from "@botfare/express";
+
+// Before your routes. BOTFARE_URL, BOTFARE_SITE_ID and BOTFARE_SITE_SECRET live in .env
+app.use(botfare({ siteId: process.env.BOTFARE_SITE_ID!, siteSecret: process.env.BOTFARE_SITE_SECRET! }));
+```
+
+Prices live in the dashboard, not in your code. People read free; AI agents get an HTTP 402 with the price (pass the `preview` option to show them a free excerpt too).
+
+**Your AI agent.** Make a key on the wallet page (**Agent keys**), then:
+
+```ts
+import { createBotFareAgent } from "@botfare/sdk";
+
+// BOTFARE_AGENT_KEY and BOTFARE_URL live in .env
+const agent = createBotFareAgent({ agentKey: process.env.BOTFARE_AGENT_KEY!, maxPerRequestUsd: 0.1 });
+const { response, paid, receiptId } = await agent.fetch("https://botfare-demo.onrender.com/articles/burr-basics");
+```
+
+The agent is charged only when the page is delivered, never above `maxPerRequestUsd`, and BotFare enforces the key's daily limit again when it settles. For the live app, `BOTFARE_URL=https://botfare-web.onrender.com`. Using Claude Desktop or Claude Code? Add the [MCP server](packages/mcp/README.md) instead.
+
+## x402 for PayPal's 440 million accounts
 
 AI agents read pages and call APIs for free, and the open standard for paying per request, [x402](https://github.com/x402-foundation/x402), settles in stablecoins on blockchains. PayPal is a Premier member of the x402 Foundation, yet x402 has no way to settle to a PayPal account. BotFare adds one: a new x402 payment type, scheme `prepaid` on network `paypal:sandbox`, that plugs into the official x402 SDK.
 
-- **Publishers and API owners** add one line of middleware, set a price per page or call, and get paid through **PayPal Payouts**.
-- **Agent owners** top up a balance with **PayPal Checkout** and give each agent a key with a budget: daily cap, per-request max, allowed sites.
-- **Agents** pay a few cents per request with a signed x402 payment. Humans browsing the same site are never charged: BotFare decides who pays with a score, never a hard block ([who pays](#who-pays-agent-detection)).
-- **AI on every side of the fare**: Claude makes the decisions too small for a person (is this page worth 3¢? was it what was promised? what should it cost?), and code moves the money ([Fare Court and Fare Advisor](#ai-on-every-side-of-the-fare)).
+Agent owners fund a USD wallet with **PayPal Checkout**, every request settles in BotFare's double-entry ledger, BotFare keeps 5%, and publishers are paid through **PayPal Payouts**. Humans browsing the same site are never charged: a score decides who pays, never a hard block ([who pays](#who-pays-agent-detection)). AI (Claude by default, or any model you configure; the live demo runs Groq's `openai/gpt-oss-120b`) makes the decisions too small for a person, and code moves the money ([AI on every side of the fare](#ai-on-every-side-of-the-fare)).
 
-Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), November 2026.
-
-**Live demo:** [botfare-web.onrender.com/judge](https://botfare-web.onrender.com/judge) (BotFare) · [botfare-demo.onrender.com](https://botfare-demo.onrender.com) (Crema Notes, the demo publisher). Everything runs in the PayPal sandbox.
-
-**Judges:** open `/judge` on the running app for a two-minute guided tour (publisher, wallet, research agent, and a 402 you can curl), or run the whole stack locally with one Docker command ([below](#run-everything-in-docker)).
+Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), November 2026. **Live demo:** [botfare-web.onrender.com/judge](https://botfare-web.onrender.com/judge) (BotFare) · [botfare-demo.onrender.com](https://botfare-demo.onrender.com) (Crema Notes, the demo publisher).
 
 ## How BotFare meets the judging criteria
 
@@ -33,7 +65,7 @@ A PayPal payment costs at least 49¢ in fees (3.49% + $0.49), and even PayPal's 
 
 | | PayPal per read | Through BotFare |
 | --- | --- | --- |
-| Agent owner | ~49¢ fee on every 3¢ read | One $5.00 top-up, one **$0.66** fee (measured in sandbox), about 166 reads |
+| Agent owner | ~49¢ fee on every 3¢ read | One $5.00 top-up, one **$0.66** fee (measured in sandbox; BotFare pays it, so the wallet gets the full $5.00), about 166 reads |
 | Publisher | One payment per read | One Payouts batch for all of a day's earnings |
 | Each request | A full PayPal transaction | A signed authorization, a ledger posting and a receipt |
 
@@ -114,7 +146,7 @@ Hard limits live in code, not in the prompt: 10¢ per page (the 50¢ trap articl
 
 It needs `BOTFARE_AGENT_KEY` (written by `pnpm seed`) and one AI provider; without them the page says what is missing. The tests drive it with scripted models.
 
-**Any model.** x402 doesn't care which model runs the agent, and neither does BotFare. Claude is the default (`ANTHROPIC_API_KEY`, model `ANTHROPIC_MODEL`, default `claude-sonnet-5-5`); any OpenAI-compatible provider works too, each switched on by its key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY` (Grok), `GROQ_API_KEY` (Llama and other open models), `OPENROUTER_API_KEY` (dozens of models, including free ones) or `OLLAMA_BASE_URL` (local models). `/agent` has a model picker that offers each configured provider's default model (or `<P>_MODEL`), its free models and any extra ids in `<P>_MODELS` (for example `OPENROUTER_MODELS`); premium models stay off unless listed there, because judge personas are public. `AI_PROVIDER` picks the default for Fare Court, Fare Advisor and the analytics assistant. One adapter (`apps/web/src/lib/server/ai/openai-compatible.ts`) translates requests and answers to the Anthropic client shape, so the tool loop, the limits and the zod checks are the same for every model. Free and small models are weaker at tool use: a bad run ends with an error, never with a wrong payment, because every limit is enforced in code. Checked live (9 Nov) on free tiers: on Groq, `openai/gpt-oss-120b` finished research runs with paid citations, judged a stub dispute (refund in 2 s) and produced Fare Advisor recommendations in 4 s, and `gpt-oss-20b` finished research runs; on OpenRouter, `openrouter/free` finished a research run and judged a dispute but was too slow for the Advisor. Free tiers cap tokens per minute (Groq: 8,000), so the adapter waits out a 429 for as long as the provider asks (up to a minute), asks again when a provider rejects a made-up tool call, and non-Claude research runs get 4 minutes instead of 100 seconds. Off Claude, each bought page reaches the model as at most 3,000 characters and is shortened to an excerpt once the model has read it, so a run with several purchases stays under a free tier's per-request limit (the agent still disputes with the exact bytes it received); a request that is still too large ends with a clear "pick another model" error.
+**Any model.** x402 doesn't care which model runs the agent, and neither does BotFare. Claude is the default (`ANTHROPIC_API_KEY`, model `ANTHROPIC_MODEL`, default `claude-sonnet-5-5`); any OpenAI-compatible provider works too, each switched on by its key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY` (Grok), `GROQ_API_KEY` (Llama and other open models), `OPENROUTER_API_KEY` (dozens of models, including free ones) or `OLLAMA_BASE_URL` (local models). `/agent` has a model picker that offers each configured provider's default model (or `<P>_MODEL`), its free models and any extra ids in `<P>_MODELS` (for example `OPENROUTER_MODELS`); premium models stay off unless listed there, because judge personas are public. `AI_PROVIDER` picks the default for Fare Court, Fare Advisor and the analytics assistant. One adapter (`apps/web/src/lib/server/ai/openai-compatible.ts`) translates requests and answers to the Anthropic client shape, so the tool loop, the limits and the zod checks are the same for every model. Free and small models are weaker at tool use: a bad run ends with an error, never with a wrong payment, because every limit is enforced in code. The live demo on Render runs Groq's `openai/gpt-oss-120b` (a paid research run with two citations and signed receipts checked there on 11 Nov). Checked live (9 Nov) on free tiers: on Groq, `openai/gpt-oss-120b` finished research runs with paid citations, judged a stub dispute (refund in 2 s) and produced Fare Advisor recommendations in 4 s, and `gpt-oss-20b` finished research runs; on OpenRouter, `openrouter/free` finished a research run and judged a dispute but was too slow for the Advisor. Free tiers cap tokens per minute (Groq: 8,000), so the adapter waits out a 429 for as long as the provider asks (up to a minute), asks again when a provider rejects a made-up tool call, and non-Claude research runs get 4 minutes instead of 100 seconds. Off Claude, each bought page reaches the model as at most 3,000 characters and is shortened to an excerpt once the model has read it, so a run with several purchases stays under a free tier's per-request limit (the agent still disputes with the exact bytes it received); a request that is still too large ends with a clear "pick another model" error.
 
 What it may read: the demo publisher (the site registered at `DEMO_ORIGIN` / `DEMO_PUBLIC_URL`, or `http://localhost:4000` in local development) and, for a user signed in with their own account, that user's own sites. Sites other people register, including through the shared publisher persona, never reach anyone else's run. Every request goes through an outbound guard: redirects are not followed, and in production a host that is, or resolves to, a loopback, private, link-local, CGNAT or IPv4-mapped IPv6 address is refused (the configured demo origin excepted). Page text is extracted in one linear pass, so a hostile page cannot stall the server. Known limit: the address check is a lookup just before each request, so DNS rebinding inside that moment is not caught.
 
@@ -124,7 +156,7 @@ Micropayments have failed for more than 25 years less on technology than on the 
 
 | Seat | The micro-decision | AI in BotFare |
 | --- | --- | --- |
-| Agent (buyer) | Is this page worth 3¢? | Research agent and MCP server: Claude reads the free offer, buys or skips with a reason |
+| Agent (buyer) | Is this page worth 3¢? | Research agent (any model) and MCP server (Claude Desktop or Code): the model reads the free offer, buys or skips with a reason |
 | Publisher | What should this page cost an AI? | **Fare Advisor**: prices from what agents say and do |
 | BotFare (referee) | Was that 3¢ page what was promised? | **Fare Court**: AI arbitration of micro-disputes |
 | Agent owner | How much may my agent spend, and where? | Caps today (daily cap, per-request max, allowed sites); a plain-English allowance is on the backlog |
@@ -138,10 +170,10 @@ PayPal's Buyer Protection, for purchases too small for a person to dispute.
 1. **The offer is declared.** `botfare()` puts the page's title, preview and word count in the payment requirements (`extra.botfareOffer`); BotFare stores that declaration on the receipt at settle.
 2. **Delivery is proven.** After a paid response is sent, `botfare()` attests a SHA-256 digest (RFC 9530 `Content-Digest`) of the exact bytes it delivered for that receipt. The agent cannot fake what it got, and the publisher cannot deny what it sent.
 3. **The agent disputes.** Within 24 hours, the agent sends the receipt, a reason and the bytes it received, signed with its key (`agent.dispute()` in the SDK, `dispute_purchase` in the MCP server, the research agent's `dispute` tool). BotFare checks that the bytes hash to the attested digest; a mismatch or a late dispute is stored as `invalid`.
-4. **Claude compares** the declared offer with the delivered text, treating both as untrusted data, and returns a structured verdict (decision, confidence, category, rationale, evidence), validated with zod.
+4. **The AI judge** (Claude or any configured model) **compares** the declared offer with the delivered text, treating both as untrusted data, and returns a structured verdict (decision, confidence, category, rationale, evidence), validated with zod.
 5. **Policy decides, in code** (`DISPUTE_POLICY`): a `refund` verdict at 80% or more refunds at once through the ledger's one-refund-per-receipt path; a `deny` at 80% or more closes the dispute; everything else goes to the publisher's **Disputes** page (`/publisher/disputes`) with the AI's reasoning, the declared offer next to the delivered excerpt, and Accept refund / Decline refund. Each key may file 10 disputes a day, and once a key disputes more than a fifth of its purchases in 7 days, its refunds need the publisher.
 
-The demo case: Crema Notes' 3¢ "Grinder maintenance, step by step" has a real preview, and people read it in full, but an agent that pays gets a "Subscribe to keep reading" stub. The research agent disputes it, and with an AI provider configured (Claude by default) the 3¢ comes back in seconds; without one the dispute waits for the publisher, who sees the stub next to the promise. The shared demo research key that every judge's run uses gets 200 disputes a day and no dispute-rate rule (other keys keep the policy), so one judge's runs cannot switch instant refunds off for the next.
+The demo case: Crema Notes' 3¢ "Grinder maintenance, step by step" has a real preview, and people read it in full, but an agent that pays gets a "Subscribe to keep reading" stub. The research agent disputes it, and with an AI provider configured (Claude by default; Groq on the live demo) the 3¢ comes back in seconds; without one the dispute waits for the publisher, who sees the stub next to the promise. The shared demo research key that every judge's run uses gets 200 disputes a day and no dispute-rate rule (other keys keep the policy), so one judge's runs cannot switch instant refunds off for the next.
 
 ### Fare Advisor: "Why didn't the bot buy?"
 
@@ -153,7 +185,7 @@ The publisher dashboard's **Fare Advisor** card shows a funnel per pricing rule 
 - **cited**: which paid reads an agent's answer actually used. **Citations are the new clicks**: they replace the clicks AI summaries took away, and the analytics dashboard shows "Cited vs paid by page";
 - **disputed**: Fare Court cases.
 
-Claude groups the decline reasons per page and recommends price, preview or audience changes. Every recommendation is checked in code before it is shown: the pattern must be one of the site's rules, its evidence must match the real counts and reasons, and its text may not contain numbers that are not in the data. The projected weekly revenue comes from BotFare's own funnel model, not from the model. **Apply** opens a confirmation, then changes the pricing rule; the middleware picks it up within 30 seconds. The demo story (`pnpm seed:traffic`, refreshed weekly on Render so it never leaves the 14-day window): the 50¢ premium roundup is shown dozens of times, bought rarely and declined as "Thin listicle, not worth 50¢" and "Preview lists names only", while burr-basics and dialing-in are cited in most answers that paid for them.
+The AI groups the decline reasons per page and recommends price, preview or audience changes. Every recommendation is checked in code before it is shown: the pattern must be one of the site's rules, its evidence must match the real counts and reasons, and its text may not contain numbers that are not in the data. The projected weekly revenue comes from BotFare's own funnel model, not from the model. **Apply** opens a confirmation, then changes the pricing rule; the middleware picks it up within 30 seconds. The demo story (`pnpm seed:traffic`, refreshed weekly on Render so it never leaves the 14-day window): the 50¢ premium roundup is shown dozens of times, bought rarely and declined as "Thin listicle, not worth 50¢" and "Preview lists names only", while burr-basics and dialing-in are cited in most answers that paid for them.
 
 ### Honest limits
 
@@ -165,7 +197,7 @@ Claude groups the decline reasons per page and recommends price, preview or audi
 - Decline notes are the agents' word. BotFare keeps only notes for a price the page really has, one per key, page and day and three per agent owner, page and day, but it does not check that the agent was shown the 402; a determined account owner can still add a few notes a day to a page.
 - A paid redirect is not followed by the SDK or the research agent: the 3xx is what was settled and attested, so it comes back as paid with its receipt, and can be disputed.
 - Receipts do not record the HTTP method, so purchases, declines and citations count under the first rule that matches their path.
-- The revenue projection is a simple, labelled estimate (fixed elasticities, half of preview-related declines won back). The structured-output requests have been tested with scripted models; the live API path still needs one run with a key.
+- The revenue projection is a simple, labelled estimate (fixed elasticities, half of preview-related declines won back). The structured-output requests are tested with scripted models and were run live on free tiers: Fare Court verdicts on Groq and OpenRouter and Fare Advisor recommendations on Groq (9 Nov; OpenRouter's free router was too slow for the Advisor), and the live demo has run on Groq since 11 Nov.
 
 ## Trust and cryptography
 
@@ -206,7 +238,7 @@ How to verify one:
 
 ## Judge mode and Log in with PayPal
 
-`/judge` is a one-page tour: sign in as the publisher, the agent owner, or go straight to the research agent, plus copy-paste curl commands that show a person reading free and an agent getting a 402. The demo personas need no password and are shared, so signing in restores Crema Notes' prices and payout email, and the site secret, payout account and seeded agent keys are locked. Every judge's research run pays with the one seeded demo key (10¢ per page, $10.00 a day), and the agent owner's wallet is put back to $5.00 at sign-in and before each run, so earlier judges cannot leave it empty. Runs are one at a time per visitor (user and IP), not per shared persona. When `JUDGE_SANDBOX_BUYER_EMAIL` and `JUDGE_SANDBOX_BUYER_PASSWORD` are set, the page shows that PayPal **sandbox** buyer (fake money) for approving a top-up.
+`/judge` is a three-step tour, each step one click that signs in the right persona: watch the research agent pay, open Crema Notes' publisher dashboard, and top up the wallet. Under **For developers**, a copy-paste curl shows an agent getting a 402 (a browser gets the article). The demo personas need no password and are shared, so signing in restores Crema Notes' prices and payout email, and the site secret, payout account and seeded agent keys are locked. Every judge's research run pays with the one seeded demo key (10¢ per page, $10.00 a day), and the agent owner's wallet is put back to $5.00 at sign-in and before each run, so earlier judges cannot leave it empty. Runs are one at a time per visitor (user and IP), not per shared persona. When `JUDGE_SANDBOX_BUYER_EMAIL` and `JUDGE_SANDBOX_BUYER_PASSWORD` are set, the page shows that PayPal **sandbox** buyer (test money) for approving a top-up, with the password hidden until **Show** and copy buttons for both.
 
 Publishers who want their own account use **Log in with PayPal** (sandbox), which signs them in by their verified PayPal email and sets it as their payout email. It is off until `PAYPAL_LOGIN_ENABLED=true`, because the sandbox app must be set up first:
 
@@ -227,7 +259,7 @@ flowchart LR
     subgraph Agents
         SDK["Agent SDK<br/>@botfare/sdk"]
         MCP["MCP server<br/>Claude Desktop / Code"]
-        RA["Research agent<br/>(Claude, tool use)"]
+        RA["Research agent<br/>(any model, tool use)"]
     end
     subgraph Publisher["Publisher's server"]
         MW["botfare() middleware<br/>@x402/express + plug-in"]
@@ -236,7 +268,7 @@ flowchart LR
         FAC["x402 facilitator<br/>/api/x402/*"]
         LED[("Double-entry ledger<br/>Postgres")]
         DASH["Wallet + publisher dashboards<br/>AG Studio analytics"]
-        FARE["Fare Court + Fare Advisor<br/>(Claude, policy in code)"]
+        FARE["Fare Court + Fare Advisor<br/>(AI, policy in code)"]
     end
     subgraph PayPal
         ORD["Orders v2 + JS SDK v6<br/>(top-ups)"]
@@ -307,14 +339,14 @@ Everything runs in the PayPal **sandbox only**.
 | Wallet: balance, PayPal JS SDK v6 top-up, agent keys made in the browser, receipts | ✅ Built; a real sandbox top-up ($5.00, PayPal fee $0.66 booked from the capture) credited the wallet |
 | Publisher dashboard: sites, pricing editor, one-time secrets, earnings, Withdraw now, payout history | ✅ Built; a real sandbox Payout ($11.72) reached `SUCCESS` |
 | PayPal webhooks (`/api/paypal/webhook`, verified, deduped) and `pnpm payouts:run` | ✅ Built and tested against a mock PayPal |
-| Publisher analytics in AG Studio, with a Claude assistant | ✅ Built |
+| Publisher analytics in AG Studio, with an AI assistant | ✅ Built |
 | `pnpm seed:traffic`: ~150 paid requests over 14 days for the dashboards, plus the Fare Court and Fare Advisor story | ✅ Built |
 | Agent detection: signed agents (Web Bot Auth), crawler IP checks, CDN scores, heuristics, Turnstile human check, Bot detection panel, revenue by signal | ✅ Built; `pnpm e2e` checks it on real servers |
-| Research agent (`/agent`): tools, budget and caps, SSE timeline, wire inspector, cited answer | ✅ Built; tested with a scripted model and run live on Claude and on Groq's and OpenRouter's free tiers (needs any AI provider key) |
+| Research agent (`/agent`): tools, budget and caps, SSE timeline, wire inspector, cited answer | ✅ Built; tested with a scripted model and run live on Groq's and OpenRouter's free tiers (the live demo runs Groq's `openai/gpt-oss-120b`; Claude is the default when its key is set) |
 | MCP server ([`packages/mcp`](packages/mcp/README.md)) and the signed agent API | ✅ Built and tested against an in-process publisher and facilitator |
 | `/judge` tour and judge mode | ✅ Built |
-| Fare Court: declared offers, attested `Content-Digest`, signed disputes, Claude judge with policy in code, publisher Disputes page, SDK/MCP/research agent disputes, the Crema Notes stub case | ✅ Built; `pnpm e2e` checks it on real servers without an AI key (the publisher decides); live verdicts checked on Groq's free tier (needs any AI provider key) |
-| Fare Advisor: offer telemetry, decline notes, citations, funnel per rule, checked Claude recommendations, Apply, citations in analytics | ✅ Built; `pnpm e2e` checks the funnel and Apply → middleware → next agent buys; live recommendations need any AI provider key |
+| Fare Court: declared offers, attested `Content-Digest`, signed disputes, AI judge with policy in code, publisher Disputes page, SDK/MCP/research agent disputes, the Crema Notes stub case | ✅ Built; `pnpm e2e` checks it on real servers without an AI key (the publisher decides); live verdicts checked on Groq's free tier (needs any AI provider key) |
+| Fare Advisor: offer telemetry, decline notes, citations, funnel per rule, checked AI recommendations, Apply, citations in analytics | ✅ Built; `pnpm e2e` checks the funnel and Apply → middleware → next agent buys; live recommendations checked on Groq's free tier (needs any AI provider key) |
 | Signed receipts: payment, delivery and refund statements (Ed25519 JWS), JWKS, public statements endpoint, `/verify`, SDK `verifyReceipt`, MCP `verify_receipt`, research agent sources manifest and Verify sources | ✅ Built; `pnpm e2e` verifies payment, delivery and refund statements against the published keys |
 | Log in with PayPal | ✅ Live on Render: signs a publisher in by their verified PayPal email |
 | One-command Docker stack ([`docker-compose.full.yml`](docker-compose.full.yml)) | ✅ Built and checked |
