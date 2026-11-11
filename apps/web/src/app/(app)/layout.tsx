@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { NavLinks } from "@/components/app/nav-links";
 import { SignOutButton } from "@/components/app/sign-out-button";
+import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import { requireUser } from "@/lib/server/session";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
-          <Link href="/" className="shrink-0 font-semibold tracking-tight">
+          <Link
+            href="/"
+            className="inline-flex shrink-0 items-center gap-2 font-semibold tracking-tight"
+          >
+            <BotFareMark className="size-7" />
             BotFare
           </Link>
           <NavLinks />

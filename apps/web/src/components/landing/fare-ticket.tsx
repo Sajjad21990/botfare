@@ -1,4 +1,5 @@
-import { ShieldCheckIcon, TicketIcon } from "lucide-react";
+import { ShieldCheckIcon } from "lucide-react";
+import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import styles from "./landing.module.css";
 
 /** The hero's example: one paid request drawn as a transit ticket. Purely illustrative. */
@@ -11,7 +12,7 @@ export function FareTicket() {
         <div className="space-y-5 px-6 pt-6 pb-7">
           <div className="flex items-center justify-between text-sm">
             <span className="inline-flex items-center gap-1.5 font-semibold">
-              <TicketIcon aria-hidden className="size-4" />
+              <BotFareMark className="size-5" />
               BotFare
             </span>
             <span className="text-muted-foreground">Single fare</span>

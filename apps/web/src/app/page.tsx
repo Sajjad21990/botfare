@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { BuiltOn } from "@/components/landing/built-on";
-import { landingMono, landingSans } from "@/components/landing/fonts";
 import { Hero } from "@/components/landing/hero";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import styles from "@/components/landing/landing.module.css";
@@ -22,9 +21,7 @@ export const metadata: Metadata = {
 
 export default function Home() {
   return (
-    <div
-      className={`${landingSans.variable} ${landingMono.variable} ${styles.root} flex flex-1 flex-col`}
-    >
+    <div className={`${styles.root} flex flex-1 flex-col`}>
       <SiteHeader />
       <main className="flex-1">
         <Hero />

@@ -1,6 +1,6 @@
-import { TicketIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import { HowVerifyWorks } from "@/components/verify/how-verify-works";
 import { ReceiptVerifier } from "@/components/verify/receipt-verifier";
 import { isReceiptId } from "@/components/verify/verify-href";
@@ -24,7 +24,7 @@ export default async function VerifyPage({ searchParams }: PageProps<"/verify">)
             href="/"
             className="inline-flex items-center gap-2 rounded-md font-semibold tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            <TicketIcon aria-hidden className="size-5" />
+            <BotFareMark className="size-7" />
             BotFare
           </Link>
           <nav aria-label="Main" className="ml-auto flex items-center gap-1 text-sm">

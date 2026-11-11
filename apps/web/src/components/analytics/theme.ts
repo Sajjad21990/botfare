@@ -3,17 +3,18 @@ import { type AgStudioTheme, type AgStudioThemeParams, studioTheme } from "ag-st
 type Params = Partial<AgStudioThemeParams>;
 
 /**
- * BotFare's AG Studio theme: the app's neutral shadcn look (Geist, near-black on white, hairline
- * borders, 10px radius), with a light and a dark mode chosen through `data-ag-theme-mode`.
- * Colours mirror the oklch tokens in globals.css, written as hex because the theme API needs them.
+ * BotFare's AG Studio theme: the app's "Ticket booth" look (cream ticket paper, ticket yellow, warm
+ * ink, Inter with Bricolage Grotesque titles), with a light and a dark mode chosen through
+ * `data-ag-theme-mode`. Colours mirror the tokens in globals.css.
  */
 export const BOTFARE_LIGHT = "botfare-light";
 export const BOTFARE_DARK = "botfare-dark";
 
-const FONT = "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif";
+const FONT = "var(--font-body), ui-sans-serif, system-ui, sans-serif";
+const DISPLAY = "var(--font-display), var(--font-body), ui-sans-serif, sans-serif";
 
-/** Calm series colours: teal for money first, then ink, then quiet accents. */
-const LIGHT_PALETTE = ["#0f9488", "#404040", "#6366f1", "#d97706", "#a3a3a3", "#e11d48"];
+/** Series colours, as in globals.css: mustard for money first, then ink, teal, terracotta, warm grey. */
+const LIGHT_PALETTE = ["#a87d00", "#1c1a16", "#2a7f74", "#c2542d", "#8c8270", "#ffd44d"];
 const DARK_PALETTE = ["#22b3a2", "#d4d4d4", "#818cf8", "#fbbf24", "#737373", "#fb7185"];
 
 function palette(colors: string[]): Params {
@@ -34,16 +35,16 @@ const shared = {
   studioMinHeight: 480,
   studioWidgetBorderRadius: 10,
   studioWidgetPadding: 6,
-  studioWidgetTitleFontFamily: FONT,
-  studioWidgetTitleFontSize: 14,
-  studioWidgetTitleFontWeight: 500,
+  studioWidgetTitleFontFamily: DISPLAY,
+  studioWidgetTitleFontSize: 15,
+  studioWidgetTitleFontWeight: 700,
   studioWidgetSubtitleFontFamily: FONT,
   studioWidgetCaptionFontFamily: FONT,
   studioCanvasFontFamily: FONT,
   studioPanelHeaderFontFamily: FONT,
   studioPanelHeaderFontWeight: 500,
   studioPopupTitleBarFontFamily: FONT,
-  studioValueWidgetFontSize: 28,
+  studioValueWidgetFontSize: 30,
   chartFontFamily: FONT,
   chartAxisLabelFontFamily: FONT,
   chartAxisTitleFontFamily: FONT,
@@ -58,45 +59,45 @@ const shared = {
 const light = {
   ...shared,
   browserColorScheme: "light",
-  backgroundColor: "#ffffff",
-  foregroundColor: "#0a0a0a",
-  textColor: "#0a0a0a",
-  subtleTextColor: "#737373",
-  borderColor: "#e5e5e5",
-  accentColor: "#171717",
-  iconColor: "#525252",
-  rowHoverColor: "#f5f5f5",
-  menuBackgroundColor: "#ffffff",
-  tooltipBackgroundColor: "#171717",
-  tooltipTextColor: "#fafafa",
-  toggleButtonOnBackgroundColor: "#171717",
-  studioWrapperBackgroundColor: "#ffffff",
-  studioCanvasBackgroundColor: "#fafafa",
-  studioCanvasGridLineColor: "#ececec",
-  studioWidgetBackgroundColor: "#ffffff",
-  studioWidgetBorder: { width: 1, color: "#e5e5e5" },
-  studioWidgetShadow: { offsetY: 1, radius: 2, color: "#0000000d" },
-  studioWidgetTitleTextColor: "#0a0a0a",
-  studioWidgetSubtitleTextColor: "#737373",
-  studioWidgetCaptionTextColor: "#737373",
-  studioWidgetSelectedBorderColor: "#171717",
-  studioPanelContainerBackgroundColor: "#ffffff",
-  studioPanelDividerColor: "#e5e5e5",
-  studioToggleButtonActiveBackgroundColor: "#171717",
-  studioToggleButtonActiveBorderColor: "#171717",
-  studioToggleButtonActiveColor: "#171717",
-  studioAiPanelInputMessageBackgroundColor: "#f5f5f5",
-  chartTextColor: "#0a0a0a",
-  chartSubtleTextColor: "#737373",
-  chartAxisLabelColor: "#737373",
-  chartGridLineColor: "#f0f0f0",
-  chartAxisLineColor: "#e5e5e5",
-  chartTooltipBackgroundColor: "#ffffff",
-  chartTooltipTextColor: "#0a0a0a",
-  gridHeaderBackgroundColor: "#fafafa",
-  gridHeaderTextColor: "#525252",
-  valueChangeUpColor: "#0d9488",
-  valueChangeHighlightBackgroundColor: "#0d948826",
+  backgroundColor: "#fffdf7",
+  foregroundColor: "#1c1a16",
+  textColor: "#1c1a16",
+  subtleTextColor: "#6b6250",
+  borderColor: "#e8dcbc",
+  accentColor: "#1c1a16",
+  iconColor: "#4a4334",
+  rowHoverColor: "#ffeaa3",
+  menuBackgroundColor: "#fffdf7",
+  tooltipBackgroundColor: "#1c1a16",
+  tooltipTextColor: "#ffd44d",
+  toggleButtonOnBackgroundColor: "#1c1a16",
+  studioWrapperBackgroundColor: "#fffdf7",
+  studioCanvasBackgroundColor: "#fff8e6",
+  studioCanvasGridLineColor: "#f1e6c9",
+  studioWidgetBackgroundColor: "#fffdf7",
+  studioWidgetBorder: { width: 1, color: "#e8dcbc" },
+  studioWidgetShadow: { offsetY: 1, radius: 2, color: "#1c1a160d" },
+  studioWidgetTitleTextColor: "#1c1a16",
+  studioWidgetSubtitleTextColor: "#6b6250",
+  studioWidgetCaptionTextColor: "#6b6250",
+  studioWidgetSelectedBorderColor: "#1c1a16",
+  studioPanelContainerBackgroundColor: "#fffdf7",
+  studioPanelDividerColor: "#e8dcbc",
+  studioToggleButtonActiveBackgroundColor: "#1c1a16",
+  studioToggleButtonActiveBorderColor: "#1c1a16",
+  studioToggleButtonActiveColor: "#1c1a16",
+  studioAiPanelInputMessageBackgroundColor: "#f7edcf",
+  chartTextColor: "#1c1a16",
+  chartSubtleTextColor: "#6b6250",
+  chartAxisLabelColor: "#6b6250",
+  chartGridLineColor: "#f1e6c9",
+  chartAxisLineColor: "#e8dcbc",
+  chartTooltipBackgroundColor: "#fffdf7",
+  chartTooltipTextColor: "#1c1a16",
+  gridHeaderBackgroundColor: "#f7edcf",
+  gridHeaderTextColor: "#4a4334",
+  valueChangeUpColor: "#2f6f6a",
+  valueChangeHighlightBackgroundColor: "#ffd44d55",
   ...palette(LIGHT_PALETTE),
 } satisfies Params;
 

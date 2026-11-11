@@ -1,10 +1,10 @@
 .root {
-  font-family: var(--font-landing-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: "kern", "liga";
 }
 
 .mono {
-  font-family: var(--font-landing-mono), ui-monospace, SFMono-Regular, monospace;
+  font-family: var(--font-code), ui-monospace, SFMono-Regular, monospace;
   font-feature-settings: "zero";
 }
 
@@ -12,11 +12,23 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Ticket stock: a faint cool tint so the ticket reads as a separate object on white. Muted text
-   is a step darker on the stock so it keeps 4.5:1 contrast (oklch 0.5 on the stock is about 6:1). */
+/* Ticket stock: ticket yellow with ink text; muted text on it is a darker khaki (4.5:1+). */
 .ticket {
-  background-color: oklch(0.975 0.008 250);
-  --muted-foreground: oklch(0.5 0 0);
+  background-color: var(--brand);
+  --muted-foreground: #4a4334;
+  --border: #1c1a1640;
+}
+
+/* A highlighter stroke behind a word or two of a headline. */
+.highlight {
+  background: linear-gradient(transparent 58%, var(--brand) 58%, var(--brand) 92%, transparent 92%);
+  padding: 0 0.08em;
+}
+
+/* Printed like a real ticket: an ink edge and a hard offset shadow. */
+.printed {
+  border: 1.5px solid var(--foreground);
+  box-shadow: 4px 4px 0 var(--foreground);
 }
 
 /* Tinted sections (bg-muted/40) tell the ticket notches which colour to take. */

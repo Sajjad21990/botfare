@@ -1,5 +1,5 @@
-import { TicketIcon } from "lucide-react";
 import Link from "next/link";
+import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import styles from "./landing.module.css";
 import { pillars } from "./pillar-data";
 
@@ -13,7 +13,7 @@ export function SiteHeader() {
           href="/"
           className={`${styles.focusRing} inline-flex items-center gap-2 rounded-md text-lg font-bold tracking-tight`}
         >
-          <TicketIcon aria-hidden className="size-5" />
+          <BotFareMark className="size-7" />
           BotFare
         </Link>
         <nav aria-label="Main" className="ml-auto flex items-center text-sm sm:gap-1">

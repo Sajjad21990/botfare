@@ -1,7 +1,8 @@
-import { Clock, ShieldCheck, TicketIcon } from "lucide-react";
+import { Clock, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import { demoBaseUrl, demoCommands } from "@/components/judge/demo-commands";
 import { PersonaStepButton } from "@/components/judge/persona-step-button";
 import { judgeSandboxBuyer, SandboxAccount } from "@/components/judge/sandbox-account";
@@ -31,7 +32,7 @@ export default function JudgePage() {
             href="/"
             className="inline-flex items-center gap-2 rounded-md font-semibold tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            <TicketIcon aria-hidden className="size-5" />
+            <BotFareMark className="size-7" />
             BotFare
           </Link>
           <Link

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="2 2 60 60" fill="none" stroke="#1c1a16" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><title>BotFare</title>
+  <g transform="translate(0 4)">
+    <path d="M24 18V10"/>
+    <circle cx="24" cy="7.5" r="3.6" fill="#1c1a16" stroke="none"/>
+    <path d="M11 18H40A4 4 0 0 0 48 18H53A5 5 0 0 1 58 23V45A5 5 0 0 1 53 50H48A4 4 0 0 0 40 50H11A5 5 0 0 1 6 45V23A5 5 0 0 1 11 18Z" fill="#ffd44d"/>
+    <path d="M44 25V44" stroke-width="3.2" stroke-dasharray="0.1 5.4"/>
+    <circle cx="18" cy="31" r="3.4" fill="#1c1a16" stroke="none"/>
+    <circle cx="30" cy="31" r="3.4" fill="#1c1a16" stroke="none"/>
+    <path d="M18.5 39Q24 43.5 29.5 39"/>
+  </g>
+</svg>
