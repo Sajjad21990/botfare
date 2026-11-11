@@ -44,6 +44,14 @@ export function SiteFooter() {
             <a href={REPO_URL} className="underline underline-offset-4 hover:text-foreground">
               Source
             </a>
+            {" · "}
+            <Link href="/privacy" className="underline underline-offset-4 hover:text-foreground">
+              Privacy
+            </Link>
+            {" · "}
+            <Link href="/terms" className="underline underline-offset-4 hover:text-foreground">
+              Terms
+            </Link>
             .
           </p>
         </div>

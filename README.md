@@ -215,7 +215,7 @@ Publishers who want their own account use **Log in with PayPal** (sandbox), whic
    - Render: `https://<botfare-web>.onrender.com/api/auth/paypal/callback`
    - local: `http://localhost:3000/api/auth/paypal/callback`
    - judge Docker stack: `http://localhost:3300/api/auth/paypal/callback`
-3. Information requested: **Email** (and Full name). Add the privacy policy and user agreement URLs PayPal asks for, then save.
+3. Information requested: **Email** (and Full name). Privacy policy URL: the app's `/privacy`; user agreement URL: its `/terms` (for example `https://botfare-web.onrender.com/privacy` and `/terms`). Save.
 4. Set `PAYPAL_LOGIN_ENABLED=true` and restart the app; `/signin` shows the button.
 
 The callback checks a one-time `state` cookie, exchanges the code with the app's own credentials, requires `email_verified`, and refuses the shared demo emails.
