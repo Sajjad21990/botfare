@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CursorFollower } from "@/components/cursor-follower";
 import { SmoothScroll } from "@/components/smooth-scroll";
 import { Toaster } from "@/components/ui/sonner";
 import { bodySans, codeMono, displaySans } from "@/lib/fonts";
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         {children}
         <SmoothScroll />
+        <CursorFollower />
         <Toaster richColors />
       </body>
     </html>

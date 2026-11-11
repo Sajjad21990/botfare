@@ -1,15 +1,8 @@
 "use client";
 
 import { ChevronDownIcon, PlayIcon, SquareIcon } from "lucide-react";
-import {
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { glideTo } from "../smooth-scroll";
 import styles from "./landing.module.css";
 
 export interface FlowStep {
@@ -30,16 +23,20 @@ const INTERRUPTS = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
 /** Trackpad momentum keeps sending wheel events for a moment after a scroll; Play ignores those. */
 const WHEEL_GRACE_MS = 800;
 
-function prefersReducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
+/** A panel's open or close animation (landing.module.css .panel); the page settles after it. */
+const PANEL_MS = 340;
+
+/** Where a step comes to rest when the page glides to it: clear of the top edge. */
+const REST_OFFSET_PX = 96;
 
 /**
  * The How it works steps on a vertical rail. Every title is always visible; a step's button opens
  * its panel. One panel is open at a time (step 1 on load, so the server HTML shows it too), or all
  * of them with the Show all toggle. Play opens the steps in turn and stops at the last one or as
- * soon as the visitor clicks, taps, types or scrolls anywhere on the page. With reduced motion,
- * panels appear without the fade and Play scrolls without easing; nothing ever starts on its own.
+ * soon as the visitor clicks, taps, types or scrolls anywhere on the page. Panels glide open and
+ * shut, the rail fills in up to the open step, and when an opened step ends up out of view the page
+ * glides to it through the site's smooth scrolling. With reduced motion everything changes at once;
+ * nothing ever starts on its own.
  */
 export function HowFlow({ header, steps }: { header: ReactNode; steps: FlowStep[] }) {
   const baseId = useId();
@@ -50,10 +47,10 @@ export function HowFlow({ header, steps }: { header: ReactNode; steps: FlowStep[
   const playButton = useRef<HTMLButtonElement>(null);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const items = useRef<(HTMLLIElement | null)[]>([]);
-  /** The clicked step's header position before its neighbour closed, to hold it in place. */
-  const anchor = useRef<{ index: number; top: number } | null>(null);
-  /** The step Play just opened, to bring into view once it has rendered. */
+  /** The step just opened (by Play or a click), to bring into view once its panel has settled. */
   const follow = useRef<number | null>(null);
+  /** The rail fills in up to the open step; with every step open it stays empty. */
+  const current = showAll || open.size === 0 ? -1 : Math.min(...open);
 
   useEffect(() => {
     if (!playing) return;
@@ -73,27 +70,22 @@ export function HowFlow({ header, steps }: { header: ReactNode; steps: FlowStep[
     return () => window.clearInterval(timer);
   }, [playing, steps]);
 
-  // Opening a step closes the one above it; keep the clicked header where the pointer is.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs after each change to the open steps
-  useLayoutEffect(() => {
-    const held = anchor.current;
-    anchor.current = null;
-    const button = held ? buttons.current[held.index] : null;
-    if (!held || !button) return;
-    const shift = button.getBoundingClientRect().top - held.top;
-    if (Math.abs(shift) > 1) window.scrollBy({ top: shift, behavior: "instant" });
-  }, [open]);
-
-  // During Play, bring the newly opened step into view if it is off screen.
+  // Once the panels have finished moving, glide to the step just opened if it is out of view:
+  // above the top edge after the panel above it closed, or below the fold during Play.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs after each change to the open steps
   useEffect(() => {
     const index = follow.current;
     follow.current = null;
-    const item = index === null ? null : items.current[index];
-    if (!item) return;
-    const box = item.getBoundingClientRect();
-    if (box.top >= 0 && box.bottom <= window.innerHeight) return;
-    item.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    if (index === null) return;
+    const timer = window.setTimeout(() => {
+      const item = items.current[index];
+      if (!item) return;
+      const box = item.getBoundingClientRect();
+      const fits = box.height <= window.innerHeight - REST_OFFSET_PX;
+      const hidden = box.top < 16 || (fits && box.bottom > window.innerHeight - 16);
+      if (hidden) glideTo(item, REST_OFFSET_PX);
+    }, PANEL_MS);
+    return () => window.clearTimeout(timer);
   }, [open]);
 
   // While Play runs, any click, tap, key press or wheel turn on the page, other than on Play
@@ -115,8 +107,7 @@ export function HowFlow({ header, steps }: { header: ReactNode; steps: FlowStep[
   }, [playing]);
 
   function toggleStep(index: number) {
-    const button = buttons.current[index];
-    if (button) anchor.current = { index, top: button.getBoundingClientRect().top };
+    if (!open.has(index)) follow.current = index;
     setOpen((current) => {
       if (!showAll) return current.has(index) ? new Set() : new Set([index]);
       const next = new Set(current);
@@ -201,17 +192,25 @@ export function HowFlow({ header, steps }: { header: ReactNode; steps: FlowStep[
                 <span
                   aria-hidden
                   className="absolute top-7 -bottom-7 left-[1.125rem] -ml-px border-l-2 border-dashed border-foreground/45 sm:left-5"
-                />
+                >
+                  <span
+                    className={`${styles.railFill} ${index < current ? styles.railFillOn : ""}`}
+                  />
+                </span>
               ) : null}
               <span
                 aria-hidden
-                className="relative mt-2.5 grid size-9 place-items-center rounded-full border-[1.5px] border-foreground bg-brand font-heading text-base font-extrabold sm:mt-2 sm:size-10 sm:text-lg"
+                className={`${styles.node} relative mt-2.5 grid size-9 place-items-center rounded-full border-[1.5px] border-foreground font-heading text-base font-extrabold sm:mt-2 sm:size-10 sm:text-lg ${
+                  index < current
+                    ? "bg-foreground text-brand"
+                    : isOpen
+                      ? `${styles.nodeOn} bg-brand`
+                      : "bg-brand"
+                }`}
               >
                 {index + 1}
               </span>
-              <div
-                className={`rounded-xl ${isOpen ? `${styles.printed} bg-card` : "border-[1.5px] border-transparent"}`}
-              >
+              <div className={`${styles.stepCard} rounded-xl ${isOpen ? styles.stepCardOn : ""}`}>
                 <h3 className="text-base">
                   <button
                     ref={(button) => {
@@ -235,16 +234,21 @@ export function HowFlow({ header, steps }: { header: ReactNode; steps: FlowStep[
                     </span>
                     <ChevronDownIcon
                       aria-hidden
-                      className={`mt-3 size-5 shrink-0 transition-transform motion-reduce:transition-none ${isOpen ? "rotate-180" : ""}`}
+                      className={`mt-3 size-5 shrink-0 transition-transform duration-300 ease-out motion-reduce:transition-none ${isOpen ? "rotate-180" : ""}`}
                     />
                   </button>
                 </h3>
                 <div
                   id={panelId}
-                  hidden={!isOpen}
-                  className={`${styles.reveal} px-3.5 pb-5 sm:px-4`}
+                  role="region"
+                  aria-labelledby={buttonId}
+                  data-open={isOpen}
+                  inert={!isOpen}
+                  className={styles.panel}
                 >
-                  {step.detail}
+                  <div className={styles.panelInner}>
+                    <div className="px-3.5 pt-1 pb-5 sm:px-4">{step.detail}</div>
+                  </div>
                 </div>
               </div>
             </li>

@@ -170,3 +170,45 @@
     letter-spacing: -0.02em;
   }
 }
+
+/* The cursor follower (components/cursor-follower.tsx): a ticket-yellow highlighter with a thin
+   ink ring that trails the pointer and multiplies over the page like a marker pen. */
+.cursor-follower {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  border-radius: 9999px;
+  background: var(--brand);
+  box-shadow: 0 0 0 1.5px var(--foreground);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  opacity: 0;
+  scale: 1;
+  transition:
+    opacity 200ms ease,
+    scale 220ms cubic-bezier(0.22, 0.8, 0.24, 1),
+    box-shadow 220ms ease;
+}
+
+.cursor-follower[data-shown="true"] {
+  opacity: 0.85;
+}
+
+.cursor-follower[data-hover="true"] {
+  scale: 1.9;
+  box-shadow: 0 0 0 1px var(--foreground);
+}
+
+.cursor-follower[data-down="true"] {
+  scale: 0.75;
+}
+
+@media (prefers-reduced-motion: reduce), (pointer: coarse) {
+  .cursor-follower {
+    display: none;
+  }
+}

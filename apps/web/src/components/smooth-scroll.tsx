@@ -10,7 +10,31 @@ import { useEffect } from "react";
  * their section. The dashboards keep native scrolling: their tables, dialogs and the AG Studio
  * canvas scroll inside themselves. Lenis follows prefers-reduced-motion (no smoothing at all).
  */
-const SMOOTH_PATHS = new Set(["/", "/judge", "/signin", "/verify", "/privacy", "/terms"]);
+export const SMOOTH_PATHS: ReadonlySet<string> = new Set([
+  "/",
+  "/judge",
+  "/signin",
+  "/verify",
+  "/privacy",
+  "/terms",
+]);
+
+/** The page's Lenis while one runs, so components scroll through it instead of fighting it. */
+let active: Lenis | null = null;
+
+/**
+ * Glides the page so `target` sits `offset` pixels below the top of the viewport: through Lenis on
+ * the smooth pages, natively elsewhere, and instantly when the visitor prefers reduced motion.
+ */
+export function glideTo(target: HTMLElement, offset = 0): void {
+  if (active) {
+    active.scrollTo(target, { offset: -offset, duration: 0.9 });
+    return;
+  }
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const top = target.getBoundingClientRect().top + window.scrollY - offset;
+  window.scrollTo({ top, behavior: reduced ? "auto" : "smooth" });
+}
 
 export function SmoothScroll() {
   const pathname = usePathname();
@@ -24,7 +48,11 @@ export function SmoothScroll() {
       anchors: { offset: -16 },
       allowNestedScroll: true,
     });
-    return () => lenis.destroy();
+    active = lenis;
+    return () => {
+      if (active === lenis) active = null;
+      lenis.destroy();
+    };
   }, [enabled]);
 
   return null;
