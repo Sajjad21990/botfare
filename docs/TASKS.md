@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Wed 11 Nov 2026 (Phase 3f: the demo site becomes Saffron & Salt, a recipe blog) · earlier Wed 11 Nov (final pre-deploy audit: 5 auditors and verifiers; confirmed findings fixed, incl. the Groq 413 on the default question and Verify sources in the Docker stack; Devpost text and video script drafted) · previously Mon 9 Nov, 10:50 am IST (Phase 3d)
+**Last updated:** Wed 11 Nov 2026, evening (live data started fresh on Render with `pnpm db:reset`; screenshots retaken) · earlier Wed 11 Nov (Phase 3f: the demo site becomes Saffron & Salt, a recipe blog) · earlier Wed 11 Nov (final pre-deploy audit: 5 auditors and verifiers; confirmed findings fixed, incl. the Groq 413 on the default question and Verify sources in the Docker stack; Devpost text and video script drafted) · previously Mon 9 Nov, 10:50 am IST (Phase 3d)
 
 ## Overview
 
@@ -17,11 +17,11 @@
 | 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 8 / 8 |
 | 3c. Signed receipts (proof of payment, delivery, sourcing) | Mon 9 | ✅ Done (a day early) | 5 / 5 |
 | 3d. Payout hold and any-model AI | Mon 9 | ✅ Done | 2 / 2 |
-| 3f. Recipe demo site | Wed 11 | ✅ Built; Render migration needs you | 6 / 7 |
-| 4. Deploy to Render | Wed 11 (last build step) | ✅ Live | 6 / 6 |
-| 5. Submission | Thu 12 | 🔄 Texts drafted | 2 / 10 |
+| 3f. Recipe demo site | Wed 11 | ✅ Live (data started fresh) | 7 / 7 |
+| 4. Deploy to Render | Wed 11 (last build step) | ✅ Live | 7 / 7 |
+| 5. Submission | Thu 12 | 🔄 Texts, screenshots, public repo | 4 / 10 |
 
-**Overall: about 87% done** (72 of 84 items). Live at https://botfare-web.onrender.com. Next: the video, screenshots, repo public and the Devpost form.
+**Overall: about 89% done** (76 of 85 items). Live at https://botfare-web.onrender.com. Next: the video and the Devpost form, then the animated How it works.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -141,7 +141,7 @@ Saffron & Salt, a recipe blog, replaces the coffee site Crema Notes. `pnpm seed`
 | ✅ | App copy: 2¢ hero ticket, three research questions (dal, crispy potatoes, sourdough), `/judge` commands, Fare Court card | `apps/web` |
 | ✅ | e2e on the recipe site: 2¢ ledger maths (wallet −20,000, publisher +19,000, BotFare +1,000), cookbook Apply 50¢ → 8¢ | `scripts/e2e.ts`; 30/30 on 3100/4100, 791 unit and DB tests |
 | ✅ | Docs: README, Devpost, video script (2-second holds on the Fare Court and Fare Advisor cards, the sourdough refund), protocol examples, Docker, MCP examples | |
-| ⏳ | 👤 Render: after the deploy, `BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed` and `pnpm seed:traffic --run-key recipes` in botfare-web's Shell | [README, Deploy](../README.md#deploy) |
+| ✅ | 👤 Render: started fresh instead of renaming in place (`pnpm db:reset`, then seed and seed:traffic) | 11 Nov, see Phase 4; [README, Deploy](../README.md#deploy) |
 
 ## Phase 3g: Polish from friends' feedback ✅ (11 Nov)
 
@@ -166,6 +166,7 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | ✅ | Daily payouts cron and weekly demo refresh cron live | `botfare-payouts`, `botfare-demo-refresh` (`pnpm seed:traffic --weekly`, Mondays); both built |
 | ✅ | Live smoke test: 402 → pay → receipt, top-up, Withdraw now | 11 Nov: browser reads free, agent gets a 402, a Groq research run paid 8¢ with 2 citations, all 4 signed statements verify against the live JWKS, every persona page loads. $20 top-up captured (fee $1.19); Withdraw now $4.41, batch 4L7JYBW8ZQ47E reached SUCCESS |
 | ✅ | 👤 Sandbox buyer for judges: a sandbox personal account in `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD` on botfare-web, and in the Devpost test-credentials field | `/judge` shows it; without it the page says to use any sandbox personal account |
+| ✅ | 👤 Live data started fresh: `pnpm db:reset --yes-delete-everything`, `db:migrate`, `seed --print-secrets` and `seed:traffic` in botfare-web's Shell; new site ID, secret and agent key in Render | 11 Nov: no coffee rows left (the ledger rows of the earlier $20 top-up and $4.41 payout went too; PayPal's records stay). All five tiers answer 402 (2, 5, 8, 50 and 1¢) and a browser reads free; a Groq research run bought 3 pages for 12¢ but hit the 240 s limit before answering; `/verify`'s sample `rcpt_ce0a2439229e4880` verifies (payment and delivery) |
 
 ## Phase 5: Submission ⏳
 
@@ -175,9 +176,9 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | ✅ | Video script with exact clicks | [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md) |
 | ⏳ | 👤 Demo video under 3 minutes, public on YouTube | Close: "Pay the fare, pal." |
 | ✅ | `docs/DEVPOST.md`: description mapped to the five judging criteria | [`DEVPOST.md`](DEVPOST.md); fill in the live URLs after the deploy |
-| ⏳ | Screenshots: publisher setup, wallet top-up, agent answer with paid citations, Payouts batch | |
+| ✅ | Screenshots | 10 live shots in [`screenshots/`](screenshots) (landing, Fare Court and Advisor, How it works, one line, `/judge`, `/verify`, dashboard, analytics, wallet, agent), retaken after the fresh start; the Payouts batch goes in the B-roll |
 | 🔄 | Final README and architecture diagram check | Done 11 Nov (judging-criteria section, deploy steps, PayPal APIs linked to code); add the live URL and video link after the deploy |
-| ⏳ | 👤 Make the repo public; MIT license visible | |
+| ✅ | 👤 Make the repo public; MIT license visible | 11 Nov: public at https://github.com/Sajjad21990/botfare |
 | ⏳ | 👤 Devpost form: Built With, sponsor tools (AG Grid, APIMatic, Render), test credentials | |
 | ⏳ | 👤 APIMatic claim form | |
 | ⏳ | Keep Render services and sandbox credentials running until winners are announced (~21 Dec) | |

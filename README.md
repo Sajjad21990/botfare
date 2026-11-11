@@ -541,14 +541,7 @@ Running the seed again keeps the site secret only if it can see the current one,
 
 To start the live demo data fresh (for example after the demo site changed), run in `botfare-web`'s Shell: `pnpm db:reset --yes-delete-everything`, `pnpm db:migrate`, `pnpm seed --print-secrets` and `pnpm seed:traffic`, then paste the printed `BOTFARE_SITE_ID` and `BOTFARE_SITE_SECRET` into `botfare-demo` and `BOTFARE_AGENT_KEY` into `botfare-web`. The reset drops every table and is permanent; it refuses to run without that flag and refuses a database on localhost unless `--allow-local` is added too. PayPal's own sandbox records are not touched, and the receipt keys stay the same.
 
-**Moving a live deploy to the recipe demo.** A database seeded by an earlier version, like the live one deployed on 11 Nov, still holds the coffee demo site Crema Notes. After this version deploys, run these two commands in `botfare-web`'s Shell, with the site ID and secret from `botfare-demo` > Environment:
-
-```bash
-BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed
-pnpm seed:traffic --run-key recipes
-```
-
-The seed renames the site to Saffron & Salt and moves the publisher persona to its new email, keeping the site ID, secret, user and history, and replaces the prices and free paths with the recipe ones. The demo needs no new secret. The traffic run adds two weeks of recipe purchases and the Fare Court and Fare Advisor story. The older coffee receipts stay in the history and drop out of the 14-day charts within two weeks.
+The live demo was started fresh this way on 11 Nov, when Saffron & Salt replaced the coffee site Crema Notes. To keep an older database's history instead, `BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed` (the values from `botfare-demo` > Environment) renames Crema Notes to Saffron & Salt in place, keeping its ID, secret and receipts, and `pnpm seed:traffic --run-key recipes` adds the recipe traffic.
 
 ## Built with
 
