@@ -85,5 +85,11 @@ export function CursorFollower() {
   }, [enabled]);
 
   if (!enabled) return null;
-  return <div ref={dot} aria-hidden className="cursor-follower" data-shown="false" />;
+  // The outer layer only moves (transform, every frame); the inner disc only grows and shrinks
+  // (scale, eased), so a hover never scales the position along with the size.
+  return (
+    <div ref={dot} aria-hidden className="cursor-follower" data-shown="false">
+      <span className="cursor-follower-disc" />
+    </div>
+  );
 }
