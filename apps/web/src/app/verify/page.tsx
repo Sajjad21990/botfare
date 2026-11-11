@@ -25,7 +25,7 @@ export default async function VerifyPage({ searchParams }: PageProps<"/verify">)
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b">
-        <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-4 px-4 sm:px-6">
+        <div className="mx-auto flex h-14 w-full max-w-4xl items-center gap-4 px-4 sm:px-6">
           <Link
             href="/"
             className="inline-flex items-center gap-2 rounded-md font-semibold tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -50,12 +50,15 @@ export default async function VerifyPage({ searchParams }: PageProps<"/verify">)
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-4 py-10 sm:px-6 sm:py-14">
+      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-4 py-10 sm:px-6 sm:py-14">
         <div className="space-y-3">
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Verify a receipt</h1>
-          <p className="max-w-2xl leading-relaxed text-muted-foreground">
+          <h1 className="text-4xl leading-[1.05] font-extrabold tracking-[-0.03em] sm:text-5xl">
+            Verify a receipt
+          </h1>
+          <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground">
             BotFare signs a statement when an agent pays, when the site delivers the page, and when
-            a fare is refunded.
+            a fare is refunded. Anyone can check them here, in the browser, with BotFare&apos;s
+            public key.
           </p>
         </div>
         <ReceiptVerifier

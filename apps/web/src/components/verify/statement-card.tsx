@@ -1,25 +1,23 @@
 "use client";
 
-import { contentDigestSha256 } from "@botfare/contracts/fare";
-import type { BotFareStatement, DeliveryStatement } from "@botfare/contracts/receipts";
-import { ChevronRight, ShieldCheck, ShieldX } from "lucide-react";
-import { type ReactNode, useState } from "react";
-import { NewTabLink } from "@/components/app/external-link";
+import type { BotFareStatement } from "@botfare/contracts/receipts";
+import { cn } from "cn";
+import { ArrowUpRightIcon, Check, ChevronRight, X } from "lucide-react";
+import type { ReactNode } from "react";
+import landing from "@/components/landing/landing.module.css";
+import { NewTabLink } from "@/components/landing/new-tab-link";
 import { CopyButton } from "@/components/publisher/copy-button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { CopyChip } from "./copy-chip";
+import { disclosureSummary } from "./disclosure";
+import { isProven } from "./receipt-summary";
 import {
   formatFareMicros,
   formatInstant,
-  formatMoneyMicros,
-  headline,
+  formatShareMicros,
   KIND_LABELS,
   KIND_SUMMARIES,
   percentOf,
   signalCopy,
-  statementTime,
 } from "./statement-copy";
 import { type CheckedStatement, decodePayloadJson } from "./verify-lib";
 
@@ -27,96 +25,105 @@ interface StatementCardProps {
   checked: CheckedStatement;
   /** The receipt the viewer asked about; a statement for another receipt is flagged. */
   receiptId: string | null;
+  /** Every statement of the receipt verified. If not, a valid one is marked in ink, not green. */
+  trusted?: boolean;
 }
 
-/** One signed statement: whether it verifies, what it says, and the raw JWS. */
-export function StatementCard({ checked, receiptId }: StatementCardProps) {
+/**
+ * One signed statement, folded: its kind and whether the signature holds, and inside, every field
+ * it signs (long values as copyable chips) and the raw JWS.
+ */
+export function StatementCard({ checked, receiptId, trusted = true }: StatementCardProps) {
   const { result, decoded } = checked;
   const statement = result.ok ? result.statement : decoded;
   const otherReceipt = Boolean(receiptId && statement && statement.sub !== receiptId);
-  const verified = result.ok && !otherReceipt;
+  const verified = isProven(checked, receiptId);
   const kind = statement?.kind ?? checked.slot;
   const kid = result.ok ? result.kid : (checked.header?.kid as string | undefined);
+  const title = kind ? `${KIND_LABELS[kind]} statement` : "Statement";
 
   return (
-    <Card
+    <details
       className={cn(
-        verified ? "ring-emerald-600/30 dark:ring-emerald-400/30" : "ring-destructive/40",
+        "group rounded-xl border bg-card",
+        verified ? "border-foreground/15" : "border-stamp/50",
       )}
     >
-      <CardHeader className="gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          {verified ? (
-            <ShieldCheck aria-hidden className="size-5 text-emerald-700 dark:text-emerald-400" />
-          ) : (
-            <ShieldX aria-hidden className="size-5 text-destructive" />
-          )}
-          <h3 className="text-base font-semibold tracking-tight">
-            {kind ? `${KIND_LABELS[kind]} statement` : "Statement"}
-          </h3>
-          {verified ? (
-            <Badge className="bg-emerald-600/10 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-300">
-              ✓ Signature valid
-            </Badge>
-          ) : (
-            <Badge variant="destructive">✗ Not verified</Badge>
-          )}
-        </div>
+      <summary className={disclosureSummary}>
+        <ChevronRight
+          aria-hidden
+          className="size-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+        />
+        <span className="font-semibold">{title}</span>
+        {verified ? (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
+              trusted ? "bg-success/10 text-success" : "bg-foreground/10 text-foreground",
+            )}
+          >
+            <Check aria-hidden className="size-3.5" strokeWidth={3} />
+            Signature valid
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-stamp/10 px-2 py-0.5 text-xs font-semibold text-stamp">
+            <X aria-hidden className="size-3.5" strokeWidth={3} />
+            Not valid
+          </span>
+        )}
+        {statement ? (
+          <span className="ml-auto hidden text-xs text-muted-foreground sm:inline">
+            Signed{" "}
+            <time dateTime={new Date(statement.iat * 1000).toISOString()}>
+              {formatInstant(new Date(statement.iat * 1000).toISOString())}
+            </time>
+          </span>
+        ) : null}
+      </summary>
+
+      <div className="flex flex-col gap-4 border-t border-foreground/10 px-4 pt-3 pb-4">
         {!result.ok ? (
-          <p className="text-sm text-destructive">
+          <p className="text-sm font-medium text-stamp">
             {result.message}.
             {result.error === "unknown_key"
               ? " BotFare never published this key, or another server signed it."
               : result.error === "bad_signature"
                 ? " Someone changed it after BotFare signed it, or BotFare never signed it."
-                : ""}
+                : ""}{" "}
+            {statement ? "The fields below are shown as written, not verified." : null}
           </p>
         ) : otherReceipt ? (
-          <p className="text-sm text-destructive">
+          <p className="text-sm font-medium text-stamp">
             The signature is valid, but this statement is about {statement?.sub}, not {receiptId}.
           </p>
         ) : kind ? (
           <p className="text-sm text-muted-foreground">{KIND_SUMMARIES[kind]}</p>
         ) : null}
-      </CardHeader>
 
-      <CardContent className="flex flex-col gap-4">
         {statement ? (
-          <>
-            <div>
-              <p className="text-lg font-semibold tracking-tight text-balance">
-                {headline(statement)}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                <time dateTime={statementTime(statement)}>
-                  {formatInstant(statementTime(statement))}
-                </time>
-                {!result.ok ? " · shown as written, not verified" : null}
-              </p>
-            </div>
-            <Facts statement={statement} kid={kid ?? null} verified={verified} />
-            {verified && statement.kind === "delivery" ? (
-              <CheckYourCopy statement={statement} />
-            ) : null}
-          </>
+          <Facts statement={statement} kid={kid ?? null} verified={verified} />
         ) : (
           <p className="text-sm text-muted-foreground">
             Could not read this as a BotFare statement.
           </p>
         )}
         <RawJws checked={checked} />
-      </CardContent>
-    </Card>
+      </div>
+    </details>
   );
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid gap-0.5 sm:grid-cols-[9rem_1fr] sm:gap-3">
+    <div className="grid gap-1 py-2.5 sm:grid-cols-[9.5rem_minmax(0,1fr)] sm:items-baseline sm:gap-4">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 [overflow-wrap:anywhere]">{children}</dd>
+      <dd className="min-w-0">{children}</dd>
     </div>
   );
+}
+
+function Note({ children }: { children: ReactNode }) {
+  return <span className="mt-1 block text-xs text-muted-foreground">{children}</span>;
 }
 
 function Mono({ children }: { children: ReactNode }) {
@@ -147,36 +154,43 @@ function Facts({
   const pageUrl =
     verified && statement.kind === "payment" ? webUrl(statement.payment.resource) : null;
   const signal = statement.kind === "payment" ? signalCopy(statement.payment.signal) : null;
+  const signedAt = new Date(statement.iat * 1000).toISOString();
   return (
-    <dl className="flex flex-col gap-2 border-t pt-4 text-sm">
+    <dl className="flex flex-col divide-y divide-foreground/10 text-sm">
       <Fact label="Receipt">
-        <Mono>{statement.sub}</Mono>
+        <CopyChip value={statement.sub} label="receipt ID" />
       </Fact>
       {statement.kind === "payment" ? (
         <>
           <Fact label="Price">{formatFareMicros(statement.payment.amountMicros)}</Fact>
           <Fact label="Split">
-            Publisher {formatMoneyMicros(statement.payment.publisherMicros)} (
-            {percentOf(statement.payment.publisherMicros, statement.payment.amountMicros)}%) ·
-            BotFare fee {formatMoneyMicros(statement.payment.feeMicros)} (
+            The site {formatShareMicros(statement.payment.publisherMicros)} (
+            {percentOf(statement.payment.publisherMicros, statement.payment.amountMicros)}%),
+            BotFare fee {formatShareMicros(statement.payment.feeMicros)} (
             {percentOf(statement.payment.feeMicros, statement.payment.amountMicros)}%)
           </Fact>
           <Fact label="Paid to">
-            {statement.payment.siteOrigin ?? "Site"} <Mono>({statement.payment.payTo})</Mono>
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {statement.payment.siteOrigin ? (
+                <span className="font-medium">{statement.payment.siteOrigin}</span>
+              ) : null}
+              <CopyChip value={statement.payment.payTo} label="site ID" />
+            </span>
           </Fact>
           {statement.payment.resource ? (
             <Fact label="Page">
-              {pageUrl ? (
-                <NewTabLink
-                  href={pageUrl}
-                  icon
-                  className="inline-flex max-w-full items-center gap-0.5 rounded-sm font-mono text-xs underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                >
-                  {statement.payment.resource}
-                </NewTabLink>
-              ) : (
-                <Mono>{statement.payment.resource}</Mono>
-              )}
+              <span className="flex min-w-0 items-center gap-2">
+                <CopyChip value={statement.payment.resource} label="page URL" tail={18} />
+                {pageUrl ? (
+                  <NewTabLink
+                    href={pageUrl}
+                    icon={<ArrowUpRightIcon aria-hidden className="size-3.5" />}
+                    className={`${landing.focusRing} inline-flex shrink-0 items-center gap-0.5 rounded-sm text-xs font-medium underline decoration-foreground/40 underline-offset-4 hover:decoration-foreground`}
+                  >
+                    Open
+                  </NewTabLink>
+                ) : null}
+              </span>
             </Fact>
           ) : null}
           <Fact label="Payment type">
@@ -185,175 +199,126 @@ function Facts({
             in {statement.payment.asset === "USD" ? "US cents" : statement.payment.asset}
           </Fact>
           <Fact label="Paid by">
-            Agent key <Mono>{statement.payment.payer}</Mono>
-            {statement.payment.payerThumbprint ? (
-              <span className="block text-xs text-muted-foreground">
-                Key thumbprint (RFC 7638) <Mono>{statement.payment.payerThumbprint}</Mono>
+            <span className="flex flex-col items-start gap-1.5">
+              <span className="flex max-w-full items-center gap-2">
+                <span className="shrink-0">Agent key</span>
+                <CopyChip value={statement.payment.payer} label="agent key ID" />
               </span>
+              {statement.payment.payerThumbprint ? (
+                <span className="flex max-w-full items-center gap-2 text-xs text-muted-foreground">
+                  <span className="shrink-0">Thumbprint</span>
+                  <CopyChip value={statement.payment.payerThumbprint} label="key thumbprint" />
+                </span>
+              ) : null}
+            </span>
+            {statement.payment.payerThumbprint ? (
+              <Note>The agent&apos;s public key, hashed as in RFC 7638.</Note>
             ) : null}
           </Fact>
           {signal ? (
             <Fact label="Charge reason">
               {signal.label}
-              <span className="block text-xs text-muted-foreground">{signal.detail}</span>
+              <Note>{signal.detail}</Note>
             </Fact>
           ) : null}
           {statement.payment.offerDigest ? (
             <Fact label="Offer digest">
-              <Mono>{statement.payment.offerDigest}</Mono>
-              <span className="block text-xs text-muted-foreground">
-                Hash of the title and preview the agent saw before it paid.
-              </span>
+              <CopyChip value={statement.payment.offerDigest} label="offer digest" />
+              <Note>Hash of the title and preview the agent saw before it paid.</Note>
             </Fact>
           ) : null}
+          <Fact label="Settled at">
+            <time dateTime={statement.payment.settledAt}>
+              {formatInstant(statement.payment.settledAt)}
+            </time>
+          </Fact>
         </>
       ) : null}
       {statement.kind === "delivery" ? (
         <>
           <Fact label="Content-Digest">
-            <Mono>{statement.delivery.contentDigest}</Mono>
-            <span className="block text-xs text-muted-foreground">
-              SHA-256 of the body the site sent, in RFC 9530 format.
-            </span>
+            <CopyChip value={statement.delivery.contentDigest} label="content digest" />
+            <Note>SHA-256 of the body the site sent, in RFC 9530 format.</Note>
           </Fact>
           <Fact label="Size">{statement.delivery.contentLength.toLocaleString("en-US")} bytes</Fact>
           <Fact label="Media type">
             <Mono>{statement.delivery.contentType || "(none)"}</Mono>
           </Fact>
           <Fact label="HTTP status">{statement.delivery.status}</Fact>
+          <Fact label="Reported at">
+            <time dateTime={statement.delivery.attestedAt}>
+              {formatInstant(statement.delivery.attestedAt)}
+            </time>
+          </Fact>
         </>
       ) : null}
       {statement.kind === "refund" ? (
         <>
           <Fact label="Refunded">{formatFareMicros(statement.refund.refundedMicros)}</Fact>
           <Fact label="How">
-            {statement.refund.via === "dispute" ? "Fare Court dispute" : "Refund by the publisher"}
-            {statement.refund.disputeId ? (
-              <>
-                {" "}
-                <Mono>({statement.refund.disputeId})</Mono>
-              </>
-            ) : null}
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {statement.refund.via === "dispute"
+                ? "Fare Court dispute"
+                : "Refund by the publisher"}
+              {statement.refund.disputeId ? (
+                <CopyChip value={statement.refund.disputeId} label="dispute ID" />
+              ) : null}
+            </span>
+          </Fact>
+          <Fact label="Refunded at">
+            <time dateTime={statement.refund.refundedAt}>
+              {formatInstant(statement.refund.refundedAt)}
+            </time>
           </Fact>
         </>
       ) : null}
       <Fact label="Issued by">
-        <Mono>{statement.iss}</Mono>
+        <CopyChip value={statement.iss} label="issuer" />
       </Fact>
       <Fact label="Signing key">
-        {kid ? <Mono>{kid}</Mono> : <span className="text-muted-foreground">(no kid)</span>}
+        {kid ? (
+          <CopyChip value={kid} label="signing key ID" />
+        ) : (
+          <span className="text-muted-foreground">(no kid)</span>
+        )}
       </Fact>
       <Fact label="Signed at">
-        <time dateTime={new Date(statement.iat * 1000).toISOString()}>
-          {formatInstant(new Date(statement.iat * 1000).toISOString())}
-        </time>
+        <time dateTime={signedAt}>{formatInstant(signedAt)}</time>
       </Fact>
     </dl>
-  );
-}
-
-/** Lets the viewer hash their own copy of the content and compare it with the signed digest. */
-function CheckYourCopy({ statement }: { statement: DeliveryStatement }) {
-  const [text, setText] = useState("");
-  const [outcome, setOutcome] = useState<{ digest: string; source: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function hash(body: Uint8Array | string, source: string) {
-    setBusy(true);
-    try {
-      setOutcome({ digest: await contentDigestSha256(body), source });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const matches = outcome ? outcome.digest === statement.delivery.contentDigest : null;
-
-  return (
-    <details className="group rounded-lg border bg-muted/30 px-3 py-2 text-sm">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
-        <ChevronRight
-          aria-hidden
-          className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none"
-        />
-        Check your copy
-      </summary>
-      <div className="mt-3 flex flex-col gap-3">
-        <p className="text-muted-foreground">
-          Pick the file you received or paste its exact text. Your browser hashes it and uploads
-          nothing.
-        </p>
-        <input
-          type="file"
-          aria-label="File to hash"
-          className="text-sm file:mr-3 file:rounded-md file:border file:bg-background file:px-2.5 file:py-1 file:text-sm file:font-medium"
-          onChange={async (event) => {
-            const file = event.target.files?.[0];
-            if (file) await hash(new Uint8Array(await file.arrayBuffer()), file.name);
-          }}
-        />
-        <Textarea
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder="Or paste the exact body here"
-          aria-label="Content to hash"
-          className="max-h-40 font-mono text-xs"
-        />
-        <div>
-          <button
-            type="button"
-            disabled={!text || busy}
-            onClick={() => hash(text, "The pasted text")}
-            className="rounded-md border bg-background px-2.5 py-1 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
-          >
-            Hash the pasted text
-          </button>
-        </div>
-        {outcome ? (
-          <p
-            role="status"
-            className={matches ? "text-emerald-800 dark:text-emerald-300" : "text-destructive"}
-          >
-            {matches
-              ? `✓ ${outcome.source} matches the signed digest byte for byte.`
-              : `✗ ${outcome.source} hashes to ${outcome.digest}, not the signed digest.`}
-          </p>
-        ) : null}
-      </div>
-    </details>
   );
 }
 
 function RawJws({ checked }: { checked: CheckedStatement }) {
   const payload = decodePayloadJson(checked.token);
   return (
-    <details className="group rounded-lg border px-3 py-2 text-sm">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+    <details className="group/raw rounded-lg border border-foreground/15 bg-background/60">
+      <summary className={cn(disclosureSummary, "rounded-lg px-3 py-2 text-sm")}>
         <ChevronRight
           aria-hidden
-          className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+          className="size-4 shrink-0 transition-transform group-open/raw:rotate-90 motion-reduce:transition-none"
         />
-        Raw JWS
+        <span className="font-medium">Raw JWS</span>
       </summary>
-      <div className="mt-3 flex flex-col gap-3">
+      <div className="flex flex-col gap-3 border-t border-foreground/10 px-3 pt-3 pb-3">
         <div>
           <p className="mb-1 text-xs font-medium text-muted-foreground">Protected header</p>
-          <pre className="overflow-x-auto rounded-md bg-muted/50 p-2 font-mono text-xs">
+          <pre className="overflow-x-auto rounded-md bg-muted/60 p-2 font-mono text-xs">
             {JSON.stringify(checked.header, null, 2)}
           </pre>
         </div>
         <div>
           <p className="mb-1 text-xs font-medium text-muted-foreground">Claims</p>
-          <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-xs">
+          <pre className="max-h-72 overflow-auto rounded-md bg-muted/60 p-2 font-mono text-xs">
             {JSON.stringify(payload, null, 2)}
           </pre>
         </div>
         <div>
           <div className="mb-1 flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-muted-foreground">Compact JWS</p>
-            <CopyButton value={checked.token} label="Copy the JWS" />
+            <CopyButton value={checked.token} label="Copy JWS" showLabel variant="outline" />
           </div>
-          <p className="max-h-40 overflow-y-auto rounded-md bg-muted/50 p-2 font-mono text-xs break-all">
+          <p className="max-h-40 overflow-y-auto rounded-md bg-muted/60 p-2 font-mono text-xs break-all">
             {checked.token}
           </p>
         </div>

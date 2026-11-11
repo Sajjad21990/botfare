@@ -1,7 +1,9 @@
 import { RECEIPT_JWT_TYPE, RECEIPT_KEYS_PATH } from "@botfare/contracts/receipts";
 import { ChevronRight } from "lucide-react";
 import { NewTabLink } from "@/components/app/external-link";
+import landing from "@/components/landing/landing.module.css";
 import { readmeUrl } from "@/components/landing/links";
+import { disclosureSummary } from "./disclosure";
 
 const points = [
   {
@@ -29,34 +31,36 @@ const points = [
 /** Plain explanation of the cryptography behind /verify. */
 export function HowVerifyWorks() {
   return (
-    <details className="group rounded-xl border px-4 py-3">
-      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+    <details className="group rounded-xl border border-foreground/15 bg-card">
+      <summary className={disclosureSummary}>
         <ChevronRight
           aria-hidden
-          className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+          className="size-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
         />
-        How this works
+        <span className="font-heading text-lg font-bold">How this works</span>
       </summary>
-      <dl className="mt-4 flex flex-col gap-4 text-sm">
-        {points.map((point) => (
-          <div key={point.title}>
-            <dt className="font-medium">{point.title}</dt>
-            <dd className="mt-1 leading-relaxed text-muted-foreground">{point.body}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-        To check offline, call <span className="font-mono">verifyStatement()</span> from{" "}
-        <span className="font-mono">@botfare/contracts/receipts</span> with a saved copy of the
-        keys. It runs in Node and in the browser.{" "}
-        <NewTabLink
-          href={readmeUrl("signed-receipts")}
-          icon
-          className="inline-flex items-center gap-0.5 rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          Signed receipts in the README
-        </NewTabLink>
-      </p>
+      <div className="border-t border-foreground/10 px-4 pt-4 pb-5 sm:px-5">
+        <dl className="grid gap-x-8 gap-y-5 text-sm sm:grid-cols-2">
+          {points.map((point) => (
+            <div key={point.title}>
+              <dt className="font-semibold">{point.title}</dt>
+              <dd className="mt-1 leading-relaxed text-muted-foreground">{point.body}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-5 border-t border-dashed border-foreground/25 pt-4 text-sm leading-relaxed text-muted-foreground">
+          To check offline, call <span className="font-mono">verifyStatement()</span> from{" "}
+          <span className="font-mono">@botfare/contracts/receipts</span> with a saved copy of the
+          keys. It runs in Node and in the browser.{" "}
+          <NewTabLink
+            href={readmeUrl("signed-receipts")}
+            icon
+            className={`${landing.focusRing} inline-flex items-center gap-0.5 rounded-sm font-medium text-foreground underline decoration-foreground/40 underline-offset-4 hover:decoration-foreground`}
+          >
+            Signed receipts in the README
+          </NewTabLink>
+        </p>
+      </div>
     </details>
   );
 }

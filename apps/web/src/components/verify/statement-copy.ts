@@ -26,6 +26,20 @@ export function formatMoneyMicros(micros: number): string {
     : usdPrecise.format(micros / 1_000_000);
 }
 
+const cents = new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 });
+const usdShare = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+});
+
+/** A share of a fare in units people read: 76000 → "7.6¢", 2500 → "0.25¢", 1_520_000 → "$1.52". */
+export function formatShareMicros(micros: number): string {
+  if (micros >= 1_000_000) return usdShare.format(micros / 1_000_000);
+  return `${cents.format(micros / MICROS_PER_CENT)}¢`;
+}
+
 /** Percent of a whole, rounded to at most one decimal: (28500, 30000) → "95". */
 export function percentOf(part: number, whole: number): string {
   if (whole <= 0) return "0";
@@ -43,6 +57,61 @@ export function formatInstant(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return dateTime.format(date);
+}
+
+const dateTimeShort = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZoneName: "short",
+});
+
+/** Local date and time to the minute, with the zone, for the receipt summary. */
+export function formatWhen(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return dateTimeShort.format(date);
+}
+
+/** "3,295 bytes of text/html, HTTP 200" */
+export function deliverySummary(delivery: {
+  contentLength: number;
+  contentType: string;
+  status: number;
+}): string {
+  return `${delivery.contentLength.toLocaleString("en-US")} bytes of ${
+    delivery.contentType || "content"
+  }, HTTP ${delivery.status}`;
+}
+
+/**
+ * A short name for a paid page, from the last part of its path:
+ * ".../techniques/freezing-and-reheating" → "Freezing and reheating". The site's root gives its host.
+ */
+export function pageLabel(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  const segment = parsed.pathname.split("/").filter(Boolean).pop();
+  if (!segment) return parsed.host;
+  let text = segment;
+  try {
+    text = decodeURIComponent(segment);
+  } catch {
+    // Keep the raw segment.
+  }
+  const words = text
+    .replace(/\.[a-z0-9]{1,5}$/i, "")
+    .replace(/[-_+]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!words) return parsed.host;
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 export function hostOf(url: string | null): string | null {

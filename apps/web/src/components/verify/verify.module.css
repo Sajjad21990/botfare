@@ -1,0 +1,57 @@
+/* /verify's receipt: the landing's printed ticket, with stamps that land once the browser has
+   checked the signatures. */
+
+/* A rubber stamp. Each one sets its own tilt and delay, so a receipt's stamps land one by one. */
+.stamp {
+  transform: rotate(var(--stamp-tilt, -8deg));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stamp {
+    animation: stamp 380ms cubic-bezier(0.2, 0.9, 0.3, 1.2) var(--stamp-delay, 120ms) both;
+  }
+}
+
+@keyframes stamp {
+  from {
+    opacity: 0;
+    transform: rotate(calc(var(--stamp-tilt, -8deg) - 6deg)) scale(1.8);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(var(--stamp-tilt, -8deg)) scale(1);
+  }
+}
+
+/* The hero ticket's PAID green: darker than --success so it holds 4.5:1 on ticket yellow. */
+.stampGreen {
+  color: #146b3f;
+  border-color: #146b3f;
+}
+
+.stampRed {
+  color: var(--stamp);
+  border-color: var(--stamp);
+}
+
+/* A ticket that did not verify is printed on plain card stock: no yellow, no celebration. */
+.void {
+  --brand: var(--card);
+}
+
+/* Skeleton bars pulse only for people who have not asked for less motion. */
+.pulse {
+  background-color: color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pulse {
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}

@@ -1,18 +1,25 @@
 "use client";
 
-import { RECEIPT_KEYS_PATH, type StatementKind } from "@botfare/contracts/receipts";
-import { AlertCircle, Loader2, SearchCheck, ShieldCheck, ShieldX } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { NewTabLink } from "@/components/app/external-link";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { DEMO_SITE_NAME } from "@botfare/contracts";
+import type { StatementKind } from "@botfare/contracts/receipts";
+import { cn } from "cn";
+import { FileQuestion, Loader2, SearchCheck, ShieldCheck, TriangleAlert } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { StatementCard } from "./statement-card";
-import { formatFareMicros } from "./statement-copy";
+import { CheckYourCopy } from "./check-your-copy";
+import { MoneySplitBar, ReceiptChecks, ReceiptTimeline, VerdictLine } from "./receipt-facts";
 import {
-  type CheckedStatement,
+  type ReceiptOutcome,
+  type ReceiptSummary,
+  summarizeReceipt,
+  verdictText,
+} from "./receipt-summary";
+import { ReceiptTicket, TicketSkeleton } from "./receipt-ticket";
+import { StatementCard } from "./statement-card";
+import styles from "./verify.module.css";
+import {
   checkStatement,
   fetchReceiptKeys,
   fetchReceiptStatements,
@@ -23,21 +30,13 @@ import {
 
 const ORDER: Record<StatementKind, number> = { payment: 0, delivery: 1, refund: 2 };
 
-interface Outcome {
-  /** The receipt asked about (a lookup, or the one every pasted statement names). */
-  receiptId: string | null;
-  source: "lookup" | "pasted";
-  statements: CheckedStatement[];
-  /** Lookup only: statements BotFare has not issued for this receipt. */
-  missing: StatementKind[];
-  keyCount: number;
-}
+type ErrorKind = "not_found" | "input" | "fetch";
 
 type State =
   | { status: "idle" }
   | { status: "checking"; label: string }
-  | { status: "done"; outcome: Outcome }
-  | { status: "error"; title: string; message: string };
+  | { status: "done"; outcome: ReceiptOutcome }
+  | { status: "error"; kind: ErrorKind; title: string; message: string };
 
 interface ReceiptVerifierProps {
   initialReceipt: string | null;
@@ -71,6 +70,7 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
       if (!statements) {
         settle({
           status: "error",
+          kind: "not_found",
           title: "No such receipt",
           message: `BotFare has no receipt ${receiptId}. Check the ID or paste the statement itself.`,
         });
@@ -138,7 +138,12 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
       const parsed = parseVerifyInput(text);
       if (parsed.kind === "invalid") {
         latest.current++;
-        setState({ status: "error", title: "Nothing to verify", message: parsed.message });
+        setState({
+          status: "error",
+          kind: "input",
+          title: "Nothing to verify",
+          message: parsed.message,
+        });
         return;
       }
       if (parsed.kind === "receipt") void lookUp(parsed.receiptId, options);
@@ -172,127 +177,118 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
   }
 
   const checking = state.status === "checking";
+  const summary = useMemo(
+    () => (state.status === "done" ? summarizeReceipt(state.outcome) : null),
+    [state],
+  );
 
   return (
-    <div className="flex flex-col gap-6">
-      {showExample ? (
-        <ExampleBanner
-          outcome={state.status === "done" ? state.outcome : null}
+    <div className="flex flex-col gap-8">
+      <section
+        aria-labelledby="check-title"
+        className="rounded-xl border border-foreground/15 bg-card p-4 sm:p-5"
+      >
+        <h2 id="check-title" className="flex items-center gap-2 text-lg font-bold">
+          <SearchCheck aria-hidden className="size-5" />
+          Check a receipt
+        </h2>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+          Paste a receipt ID such as{" "}
+          <span className="font-mono whitespace-nowrap">rcpt_9d2e41b7c03a5f18</span>, a /verify
+          link, or the signed statements from an x402{" "}
+          <span className="font-mono whitespace-nowrap">PAYMENT-RESPONSE</span>.
+        </p>
+        <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start">
+          <Label htmlFor="verify-input" className="sr-only">
+            Receipt ID or signed statement
+          </Label>
+          <Textarea
+            ref={inputRef}
+            id="verify-input"
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                checkYours(input);
+              }
+            }}
+            placeholder="rcpt_… or eyJhbGciOiJFZERTQSIs…"
+            spellCheck={false}
+            autoComplete="off"
+            className="max-h-48 min-h-10 flex-1 bg-background font-mono text-sm"
+          />
+          <Button type="submit" disabled={checking || !input.trim()} className="h-10 px-4">
+            {checking ? (
+              <Loader2 className="animate-spin motion-reduce:animate-none" />
+            ) : (
+              <ShieldCheck />
+            )}
+            Verify
+          </Button>
+        </form>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Pasted statements never leave your browser.
+        </p>
+      </section>
+
+      <p role="status" className="sr-only">
+        {state.status === "checking"
+          ? `${state.label}…`
+          : summary
+            ? `${verdictText(summary)}${summary.receiptId ? ` Receipt ${summary.receiptId}.` : ""}`
+            : ""}
+      </p>
+
+      {state.status === "checking" ? (
+        <Loading sample={showExample} onCheckAnother={checkAnother} />
+      ) : null}
+      {state.status === "error" ? (
+        <ErrorPanel kind={state.kind} title={state.title} message={state.message} />
+      ) : null}
+      {state.status === "done" && summary ? (
+        <Results
+          outcome={state.outcome}
+          summary={summary}
+          sample={showExample}
           onCheckAnother={checkAnother}
+          onLookUp={(receiptId) => {
+            setShowExample(false);
+            setInput(receiptId);
+            void lookUp(receiptId);
+          }}
         />
       ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <SearchCheck aria-hidden className="size-4" />
-            Check a receipt
-          </CardTitle>
-          <CardDescription>
-            Paste a receipt ID such as <span className="font-mono">rcpt_9d2e41b7c03a5f18</span>, a
-            /verify link, or the signed statements from an x402{" "}
-            <span className="font-mono">PAYMENT-RESPONSE</span>.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={onSubmit} className="flex flex-col gap-3">
-            <Label htmlFor="verify-input" className="sr-only">
-              Receipt ID or signed statement
-            </Label>
-            <Textarea
-              ref={inputRef}
-              id="verify-input"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  checkYours(input);
-                }
-              }}
-              placeholder="rcpt_… or eyJhbGciOiJFZERTQSIs…"
-              spellCheck={false}
-              autoComplete="off"
-              className="max-h-48 min-h-11 font-mono text-sm"
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" disabled={checking || !input.trim()}>
-                {checking ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
-                Verify
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Pasted statements never leave your browser.
-              </p>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      <div aria-live="polite" className="flex flex-col gap-4">
-        {state.status === "checking" ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 aria-hidden className="size-4 animate-spin" />
-            {state.label}…
-          </p>
-        ) : null}
-        {state.status === "error" ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>{state.title}</AlertTitle>
-            <AlertDescription>{state.message}</AlertDescription>
-          </Alert>
-        ) : null}
-        {state.status === "done" ? (
-          <Results
-            outcome={state.outcome}
-            onLookUp={(receiptId) => {
-              setShowExample(false);
-              setInput(receiptId);
-              void lookUp(receiptId);
-            }}
-          />
-        ) : null}
-      </div>
     </div>
   );
 }
 
-/** The verified price of the sample's payment statement, e.g. "2¢"; null until it verifies. */
-function exampleAmount(outcome: Outcome): string | null {
-  for (const checked of outcome.statements) {
-    const { result } = checked;
-    if (
-      result.ok &&
-      result.statement.kind === "payment" &&
-      result.statement.sub === outcome.receiptId
-    ) {
-      return formatFareMicros(result.statement.payment.amountMicros);
-    }
-  }
-  return null;
+function fetchFailure(err: unknown): State {
+  return {
+    status: "error",
+    kind: "fetch",
+    title: "Could not verify",
+    message: err instanceof VerifyFetchError ? err.message : "Something went wrong. Try again.",
+  };
 }
 
 /**
- * Says the receipt on screen is the demo's sample, with a way to clear it and check your own. A
- * sample without a delivery statement (a seeded purchase) has only its payment signature to check.
+ * Says the receipt on screen is the demo's sample, with a way to clear it and check your own. The
+ * amount appears once the payment statement has verified.
  */
-function ExampleBanner({
-  outcome,
+function SampleStrip({
+  summary,
   onCheckAnother,
 }: {
-  outcome: Outcome | null;
+  summary: ReceiptSummary | null;
   onCheckAnother: () => void;
 }) {
-  const amount = outcome ? exampleAmount(outcome) : null;
-  const paymentOnly = outcome?.missing.includes("delivery") ?? false;
+  const amount = summary?.payment ? summary.split?.amount : null;
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-foreground/15 bg-ticket p-4 text-ticket-foreground sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 rounded-xl border-[1.5px] border-dashed border-foreground/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm leading-relaxed">
-        <span className="mr-2 inline-block rounded-sm border border-current px-1.5 py-px align-[0.1em] font-mono text-[0.7rem] font-semibold tracking-wider uppercase">
-          Sample receipt
-        </span>
-        A real {amount ? `${amount} ` : ""}purchase on Saffron &amp; Salt, our demo recipe blog.
-        Your browser checks BotFare&apos;s {paymentOnly ? "payment signature" : "signatures"} below.
+        This sample is a real {amount ? `${amount} ` : ""}purchase on {DEMO_SITE_NAME}, our demo
+        recipe blog.
       </p>
       <Button type="button" variant="outline" className="shrink-0" onClick={onCheckAnother}>
         Check another receipt
@@ -301,107 +297,162 @@ function ExampleBanner({
   );
 }
 
-function fetchFailure(err: unknown): State {
-  return {
-    status: "error",
-    title: "Could not verify",
-    message: err instanceof VerifyFetchError ? err.message : "Something went wrong. Try again.",
-  };
+function Loading({ sample, onCheckAnother }: { sample: boolean; onCheckAnother: () => void }) {
+  return (
+    <div className="flex flex-col gap-6">
+      {sample ? <SampleStrip summary={null} onCheckAnother={onCheckAnother} /> : null}
+      <div className="grid items-start gap-6 md:grid-cols-[minmax(0,22.5rem)_minmax(0,1fr)] md:gap-8">
+        <div className="flex flex-col gap-4">
+          <TicketSkeleton />
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
+            Checking the signatures in your browser…
+          </p>
+        </div>
+        <div aria-hidden className="flex flex-col gap-3">
+          <div className={cn(styles.pulse, "h-6 w-40 rounded-md")} />
+          {[0, 1, 2, 3].map((row) => (
+            <div
+              key={row}
+              className="flex items-center gap-3 rounded-xl border border-foreground/10 bg-card px-3 py-3"
+            >
+              <div className={cn(styles.pulse, "size-7 rounded-full")} />
+              <div className="flex flex-1 flex-col gap-1.5">
+                <div className={cn(styles.pulse, "h-3.5 w-1/3 rounded-md")} />
+                <div className={cn(styles.pulse, "h-3 w-2/3 rounded-md")} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ErrorPanel({ kind, title, message }: { kind: ErrorKind; title: string; message: string }) {
+  const Icon = kind === "not_found" ? FileQuestion : TriangleAlert;
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-3 rounded-xl border-[1.5px] border-stamp/50 bg-card p-4"
+    >
+      <Icon aria-hidden className="mt-0.5 size-5 shrink-0 text-stamp" />
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="font-semibold">{title}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+          {message}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function Results({
   outcome,
+  summary,
+  sample,
+  onCheckAnother,
   onLookUp,
 }: {
-  outcome: Outcome;
+  outcome: ReceiptOutcome;
+  summary: ReceiptSummary;
+  sample: boolean;
+  onCheckAnother: () => void;
   onLookUp: (receiptId: string) => void;
 }) {
-  const total = outcome.statements.length;
-  const valid = outcome.statements.filter(
-    (c) => c.result.ok && (!outcome.receiptId || c.result.statement.sub === outcome.receiptId),
-  ).length;
-  const allValid = total > 0 && valid === total;
+  const isSample = sample && summary.receiptId !== null;
+
+  if (summary.total === 0) {
+    return (
+      <div className="flex flex-col gap-6">
+        {isSample ? <SampleStrip summary={summary} onCheckAnother={onCheckAnother} /> : null}
+        <div className="flex items-start gap-3 rounded-xl border-[1.5px] border-foreground/20 bg-card p-4">
+          <FileQuestion aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+          <div className="flex min-w-0 flex-col gap-1">
+            <h2 className="font-semibold [overflow-wrap:anywhere]">
+              No signed statements for {outcome.receiptId}
+            </h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              The receipt exists but has no signed statements. Receipts settled before BotFare
+              started signing have none.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <>
-      {total === 0 ? (
-        <Alert>
-          <AlertCircle />
-          <AlertTitle>No signed statements for {outcome.receiptId}</AlertTitle>
-          <AlertDescription>
-            The receipt exists but has no signed statements. Receipts settled before BotFare started
-            signing have none.
-          </AlertDescription>
-        </Alert>
-      ) : (
-        <div
-          className={
-            allValid
-              ? "flex items-start gap-3 rounded-xl border border-emerald-600/30 bg-emerald-600/5 p-4 dark:border-emerald-400/30 dark:bg-emerald-400/5"
-              : "flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/5 p-4"
-          }
-        >
-          {allValid ? (
-            <ShieldCheck
-              aria-hidden
-              className="mt-0.5 size-5 shrink-0 text-emerald-700 dark:text-emerald-400"
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
+        {isSample ? <SampleStrip summary={summary} onCheckAnother={onCheckAnother} /> : null}
+        <div className="grid items-start gap-6 md:grid-cols-[minmax(0,22.5rem)_minmax(0,1fr)] md:gap-8">
+          <section aria-labelledby="receipt-title" className="flex flex-col gap-4">
+            <h2 id="receipt-title" className="sr-only">
+              Receipt{summary.receiptId ? ` ${summary.receiptId}` : ""}
+            </h2>
+            <ReceiptTicket
+              summary={summary}
+              sample={isSample}
+              siteName={isSample ? DEMO_SITE_NAME : null}
             />
-          ) : (
-            <ShieldX aria-hidden className="mt-0.5 size-5 shrink-0 text-destructive" />
-          )}
-          <div className="flex min-w-0 flex-col gap-1 text-sm">
-            <p className="font-semibold">
-              {allValid
-                ? `${total === 1 ? "The statement" : `All ${total} statements`} verified`
-                : total === 1
-                  ? "The statement did not verify"
-                  : `${total - valid} of ${total} statements did not verify`}
-              {outcome.receiptId ? (
-                <>
-                  {" "}
-                  for <span className="font-mono">{outcome.receiptId}</span>
-                </>
-              ) : null}
-            </p>
-            <p className="text-muted-foreground">
-              Checked in your browser against the{" "}
-              {outcome.keyCount === 1 ? "public key" : `${outcome.keyCount} public keys`} at{" "}
-              <NewTabLink
-                href={RECEIPT_KEYS_PATH}
-                icon
-                className="inline-flex items-center gap-0.5 rounded-sm font-mono text-xs underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [overflow-wrap:anywhere]"
-              >
-                {RECEIPT_KEYS_PATH}
-              </NewTabLink>
-              .
-            </p>
+            <VerdictLine summary={summary} keyCount={outcome.keyCount} />
             {outcome.source === "pasted" && outcome.receiptId ? (
               <button
                 type="button"
                 onClick={() => onLookUp(outcome.receiptId as string)}
-                className="w-fit rounded-sm text-left font-medium underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="w-fit rounded-sm text-left text-sm font-medium underline underline-offset-4 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"
               >
                 Look up BotFare&apos;s latest statements for this receipt
               </button>
             ) : null}
+          </section>
+          <div className="flex flex-col gap-6">
+            <ReceiptChecks checks={summary.checks} trusted={summary.trusted} />
+            <MoneySplitBar summary={summary} />
           </div>
         </div>
-      )}
+      </div>
 
-      {outcome.missing.length > 0 ? (
-        <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
-          {outcome.missing.includes("payment") ? (
-            <li>No payment statement. This receipt was settled before BotFare signed payments.</li>
-          ) : null}
-          {outcome.missing.includes("delivery") ? (
-            <li>No delivery statement yet. The site has not reported what it delivered.</li>
-          ) : null}
-        </ul>
+      {summary.trusted && summary.timeline.length > 0 ? (
+        <ReceiptTimeline items={summary.timeline} />
       ) : null}
 
-      {outcome.statements.map((checked) => (
-        <StatementCard key={checked.token} checked={checked} receiptId={outcome.receiptId} />
-      ))}
-    </>
+      <section aria-labelledby="statements-title" className="flex flex-col gap-3">
+        <div>
+          <h2 id="statements-title" className="text-lg font-bold">
+            Signed statements
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Every field BotFare signed, and the raw JWS your browser checked.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2">
+          {outcome.statements.map((checked) => (
+            <StatementCard
+              key={checked.token}
+              checked={checked}
+              receiptId={outcome.receiptId}
+              trusted={summary.trusted}
+            />
+          ))}
+          {summary.delivery ? <CheckYourCopy statement={summary.delivery} /> : null}
+        </div>
+        {outcome.missing.length > 0 ? (
+          <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
+            {outcome.missing.includes("payment") ? (
+              <li>
+                No payment statement. This receipt was settled before BotFare signed payments.
+              </li>
+            ) : null}
+            {outcome.missing.includes("delivery") ? (
+              <li>
+                No delivery statement for this receipt. The site has not reported what it sent.
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
+      </section>
+    </div>
   );
 }
