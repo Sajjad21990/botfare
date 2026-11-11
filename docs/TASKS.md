@@ -21,7 +21,7 @@
 | 4. Deploy to Render | Wed 11 (last build step) | ✅ Live | 6 / 6 |
 | 5. Submission | Thu 12 | 🔄 Texts drafted | 2 / 10 |
 
-**Overall: about 86% done** (67 of 78 items). Live at https://botfare-web.onrender.com. Next: the video, screenshots, repo public and the Devpost form.
+**Overall: about 87% done** (72 of 84 items). Live at https://botfare-web.onrender.com. Next: the video, screenshots, repo public and the Devpost form.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -142,6 +142,17 @@ Saffron & Salt, a recipe blog, replaces the coffee site Crema Notes. `pnpm seed`
 | ✅ | e2e on the recipe site: 2¢ ledger maths (wallet −20,000, publisher +19,000, BotFare +1,000), cookbook Apply 50¢ → 8¢ | `scripts/e2e.ts`; 30/30 on 3100/4100, 791 unit and DB tests |
 | ✅ | Docs: README, Devpost, video script (2-second holds on the Fare Court and Fare Advisor cards, the sourdough refund), protocol examples, Docker, MCP examples | |
 | ⏳ | 👤 Render: after the deploy, `BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed` and `pnpm seed:traffic --run-key recipes` in botfare-web's Shell | [README, Deploy](../README.md#deploy) |
+
+## Phase 3g: Polish from friends' feedback ✅ (11 Nov)
+
+| | Task | Notes |
+| --- | --- | --- |
+| ✅ | Plainer copy everywhere (no quoted titles, colon headlines or slogan pairs); Fare Court and Fare Advisor named right under the hero and in the header | Friends called the old copy "AI slop" and skipped the AI section |
+| ✅ | Marks for Fare Court (scales), Fare Advisor (rising line) and receipts (check seal), in the Admit-bot family | `components/brand` |
+| ✅ | How it works as an interactive 8-step flow that glides (eased panels, rail fills in, Play), smooth scrolling (Lenis) on public pages, a ticket-yellow highlighter cursor | Reduced motion respected; mouse and trackpad only for the cursor |
+| ✅ | `/verify` as a printed receipt (stamps only after the signature verifies, what was checked, 95/5 bar, timeline, folded details); nothing is checked until you press Verify, with the demo's sample receipt prefilled; a short signed-receipt section on the homepage | Wallet and agent links (`?receipt=`) still verify on load |
+| ✅ | Links to other sites and side trips open in a new tab | `/judge` tour steps too |
+| ⏳ | Animated How it works (four actors: agent, site, BotFare, PayPal; one caption per step) | Prototype approved for after the remaining tasks |
 
 ## Phase 4: Deploy to Render ⏳
 

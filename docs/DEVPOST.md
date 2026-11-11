@@ -39,7 +39,7 @@ BotFare is pay-per-request for AI agents, settled on **PayPal**:
 ## Accomplishments that we're proud of
 
 - A real sandbox top-up ($5.00, $0.66 fee) and a real Payouts batch ($11.72, `SUCCESS`).
-- 791 unit and database tests, plus 30 end-to-end checks on real processes.
+- 826 unit and database tests, plus 30 end-to-end checks on real processes.
 - Fare Court refunding a 2¢ stub page in 2 seconds on a free model.
 - Anyone can try it in 2 minutes from `/judge`.
 
