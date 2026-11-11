@@ -17,6 +17,8 @@ export const metadata: Metadata = {
 // Reads DEMO_PUBLIC_URL and the sandbox buyer at request time, not at build time.
 export const dynamic = "force-dynamic";
 
+const REPO_URL = "https://github.com/Sajjad21990/botfare";
+
 export default function JudgePage() {
   const commands = demoCommands(demoBaseUrl(process.env.DEMO_PUBLIC_URL));
   const buyer = judgeSandboxBuyer();
@@ -81,7 +83,11 @@ export default function JudgePage() {
               points={[
                 "Earnings from paid agent requests; Withdraw now is a real sandbox Payout",
                 "Fare Advisor: why agents passed on a page, with a one-click price change",
-                "Fare Court: disputes Claude sent to you, with its reasoning",
+                "Fare Court: disputes the AI judge sent to you, with its reasoning",
+                <>
+                  <InlineLink href="/publisher/analytics">Analytics (AG Studio)</InlineLink>:
+                  revenue by detection signal, cited vs paid
+                </>,
               ]}
             >
               <PersonaStepButton persona="publisher" href="/publisher" label="Open the publisher" />
@@ -92,7 +98,9 @@ export default function JudgePage() {
               description="Fund a wallet with PayPal and give agents keys with budgets."
               points={[
                 "Top up $5 with the PayPal button",
-                "Approve with the sandbox buyer below",
+                buyer
+                  ? "Approve with the sandbox buyer below"
+                  : "Approve with any PayPal sandbox personal account",
                 "Agent keys, caps and receipts",
               ]}
             >
@@ -106,6 +114,10 @@ export default function JudgePage() {
                 "Free price check before every purchase; buys or skips with a reason",
                 "Fare Court: a paid page that turns out to be a stub gets disputed and refunded",
                 "Answer with citations linked to receipts (they feed Fare Advisor)",
+                <>
+                  Verify sources: each citation&apos;s signed receipt checked in your browser, also
+                  at <InlineLink href="/verify">/verify</InlineLink>
+                </>,
               ]}
             >
               <PersonaStepButton persona="agentOwner" href="/agent" label="Run the agent" />
@@ -119,6 +131,12 @@ export default function JudgePage() {
               account.
             </p>
           )}
+          <p className="text-sm text-muted-foreground">
+            Check any receipt at <InlineLink href="/verify">/verify</InlineLink>, plug BotFare into
+            your own agent with the{" "}
+            <InlineLink href={`${REPO_URL}/tree/main/packages/mcp`}>MCP server</InlineLink>, or read
+            the <InlineLink href={REPO_URL}>source on GitHub</InlineLink>.
+          </p>
         </section>
 
         <section aria-labelledby="curl-title" className="space-y-4">
@@ -180,7 +198,7 @@ function Step({
   n: number;
   title: string;
   description: string;
-  points: string[];
+  points: ReactNode[];
   children: ReactNode;
 }) {
   return (
@@ -195,10 +213,11 @@ function Step({
         </CardHeader>
         <CardContent className="flex flex-1 flex-col gap-4">
           <ul className="flex-1 space-y-1.5 text-sm">
-            {points.map((point) => (
-              <li key={point} className="flex gap-2">
+            {points.map((point, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: a fixed list that never reorders
+              <li key={i} className="flex gap-2">
                 <span aria-hidden className="mt-2 size-1 shrink-0 rounded-full bg-foreground/40" />
-                {point}
+                <span>{point}</span>
               </li>
             ))}
           </ul>
@@ -206,6 +225,23 @@ function Step({
         </CardContent>
       </Card>
     </li>
+  );
+}
+
+/** An in-text link: same-site paths use Next's Link, others open as plain anchors. */
+function InlineLink({ href, children }: { href: string; children: ReactNode }) {
+  const className = "font-medium text-foreground underline underline-offset-4";
+  if (href.startsWith("/")) {
+    return (
+      <Link href={href} className={className}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <a href={href} className={className}>
+      {children}
+    </a>
   );
 }
 

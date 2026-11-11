@@ -362,6 +362,44 @@ describe("payout email and payouts API", () => {
     expect(synced.payouts[0]).toMatchObject({ id: payout.id, status: "success" });
     expect(getPayoutBatch).toHaveBeenCalledWith("PB-TEST-1");
   });
+
+  it("answers 503 paypal_not_configured without PayPal credentials, and the summary says so", async () => {
+    vi.stubEnv("PAYPAL_CLIENT_ID", "");
+    vi.stubEnv("PAYPAL_CLIENT_SECRET", "");
+    const publisher = await makePublisher(getDb());
+    signIn(publisher.owner);
+    await savePayoutEmail(json("PUT", "/x", { email: "crema@example.test" }));
+    await earn(publisher, 2, 60);
+    await matureEarnings(publisher);
+    expect(await (await summary()).json()).toMatchObject({
+      paypalConfigured: false,
+      availableMicros: 1_140_000,
+    });
+
+    const refused = await withdraw();
+    expect(refused.status).toBe(503);
+    expect(await refused.json()).toMatchObject({
+      error: "paypal_not_configured",
+      message: "PayPal is not configured on this server",
+    });
+    expect((await (await summary()).json()).availableMicros).toBe(1_140_000);
+    // Nothing open: Refresh status has nothing to ask PayPal.
+    expect(await (await syncPayouts()).json()).toMatchObject({ synced: 0 });
+
+    // A payout left open while PayPal worked cannot be refreshed once it is gone.
+    mockPayPal({
+      createPayoutBatch: vi.fn(async () => ({
+        batchId: "PB-TEST-2",
+        batchStatus: "PENDING" as const,
+      })),
+    });
+    expect((await (await summary()).json()).paypalConfigured).toBe(true);
+    expect((await withdraw()).status).toBe(201);
+    setPayPalForTests(null);
+    const sync = await syncPayouts();
+    expect(sync.status).toBe(503);
+    expect((await sync.json()).error).toBe("paypal_not_configured");
+  });
 });
 
 describe("PayPal webhook route", () => {

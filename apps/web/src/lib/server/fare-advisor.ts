@@ -553,12 +553,14 @@ export interface AdvisorModelClient {
 export interface AdvisorModel {
   client: AdvisorModelClient;
   model: string;
+  /** The provider's display name ("Anthropic", "Groq"...), shown next to recommendations. */
+  label?: string;
 }
 
 /** The server's default AI provider and model, or null when no provider is configured. */
 export async function defaultAdvisorModel(): Promise<AdvisorModel | null> {
   const ai = await resolveDefaultAi();
-  return ai ? { client: ai.client, model: ai.model } : null;
+  return ai ? { client: ai.client, model: ai.model, label: ai.label } : null;
 }
 
 /** Models that take the server-side refusal fallback (`fallbacks: "default"`). */
@@ -601,6 +603,8 @@ interface AiResult {
   message: string | null;
   dropped: number;
   generatedAt: string;
+  /** The provider that answered, when known. */
+  aiLabel: string | null;
 }
 
 function describeModelError(error: unknown): string {
@@ -653,6 +657,7 @@ export async function generateRecommendations(
     message,
     dropped: 0,
     generatedAt,
+    aiLabel: model.label ?? null,
   });
   const params = buildAdvisorParams(model.model, inputs);
   const reservation = budget().reserve(
@@ -688,7 +693,13 @@ export async function generateRecommendations(
   if (checked.dropped > 0) {
     console.info(`[advisor] ${inputs.site.id}: dropped ${checked.dropped} unsupported suggestions`);
   }
-  return { status: "ready", ...checked, message: null, generatedAt };
+  return {
+    status: "ready",
+    ...checked,
+    message: null,
+    generatedAt,
+    aiLabel: model.label ?? null,
+  };
 }
 
 /** Generates with the given model, or the server's default one. Never throws. */
@@ -704,6 +715,7 @@ async function generateWith(
       message: "No AI provider is configured.",
       dropped: 0,
       generatedAt: new Date().toISOString(),
+      aiLabel: null,
     };
   }
   return generateRecommendations(resolved, inputs);
@@ -785,6 +797,7 @@ export async function getAdvisor(
     recommendations: [] as AdvisorRecommendationView[],
     generatedAt: null as string | null,
     aiMessage: null as string | null,
+    aiLabel: null as string | null,
     dropped: 0,
   };
   if (model === null || !available) {
@@ -841,6 +854,7 @@ export async function getAdvisor(
     generatedAt: result.generatedAt,
     aiStatus: result.status,
     aiMessage: result.message,
+    aiLabel: result.aiLabel,
     dropped: result.dropped,
   };
 }

@@ -1,6 +1,7 @@
 import { listPayouts, OPEN_PAYOUT_STATUSES, syncPayoutBatch } from "@botfare/core";
 import { getDb } from "../../../../../lib/server/db";
-import { currentPayPal } from "../../../../../lib/server/paypal-test-hooks";
+import { jsonError } from "../../../../../lib/server/http";
+import { currentPayPal, paypalConfigured } from "../../../../../lib/server/paypal-test-hooks";
 import { NO_STORE, toPayoutView } from "../../../../../lib/server/publisher";
 import { requireApiUser } from "../../../../../lib/server/session";
 
@@ -11,7 +12,8 @@ const OPEN = new Set<string>(OPEN_PAYOUT_STATUSES);
 
 /**
  * "Refresh status": pulls the latest PayPal status for the signed-in publisher's open payouts
- * (one call per batch) and resubmits any batch PayPal never confirmed.
+ * (one call per batch) and resubmits any batch PayPal never confirmed. 503 when there are open
+ * payouts but no PayPal credentials.
  */
 export async function POST(): Promise<Response> {
   const auth = await requireApiUser();
@@ -21,6 +23,9 @@ export async function POST(): Promise<Response> {
   const batchKeys = [...new Set(own.filter((p) => OPEN.has(p.status)).map((p) => p.batchKey))];
   const errors: { batchKey: string; error: string }[] = [];
   if (batchKeys.length > 0) {
+    if (!paypalConfigured()) {
+      return jsonError(503, "paypal_not_configured", "PayPal is not configured on this server");
+    }
     const paypal = currentPayPal();
     for (const batchKey of batchKeys) {
       try {

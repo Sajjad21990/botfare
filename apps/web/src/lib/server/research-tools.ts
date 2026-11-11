@@ -57,6 +57,11 @@ export interface ResearchSite {
 
 /** Characters of page text returned to the model per purchase. */
 export const MAX_CONTENT_CHARS = 8_000;
+/**
+ * Page text per purchase on providers other than Anthropic, whose free tiers cap one request at a
+ * few thousand tokens (Groq: 8,000 per minute, history included).
+ */
+export const COMPACT_CONTENT_CHARS = 3_000;
 /** Bytes read from a catalog or a page before giving up. */
 export const MAX_FETCH_BYTES = 1_000_000;
 const MAX_EXCERPT_CHARS = 300;
@@ -317,6 +322,11 @@ export interface ResearchToolContext {
   answerId?: string;
   /** Waits between statement lookups while a delivery statement is missing (default DELIVERY_RETRY_MS). */
   deliveryRetryMs?: number[];
+  /**
+   * Characters of page text a buy returns (default MAX_CONTENT_CHARS). Only the model's copy is
+   * cut: disputes and the manifest use the delivered bytes.
+   */
+  maxPageChars?: number;
 }
 
 // --- Helpers --------------------------------------------------------------------------------------
@@ -555,20 +565,23 @@ export async function readTextLimited(response: Response, maxBytes = MAX_FETCH_B
 }
 
 /** Page text for the model: readable text from HTML, compact JSON from APIs. */
-export async function readableContent(response: Response): Promise<string> {
+export async function readableContent(
+  response: Response,
+  maxChars = MAX_CONTENT_CHARS,
+): Promise<string> {
   const body = await readTextLimited(response);
   const type = response.headers.get("content-type") ?? "";
   if (type.includes("json")) {
     try {
-      return truncate(JSON.stringify(JSON.parse(body)), MAX_CONTENT_CHARS);
+      return truncate(JSON.stringify(JSON.parse(body)), maxChars);
     } catch {
-      return truncate(body, MAX_CONTENT_CHARS);
+      return truncate(body, maxChars);
     }
   }
   if (type.includes("html") || /<html|<body|<article/i.test(body)) {
-    return truncate(htmlToText(body), MAX_CONTENT_CHARS);
+    return truncate(htmlToText(body), maxChars);
   }
-  return truncate(body.trim(), MAX_CONTENT_CHARS);
+  return truncate(body.trim(), maxChars);
 }
 
 // --- Catalogs -------------------------------------------------------------------------------------
@@ -1011,7 +1024,7 @@ async function buy(
     );
   }
 
-  const content = await readableContent(result.response);
+  const content = await readableContent(result.response, ctx.maxPageChars);
   if (!result.paid || !result.receiptId) {
     return {
       content: json({

@@ -84,7 +84,7 @@ interface ModelPickerProps {
   disabled: boolean;
 }
 
-/** Provider and model for the research agent: Claude by default, or any configured provider. */
+/** Provider and model for the research agent: the server's default, or any configured provider. */
 export function ModelPicker({ providers, value, onChange, disabled }: ModelPickerProps) {
   const id = useId();
   const current = providers.find((p) => p.provider === value.provider) ?? providers[0];
@@ -142,8 +142,7 @@ export function ModelPicker({ providers, value, onChange, disabled }: ModelPicke
         </Select>
       </div>
       <p className="text-xs text-muted-foreground">
-        Claude is the default. Free and smaller models can be weaker at tool use, so a run may stop
-        before it answers.
+        Free and smaller models can be weaker at tool use, so a run may stop before it answers.
       </p>
     </div>
   );

@@ -101,9 +101,9 @@ function AdvisorCard() {
         </div>
       </div>
       <figcaption className="mt-4 text-sm leading-relaxed text-muted-foreground">
-        Illustrative figures for the demo&apos;s premium roundup. With an Anthropic key, Claude
-        suggests the price; applying it reaches the middleware within 30 seconds, and an agent
-        capped at 10¢ can then buy the page.
+        Illustrative figures for the demo&apos;s premium roundup. With an AI provider key (Claude by
+        default), the AI suggests the price; applying it reaches the middleware within 30 seconds,
+        and an agent capped at 10¢ can then buy the page.
       </figcaption>
     </figure>
   );

@@ -34,7 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { api, errorText } from "./api";
+import { ApiError, api, errorText } from "./api";
 import {
   formatCents,
   formatClearsIn,
@@ -48,6 +48,15 @@ import type { PayoutStatusView, PayoutView, PublisherDashboard } from "./types";
 // ---------------------------------------------------------------------------------------------
 // Earnings and "Withdraw now"
 
+const PAYPAL_NOT_CONFIGURED =
+  "Payouts need PayPal on this server: set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET.";
+
+/** The toast for a failed payout call; a missing PayPal setup gets a clear fix. */
+function payoutErrorText(err: unknown): string {
+  if (err instanceof ApiError && err.code === "paypal_not_configured") return PAYPAL_NOT_CONFIGURED;
+  return errorText(err);
+}
+
 export function EarningsCard({
   data,
   onPayout,
@@ -60,13 +69,16 @@ export function EarningsCard({
   const cents = withdrawableCents(data.availableMicros);
   const clearing = data.clearingMicros > 0;
   const belowMinimum = cents < data.minimumPayoutCents;
-  const reason = !data.payoutEmail
-    ? "Add a PayPal payout email to withdraw."
-    : belowMinimum
-      ? `Payouts start at ${formatCents(data.minimumPayoutCents)}. You need ${formatCents(
-          data.minimumPayoutCents - cents,
-        )} more${clearing ? " available" : ""}.`
-      : null;
+  const reason =
+    data.paypalConfigured === false
+      ? PAYPAL_NOT_CONFIGURED
+      : !data.payoutEmail
+        ? "Add a PayPal payout email to withdraw."
+        : belowMinimum
+          ? `Payouts start at ${formatCents(data.minimumPayoutCents)}. You need ${formatCents(
+              data.minimumPayoutCents - cents,
+            )} more${clearing ? " available" : ""}.`
+          : null;
 
   async function withdraw() {
     setWithdrawing(true);
@@ -88,7 +100,7 @@ export function EarningsCard({
         });
       }
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(payoutErrorText(err));
     } finally {
       setWithdrawing(false);
     }
@@ -340,7 +352,7 @@ export function PayoutHistory({
       else if (result.synced === 0) toast.info("Every payout is already final.");
       else toast.success("Payout status refreshed from PayPal.");
     } catch (err) {
-      toast.error(errorText(err));
+      toast.error(payoutErrorText(err));
     } finally {
       setSyncing(false);
     }

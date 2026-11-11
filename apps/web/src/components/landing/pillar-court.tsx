@@ -75,7 +75,8 @@ function DisputeSlip() {
       </div>
       <figcaption className="mt-4 text-sm leading-relaxed text-muted-foreground">
         The demo case on the fictional Crema Notes: a 3¢ guide with a real preview, served to paying
-        agents as a subscribe wall. With an Anthropic key the 3¢ comes back in seconds.
+        agents as a subscribe wall. With an AI provider key (Claude by default) the 3¢ comes back in
+        seconds.
       </figcaption>
     </figure>
   );

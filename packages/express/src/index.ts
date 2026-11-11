@@ -227,7 +227,12 @@ export function botfare(options: BotFareOptions): RequestHandler {
       : undefined;
 
     // The SDK middleware answers 402/5xx itself and calls next() only for a verified payment.
-    await gate.charge(rule, req, res, next, { signal, browserPaywall, hooks });
+    await gate.charge(rule, req, res, next, {
+      signal,
+      browserPaywall,
+      hooks,
+      siteOrigin: config.origin,
+    });
   };
 }
 

@@ -14,6 +14,7 @@ import {
 import { z } from "zod";
 import type { PayoutView, PublisherDashboard, SiteView } from "../../components/publisher/types";
 import { jsonError } from "./http";
+import { paypalConfigured } from "./paypal-test-hooks";
 
 /** "Withdraw now" starts at $1.00. */
 export const MINIMUM_PAYOUT_CENTS = DEFAULT_PAYOUT_MINIMUM_CENTS;
@@ -74,6 +75,7 @@ export async function getPublisherDashboard(db: Db, userId: string): Promise<Pub
     payoutEmail: summary.payoutEmail,
     payoutEmailOnProfile: Boolean(user?.payoutEmail),
     minimumPayoutCents: MINIMUM_PAYOUT_CENTS,
+    paypalConfigured: paypalConfigured(),
     judgeMode: isDemoPersonaEmail(user?.email),
     payouts: summary.payouts.map(toPayoutView),
     sites: sites.map((site) => toSiteView(site, stats.get(site.id), user?.email)),

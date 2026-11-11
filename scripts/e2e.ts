@@ -14,9 +14,10 @@
  *   default) or `start` (next start on the last `pnpm --filter @botfare/web build`; use it when a
  *   next dev already runs on another port, since Next allows one dev server per app directory).
  * - E2E_VERBOSE=1 streams the child processes' logs.
- * - E2E_AI=1 (with ANTHROPIC_API_KEY in .env) keeps the key for the web app this run starts and
- *   adds an optional check that the AI judge refunds a stub. By default the web app starts without
- *   the key, so Fare Court's no-AI path (the publisher decides) is what the required checks cover.
+ * - E2E_AI=1 (with any AI provider key, or OLLAMA_BASE_URL, in .env) keeps the provider settings
+ *   for the web app this run starts and adds an optional check that the AI judge refunds a stub. By
+ *   default the web app starts with every provider setting blanked, so Fare Court's no-AI path
+ *   (the publisher decides) is what the required checks cover.
  *
  * The human-check step posts Cloudflare's dummy Turnstile token, so the demo calls Cloudflare's
  * real siteverify with the always-pass test secret: it needs network access.
@@ -85,20 +86,22 @@ const WEB_URL = `http://localhost:${WEB_PORT}`;
 const DEMO_URL = `http://localhost:${DEMO_PORT}`;
 const VERBOSE = process.env.E2E_VERBOSE === "1";
 /** Every AI provider setting, blanked for the web app this run starts unless E2E_AI is on. */
-const NO_AI_PROVIDERS = Object.fromEntries(
-  [
-    "ANTHROPIC_API_KEY",
-    "OPENAI_API_KEY",
-    "GEMINI_API_KEY",
-    "XAI_API_KEY",
-    "GROQ_API_KEY",
-    "OPENROUTER_API_KEY",
-    "OLLAMA_BASE_URL",
-  ].map((name) => [name, ""]),
-);
+const AI_PROVIDER_ENV = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "XAI_API_KEY",
+  "GROQ_API_KEY",
+  "OPENROUTER_API_KEY",
+  "OLLAMA_BASE_URL",
+];
+const NO_AI_PROVIDERS = Object.fromEntries(AI_PROVIDER_ENV.map((name) => [name, ""]));
 
-/** Start the web app with ANTHROPIC_API_KEY and run the optional AI judge check (never required). */
-const E2E_AI = process.env.E2E_AI === "1" && Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+/**
+ * Start the web app with its AI provider settings and run the optional AI judge check (never
+ * required). Set in main() after .env is loaded, since the keys usually live there.
+ */
+let E2E_AI = false;
 /** True when this run started the web app (so it knows whether an AI judge is configured). */
 let WEB_STARTED_BY_E2E = false;
 
@@ -375,6 +378,7 @@ const PRIVATE_JWK_MEMBERS = ["d", "p", "q", "dp", "dq", "qi", "k", "oth"];
 
 async function main(): Promise<void> {
   loadRootEnv();
+  E2E_AI = process.env.E2E_AI === "1" && AI_PROVIDER_ENV.some((name) => process.env[name]?.trim());
   const databaseUrl = requireEnv("DATABASE_URL");
   const siteId = requireEnv("BOTFARE_SITE_ID");
   const siteSecret = requireEnv("BOTFARE_SITE_SECRET");
@@ -1318,7 +1322,7 @@ async function fareChecks(ctx: FareContext): Promise<void> {
       return `${outcome.verdict?.confidence} sure: ${outcome.verdict?.rationale.slice(0, 80)}`;
     });
   } else {
-    console.log("SKIP Optional AI judge check (set ANTHROPIC_API_KEY and E2E_AI=1 to run it)");
+    console.log("SKIP Optional AI judge check (set any AI provider key and E2E_AI=1 to run it)");
   }
 
   await check("A decline note and a citation report are recorded", async () => {

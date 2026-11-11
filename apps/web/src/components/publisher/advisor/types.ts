@@ -106,6 +106,8 @@ export interface AdvisorResponse {
   aiAvailable: boolean;
   aiStatus: AdvisorAiStatus;
   aiMessage: string | null;
+  /** The AI provider that wrote the recommendations ("Anthropic", "Groq"...), when known. */
+  aiLabel?: string | null;
   /** Recommendations the model returned that BotFare's checks discarded. */
   dropped: number;
 }

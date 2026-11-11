@@ -11,6 +11,7 @@ import {
   type ResearchEvent,
 } from "./research-events";
 import {
+  COMPACT_CONTENT_CHARS,
   createRunState,
   RESEARCH_TOOLS,
   type ResearchAgent,
@@ -40,6 +41,9 @@ export const RUN_TIMEOUT_MS = 100_000;
 /** Characters of streamed reasoning or text shown per model turn. */
 const MAX_THINKING_CHARS_PER_TURN = 600;
 const MAX_TEXT_CHARS_PER_TURN = 1_200;
+/** Page text kept in the history once the model has answered the buy (providers other than Anthropic). */
+export const READ_PAGE_EXCERPT_CHARS = 1_200;
+export const READ_PAGE_NOTE = "page text shortened after you read it; cite by receipt";
 
 export type ResearchStreamParams = Omit<
   Anthropic.Beta.Messages.MessageCreateParamsNonStreaming,
@@ -150,7 +154,26 @@ function weigh(usage: Anthropic.Beta.Messages.BetaUsage): number {
   return Math.ceil(usage.input_tokens + written * 1.25 + cached * 0.1 + usage.output_tokens * 5);
 }
 
-function describeModelError(error: unknown): { code: string; message: string } {
+/**
+ * The provider refused the request as too large for its limits: HTTP 413 (Anthropic's
+ * request_too_large, Groq's free-tier tokens-per-minute ceiling) or a "Request too large" message
+ * on another status (OpenAI answers 429).
+ */
+function isRequestTooLarge(error: unknown): boolean {
+  return (
+    error instanceof Anthropic.APIError &&
+    (error.status === 413 || /request_too_large|request too large/i.test(error.message))
+  );
+}
+
+export function describeModelError(error: unknown): { code: string; message: string } {
+  if (isRequestTooLarge(error)) {
+    return {
+      code: "ai_request_too_large",
+      message:
+        "This model's free tier can't fit the pages bought so far. Pick another model or ask a narrower question.",
+    };
+  }
   if (error instanceof Anthropic.AuthenticationError) {
     return { code: "ai_auth", message: "The AI provider rejected the API key." };
   }
@@ -215,6 +238,10 @@ export async function runResearch(
     const onWire = wireListener(state, emit);
     const agent = deps.createAgent({ maxPerRequestCents: MAX_PER_REQUEST_CENTS, onWire });
     const capped = new Map<number, ResearchAgent>();
+    // Free tiers of other providers cap one request at a few thousand tokens: buys return less
+    // page text and pages the model has read shrink to an excerpt. Claude keeps the full text (and
+    // an unchanged, cacheable history).
+    const compactPages = (deps.provider ?? "anthropic") !== "anthropic";
     const ctx: ResearchToolContext = {
       state,
       sites: await deps.loadSites(),
@@ -231,6 +258,7 @@ export async function runResearch(
       emit,
       signal,
       answerId: runId.slice(0, 64),
+      ...(compactPages ? { maxPageChars: COMPACT_CONTENT_CHARS } : {}),
     };
 
     emit({
@@ -255,6 +283,7 @@ export async function runResearch(
     let nudged = false;
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
+      if (compactPages) compactReadPages(messages);
       const message = await streamTurn(deps, messages, emit, signal);
       outputTokens += message.usage.output_tokens;
       weightedTokens += weigh(message.usage);
@@ -415,6 +444,49 @@ async function streamTurn(
       console.error("[research] unparseable tool input, re-issuing the turn");
     }
   }
+}
+
+/**
+ * Shrinks the page text of buy results the model has already answered (every message but the
+ * last) to an excerpt with a note; receipt IDs and the rest of each result stay. Only the model's
+ * history changes: disputes send the delivered bytes kept in the run state. Idempotent.
+ */
+export function compactReadPages(messages: MessageParam[]): void {
+  const buys = new Set<string>();
+  for (const message of messages) {
+    if (message.role !== "assistant" || typeof message.content === "string") continue;
+    for (const block of message.content) {
+      if (block.type === "tool_use" && block.name === "buy") buys.add(block.id);
+    }
+  }
+  for (const message of messages.slice(0, -1)) {
+    if (message.role !== "user" || typeof message.content === "string") continue;
+    message.content = message.content.map((block) =>
+      block.type === "tool_result" &&
+      buys.has(block.tool_use_id) &&
+      typeof block.content === "string"
+        ? { ...block, content: compactPageResult(block.content) }
+        : block,
+    );
+  }
+}
+
+function compactPageResult(content: string): string {
+  let result: Record<string, unknown>;
+  try {
+    result = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return content;
+  }
+  const text = result?.text;
+  if (typeof text !== "string" || result.shortened || text.length <= READ_PAGE_EXCERPT_CHARS) {
+    return content;
+  }
+  return JSON.stringify({
+    ...result,
+    text: `${text.slice(0, READ_PAGE_EXCERPT_CHARS).trimEnd()} …`,
+    shortened: READ_PAGE_NOTE,
+  });
 }
 
 function errorResult(toolUseId: string, message: string): ToolResultBlockParam {

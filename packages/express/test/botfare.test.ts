@@ -102,6 +102,24 @@ describe("botfare() with BotFare up", () => {
     });
   });
 
+  it("signs the registered origin behind a proxy, and only that one", async () => {
+    // siteConfig() registers http://brewlab.test; the request itself reaches 127.0.0.1.
+    const proxied = await agent.fetch(`${site.url}/articles/burr-basics`, {
+      headers: { "x-forwarded-host": "brewlab.test", "x-forwarded-proto": "http" },
+    });
+    const required = decodePaymentRequiredHeader(proxied.headers.get("payment-required") ?? "");
+    expect(required.resource.url).toBe("http://brewlab.test/articles/burr-basics");
+    expect(required.accepts[0]?.extra?.botfareResource).toBe(
+      "http://brewlab.test/articles/burr-basics",
+    );
+
+    const forged = await agent.fetch(`${site.url}/articles/burr-basics`, {
+      headers: { "x-forwarded-host": "premium.example" },
+    });
+    const ignored = decodePaymentRequiredHeader(forged.headers.get("payment-required") ?? "");
+    expect(ignored.accepts[0]?.extra?.botfareResource).toBe(`${site.url}/articles/burr-basics`);
+  });
+
   it("settles with the URL it served, whatever resource the agent claims", async () => {
     // A modified agent pays for the cheap endpoint but claims a premium page in its payload.
     const forging: typeof fetch = async (input, init) => {

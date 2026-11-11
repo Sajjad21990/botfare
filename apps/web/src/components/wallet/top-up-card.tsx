@@ -48,7 +48,7 @@ async function createOrder(amountCents: TopUpCents): Promise<{ orderId: string }
  */
 export function TopUpCard({ clientId }: { clientId: string | null }) {
   const router = useRouter();
-  const [amount, setAmount] = useState<TopUpCents>(1000);
+  const [amount, setAmount] = useState<TopUpCents>(500);
   const [sdk, setSdk] = useState<SdkState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [open, setOpen] = useState(false);

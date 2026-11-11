@@ -115,8 +115,8 @@ export function ResearchView() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Research agent</h1>
         <p className="text-sm text-muted-foreground">
-          An AI agent (Claude by default) with a BotFare key and a budget. It pays per page over
-          x402, settled from a PayPal-funded wallet, and shows its work.
+          An AI agent with a BotFare key and a budget. It pays per page over x402, settled from a
+          PayPal-funded wallet, and shows its work.
         </p>
       </div>
 

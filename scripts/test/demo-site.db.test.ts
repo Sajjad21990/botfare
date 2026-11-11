@@ -20,6 +20,15 @@ describe("demoSiteOrigin", () => {
     expect(demoSiteOrigin({ DEMO_ORIGIN: "" })).toBe(DEFAULT_DEMO_ORIGIN);
     expect(demoSiteOrigin({})).toBe(DEFAULT_DEMO_ORIGIN);
   });
+
+  it("falls back to DEMO_PUBLIC_URL's origin (botfare-web on Render), ignoring invalid URLs", () => {
+    expect(demoSiteOrigin({ DEMO_PUBLIC_URL: `${DEPLOYED}/articles?x=1` })).toBe(DEPLOYED);
+    expect(
+      demoSiteOrigin({ DEMO_ORIGIN: "http://demo.test", DEMO_PUBLIC_URL: `${DEPLOYED}/` }),
+    ).toBe("http://demo.test");
+    expect(demoSiteOrigin({ DEMO_PUBLIC_URL: "not a url" })).toBe(DEFAULT_DEMO_ORIGIN);
+    expect(demoSiteOrigin({ DEMO_PUBLIC_URL: " " })).toBe(DEFAULT_DEMO_ORIGIN);
+  });
 });
 
 describe("ensureDemoSite", () => {

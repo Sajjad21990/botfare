@@ -138,17 +138,24 @@ export class PaymentGate {
 
   /**
    * Runs the x402 flow for one request: 402, or verify → `next()` → settle. `signal` goes into
-   * the requirements; `browserPaywall` replaces the plain HTML paywall (the human check).
+   * the requirements; `browserPaywall` replaces the plain HTML paywall (the human check);
+   * `siteOrigin` lets a matching X-Forwarded-Host name the signed resource (see `resourceUrl`).
    */
   async charge(
     rule: PricingRule,
     req: Request,
     res: Response,
     next: NextFunction,
-    charge: { signal: DetectionSignal; browserPaywall?: PaywallProvider; hooks?: ChargeHooks },
+    charge: {
+      signal: DetectionSignal;
+      browserPaywall?: PaywallProvider;
+      hooks?: ChargeHooks;
+      /** The site's registered origin (site config), the only forwarded origin trusted. */
+      siteOrigin?: string;
+    },
   ): Promise<void> {
     const preview = await this.previewFor(req);
-    const route = this.routeFor(rule, charge.signal, preview, resourceUrl(req));
+    const route = this.routeFor(rule, charge.signal, preview, resourceUrl(req, charge.siteOrigin));
     const onOfferShown = charge.hooks?.onOfferShown;
     if (onOfferShown) {
       res.once("finish", () => {
@@ -217,12 +224,47 @@ export class PaymentGate {
   }
 }
 
+/** What `resourceUrl` reads from a request (Express `Request` satisfies it). */
+export interface ResourceRequest {
+  /** `http` or `https` (Express `req.protocol`, which honours `trust proxy`). */
+  protocol: string;
+  originalUrl: string;
+  get(name: string): string | undefined;
+}
+
 /**
- * The URL being served, built exactly as `@x402/express` builds a 402's `resource.url`
- * (`req.protocol`, the Host header, `req.originalUrl`), so honest agents cite the same string.
+ * The URL being served, built as `@x402/express` builds a 402's `resource.url` (`req.protocol`,
+ * the Host header, `req.originalUrl`), so honest agents cite the same string.
+ *
+ * Behind a reverse proxy the Host header is the internal one (the judge Docker stack fetches the
+ * demo at `http://demo:4000` with `X-Forwarded-Host: localhost:4300`). The first X-Forwarded-Host
+ * (with X-Forwarded-Proto, else `req.protocol`) is used instead only when it names exactly the
+ * site's registered origin, so a client can never get a payment statement signed for a host of
+ * its choosing.
  */
-export function resourceUrl(req: Request): string {
-  return `${req.protocol}://${req.headers.host}${req.originalUrl}`;
+export function resourceUrl(req: ResourceRequest, siteOrigin?: string): string {
+  const forwardedHost = firstValue(req.get("x-forwarded-host"));
+  if (forwardedHost && siteOrigin) {
+    const proto = firstValue(req.get("x-forwarded-proto")) ?? req.protocol;
+    const forwarded = originOf(`${proto}://${forwardedHost}`);
+    if (forwarded && forwarded === originOf(siteOrigin)) return `${forwarded}${req.originalUrl}`;
+  }
+  return `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+}
+
+/** First entry of a comma-separated forwarding header, trimmed; undefined when empty. */
+function firstValue(header: string | undefined): string | undefined {
+  return header?.split(",")[0]?.trim() || undefined;
+}
+
+/** The URL's origin, or undefined when it does not parse to one (e.g. an opaque `null` origin). */
+function originOf(url: string): string | undefined {
+  try {
+    const { origin } = new URL(url);
+    return origin === "null" ? undefined : origin;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

@@ -254,7 +254,7 @@ function FunnelTable({ rules }: { rules: RuleFunnel[] }) {
 
 function RecommendationsSkeleton() {
   return (
-    <div className="space-y-3" role="status" aria-busy="true" aria-label="Asking Claude">
+    <div className="space-y-3" role="status" aria-busy="true" aria-label="Asking the AI">
       {[0, 1].map((i) => (
         <div key={i} className="space-y-2 rounded-lg border p-4">
           <Skeleton className="h-4 w-24" />
@@ -281,10 +281,10 @@ function Recommendations({
     return (
       <Alert>
         <KeyRound />
-        <AlertTitle>AI recommendations need an Anthropic key</AlertTitle>
+        <AlertTitle>AI recommendations need an AI provider key</AlertTitle>
         <AlertDescription>
-          Set ANTHROPIC_API_KEY on the server to get price, preview and audience suggestions. The
-          funnel below works without it.
+          {data.aiMessage ?? "Set an AI provider key on the server."} The funnel below works without
+          it.
         </AlertDescription>
       </Alert>
     );
@@ -314,7 +314,7 @@ function Recommendations({
   if (data.recommendations.length === 0) {
     return (
       <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
-        Claude found nothing worth changing yet. Your prices match what agents do.
+        The AI found nothing worth changing yet. Your prices match what agents do.
       </p>
     );
   }
@@ -331,7 +331,7 @@ function Recommendations({
 
 /**
  * "Fare Advisor" on /publisher: per pricing rule, offers → paid → cited, declines and disputes,
- * why agents did not buy, and Claude's checked recommendations with one-click Apply.
+ * why agents did not buy, and the AI's checked recommendations with one-click Apply.
  */
 export function FareAdvisorCard({
   sites,
@@ -498,7 +498,7 @@ export function FareAdvisorCard({
                 {data?.aiAvailable && data.generatedAt && !loadingAi && (
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
                     {loading && <Loader2 className="size-3 animate-spin" />}
-                    Claude · checked by BotFare
+                    {data.aiLabel ?? "AI"} · checked by BotFare
                   </span>
                 )}
               </div>

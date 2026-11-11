@@ -66,6 +66,8 @@ export interface PublisherDashboard {
   /** True when payoutEmail is set on the user, not inherited from a site. */
   payoutEmailOnProfile: boolean;
   minimumPayoutCents: number;
+  /** False when the server has no PayPal credentials, so Withdraw now cannot work. */
+  paypalConfigured?: boolean;
   /** Signed in as a shared demo persona: the payout email is fixed. */
   judgeMode: boolean;
   payouts: PayoutView[];

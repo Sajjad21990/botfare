@@ -105,6 +105,16 @@ async function reusableAgentKey(db: Db, owner: User): Promise<AgentKey | null> {
   });
 }
 
+/** True for a URL on this machine (or one that does not parse), i.e. not a deployed BotFare. */
+function isLocalUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return ["localhost", "127.0.0.1", "[::1]", "0.0.0.0"].includes(hostname);
+  } catch {
+    return true;
+  }
+}
+
 async function main(): Promise<void> {
   const { values: flags } = parseArgs({
     options: {
@@ -117,6 +127,11 @@ async function main(): Promise<void> {
   const botfareUrl = process.env.BOTFARE_URL?.trim() || DEFAULT_BOTFARE_URL;
   const payoutEmail = process.env.PUBLISHER_PAYPAL_EMAIL?.trim() || null;
   const origin = demoSiteOrigin();
+  if (process.env.RENDER === "true" && isLocalUrl(botfareUrl)) {
+    console.warn(
+      `WARNING BOTFARE_URL is ${process.env.BOTFARE_URL?.trim() ? botfareUrl : "unset"} on Render. Set it to botfare-web's public https URL before seeding: signed receipt statements carry it as their issuer forever.`,
+    );
+  }
 
   await migrate(databaseUrl);
   console.log("Migrations applied");
@@ -205,7 +220,9 @@ async function main(): Promise<void> {
       console.log("\nFor botfare-demo's environment on Render (Environment > Edit):");
       console.log(`BOTFARE_SITE_ID=${siteId}`);
       console.log(`BOTFARE_SITE_SECRET=${siteSecret}`);
-      console.log("For the agent's .env on your machine:");
+      console.log(
+        "For botfare-web's environment on Render (it powers /agent), and optionally a local .env for the SDK or MCP server:",
+      );
       console.log(`BOTFARE_AGENT_KEY=${agentKey}`);
     }
   } finally {

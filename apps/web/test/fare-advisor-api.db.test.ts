@@ -104,6 +104,7 @@ function scriptedModel() {
   const calls: AdvisorModelParams[] = [];
   const model: AdvisorModel = {
     model: "claude-sonnet-5-5",
+    label: "Anthropic",
     client: {
       beta: {
         messages: {
@@ -240,6 +241,7 @@ describe("getAdvisor with a model", () => {
 
     const generated = await getAdvisor(getDb(), { ...options, ai: true });
     expect(generated?.aiStatus).toBe("ready");
+    expect(generated?.aiLabel).toBe("Anthropic");
     expect(generated?.dropped).toBe(1);
     expect(generated?.recommendations.map((r) => [r.kind, r.suggestedPriceCents])).toEqual([
       ["price", 8],

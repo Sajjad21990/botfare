@@ -15,9 +15,24 @@ import { freePaths, pricing, SITE_NAME } from "../../apps/demo/src/pricing";
 
 export const DEFAULT_DEMO_ORIGIN = "http://localhost:4000";
 
-/** The demo's public origin: DEMO_ORIGIN (the deployed botfare-demo URL) or the local default. */
+/**
+ * The demo's public origin: DEMO_ORIGIN (the deployed botfare-demo URL), else the origin of
+ * DEMO_PUBLIC_URL (what botfare-web's Shell on Render has), else the local default. Without the
+ * second step, rerunning the seed on Render would move Crema Notes back to localhost.
+ */
 export function demoSiteOrigin(env: NodeJS.ProcessEnv = process.env): string {
-  return env.DEMO_ORIGIN?.trim() || DEFAULT_DEMO_ORIGIN;
+  const explicit = env.DEMO_ORIGIN?.trim();
+  if (explicit) return explicit;
+  const publicUrl = env.DEMO_PUBLIC_URL?.trim();
+  if (publicUrl) {
+    try {
+      const { origin } = new URL(publicUrl);
+      if (origin !== "null") return origin;
+    } catch {
+      // Not a URL: fall through to the local default.
+    }
+  }
+  return DEFAULT_DEMO_ORIGIN;
 }
 
 export interface EnsureDemoSiteInput {

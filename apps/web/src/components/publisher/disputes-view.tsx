@@ -210,7 +210,7 @@ function PolicyStrip() {
     {
       icon: Bot,
       title: "AI decides confident cases",
-      text: "Claude compares what you declared with what you delivered. At 80% confidence or more it refunds or closes the dispute instantly.",
+      text: "The AI judge (Claude by default) compares what you declared with what you delivered. At 80% confidence or more it refunds or closes the dispute instantly.",
     },
     {
       icon: UserCheck,

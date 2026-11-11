@@ -2,6 +2,8 @@ import { cn } from "cn";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 
+const REPO_URL = "https://github.com/Sajjad21990/botfare";
+
 export function SiteFooter() {
   return (
     <footer>
@@ -33,7 +35,17 @@ export function SiteFooter() {
         </div>
         <div className="mt-16 flex flex-col gap-2 border-t pt-6 text-sm text-muted-foreground sm:flex-row sm:justify-between">
           <p>BotFare runs in the PayPal sandbox only. No real money moves.</p>
-          <p>Built for the PayPal AI Hackathon, November 2026. MIT licensed.</p>
+          <p>
+            Built for the PayPal AI Hackathon, November 2026.{" "}
+            <a href={REPO_URL} className="underline underline-offset-4 hover:text-foreground">
+              MIT licensed
+            </a>
+            {" · "}
+            <a href={REPO_URL} className="underline underline-offset-4 hover:text-foreground">
+              Source
+            </a>
+            .
+          </p>
         </div>
       </div>
     </footer>
