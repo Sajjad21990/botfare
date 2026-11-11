@@ -14,9 +14,9 @@ import {
 import { formatFare } from "./format";
 
 export const SUGGESTED_QUESTIONS = [
-  "Which home grinder under $200 should I buy, and how do I dial in espresso with it?",
-  "How do burr grinders differ, and does burr shape matter for pour-over?",
-  "What dose, yield and grind should I start with for an 18 g espresso shot?",
+  "How do I make a weeknight dal that freezes well?",
+  "What's the trick to really crispy roast potatoes?",
+  "How do I start a sourdough starter?",
 ];
 
 interface QuestionCardProps {
@@ -61,7 +61,7 @@ export function QuestionCard(props: QuestionCardProps) {
               value={props.question}
               maxLength={MAX_QUESTION_CHARS}
               rows={3}
-              placeholder="Ask something the coffee sites on BotFare can answer"
+              placeholder="Ask a cooking question the sites on BotFare can answer"
               disabled={props.running}
               onChange={(event) => props.onQuestionChange(event.target.value)}
               onKeyDown={(event) => {

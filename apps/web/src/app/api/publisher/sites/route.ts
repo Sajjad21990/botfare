@@ -15,7 +15,7 @@ const createSiteSchema = z.object({
     .trim()
     .refine(
       (url) => URL.canParse(url) && /^https?:$/.test(new URL(url).protocol),
-      "Enter the site's http or https address, e.g. https://crema.example",
+      "Enter the site's http or https address, e.g. https://saffron-and-salt.example",
     ),
   payoutEmail: z
     .union([z.literal(""), z.email("Enter a valid PayPal email")])

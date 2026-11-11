@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Wed 11 Nov 2026 (final pre-deploy audit: 5 auditors and verifiers; confirmed findings fixed, incl. the Groq 413 on the default question and Verify sources in the Docker stack; Devpost text and video script drafted) · previously Mon 9 Nov, 10:50 am IST (Phase 3d)
+**Last updated:** Wed 11 Nov 2026 (Phase 3f: the demo site becomes Saffron & Salt, a recipe blog) · earlier Wed 11 Nov (final pre-deploy audit: 5 auditors and verifiers; confirmed findings fixed, incl. the Groq 413 on the default question and Verify sources in the Docker stack; Devpost text and video script drafted) · previously Mon 9 Nov, 10:50 am IST (Phase 3d)
 
 ## Overview
 
@@ -17,10 +17,11 @@
 | 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 8 / 8 |
 | 3c. Signed receipts (proof of payment, delivery, sourcing) | Mon 9 | ✅ Done (a day early) | 5 / 5 |
 | 3d. Payout hold and any-model AI | Mon 9 | ✅ Done | 2 / 2 |
+| 3f. Recipe demo site | Wed 11 | ✅ Built; Render migration needs you | 6 / 7 |
 | 4. Deploy to Render | Wed 11 (last build step) | ✅ Live | 6 / 6 |
 | 5. Submission | Thu 12 | 🔄 Texts drafted | 2 / 10 |
 
-**Overall: about 86% done** (61 of 71 items). Live at https://botfare-web.onrender.com. Next: the video, screenshots, repo public and the Devpost form.
+**Overall: about 86% done** (67 of 78 items). Live at https://botfare-web.onrender.com. Next: the video, screenshots, repo public and the Devpost form.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -128,6 +129,20 @@ Why: everything else proves agents and publishers are honest; signed receipts le
 | ✅ | Brand: Admit-bot logo (a bot face on an admit-one ticket), "Ticket booth" palette (cream paper, ticket yellow, warm ink, red stamp), Bricolage Grotesque + Inter + JetBrains Mono; AG Studio theme to match; favicon and Open Graph image | Owner picked logo 1, palette A and font pairing 1 |
 | ✅ | Landing in five short sections; /judge in three plain steps (agent first); /signin persona cards; publisher shows the site and its one line first, money in cents; grouped nav with a Sandbox chip; README 60-second intro and quick start | Deep detail lives in the README; no npm claims (install from GitHub); AI wording matches the Groq deploy. 747 tests, e2e 30/30, live on Render |
 
+## Phase 3f: Recipe demo site ✅ (11 Nov)
+
+Saffron & Salt, a recipe blog, replaces the coffee site Crema Notes. `pnpm seed` renames it in place, so the site ID, secret and history stay.
+
+| | Task | Notes |
+| --- | --- | --- |
+| ✅ | Contract: `DEMO_SITE_NAME` Saffron & Salt, new publisher persona email, `LEGACY_DEMO_*` for the rename, prices per section (recipes 2¢, techniques 5¢, meal plans 8¢, cookbook 50¢, `/api/nutrition` 1¢ for everyone), section indexes free | `packages/contracts/src/index.ts` |
+| ✅ | Demo site: 8 original pages in four sections, recipe-blog look, nutrition API (replaces brew-ratio), sourdough starter stub for Fare Court | `apps/demo` |
+| ✅ | `pnpm seed` renames the old site and publisher in place; `seed:traffic` tells the recipe story (cookbook chapter declined at 50¢, dal and freezing guide cited, 4 sourdough disputes: 3 refunded, 1 for the publisher) | `scripts/seed.ts`, `scripts/traffic.ts` |
+| ✅ | App copy: 2¢ hero ticket, three research questions (dal, crispy potatoes, sourdough), `/judge` commands, Fare Court card | `apps/web` |
+| ✅ | e2e on the recipe site: 2¢ ledger maths (wallet −20,000, publisher +19,000, BotFare +1,000), cookbook Apply 50¢ → 8¢ | `scripts/e2e.ts`; 30/30 on 3100/4100, 791 unit and DB tests |
+| ✅ | Docs: README, Devpost, video script (2-second holds on the Fare Court and Fare Advisor cards, the sourdough refund), protocol examples, Docker, MCP examples | |
+| ⏳ | 👤 Render: after the deploy, `BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed` and `pnpm seed:traffic --run-key recipes` in botfare-web's Shell | [README, Deploy](../README.md#deploy) |
+
 ## Phase 4: Deploy to Render ⏳
 
 Deploying is the last build step, by choice. It must happen by Wednesday night so the live demo can be checked before recording.
@@ -162,7 +177,7 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | --- | --- | --- |
 | 💡 | **Allowance**: "Give your AI agent an allowance, not your wallet." Plain-English rules compiled by AI and enforced in code, `buy_product` over MCP, phone approvals, an intent check against prompt injection, PayPal Vault for a saved PayPal account, and an authorize-then-capture hold with an Undo (void) window | Decided 9 Nov: later. Nuvei survey (1,000 US consumers): 56% would never let AI spend without approval, 76% fear fraud, 61% want spending limits. The "84% want to reverse" figure was not found; don't use it without a source |
 | 💡 | Plain-English allowance on BotFare agent keys (Allowance-lite) | Smaller first step of Allowance |
-| 💡 | Publishers sell answers, not pages ("Ask Crema Notes", per cited answer) | |
+| 💡 | Publishers sell answers, not pages ("Ask Saffron & Salt", per cited answer) | |
 | 💡 | Paid MCP tools through BotFare (`@x402/mcp`) | |
 | 💡 | x402 Bazaar discovery search: "every result has a price" | Needs more than one publisher to look real |
 

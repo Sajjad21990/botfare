@@ -1,4 +1,4 @@
-# Render Blueprint for BotFare: the BotFare app, the Crema Notes demo publisher, the daily payouts
+# Render Blueprint for BotFare: the BotFare app, the Saffron & Salt demo publisher, the daily payouts
 # cron job, the weekly demo refresh cron job and Postgres 17.
 # Paid plans so nothing sleeps or expires before judging ends. Node comes from .node-version, which
 # pins Node 24 LTS: Node 25+ no longer bundles Corepack, and the build commands run `corepack enable`
@@ -135,7 +135,7 @@ services:
         sync: false
       - key: BOTFARE_SITE_SECRET
         sync: false
-      # Optional: Cloudflare Turnstile secret for the human check. Empty is fine while Crema Notes
+      # Optional: Cloudflare Turnstile secret for the human check. Empty is fine while Saffron & Salt
       # uses Cloudflare's test site key: botfare() always uses Cloudflare's always-pass test secret
       # for it. Set a real secret only together with that widget's site key in the dashboard.
       - key: TURNSTILE_SECRET_KEY
@@ -170,7 +170,7 @@ services:
   # Weekly demo refresh: a new batch of seeded traffic and the Fare Court and Fare Advisor story,
   # anchored to the run, so the dashboards and the Advisor's 14-day window never run dry while
   # judging lasts. One run key per ISO week (`seed:traffic --weekly`), so a rerun changes nothing.
-  # Demo money only (`seed` postings); it needs the personas and Crema Notes from `pnpm seed`.
+  # Demo money only (`seed` postings); it needs the personas and Saffron & Salt from `pnpm seed`.
   - type: cron
     name: botfare-demo-refresh
     runtime: node

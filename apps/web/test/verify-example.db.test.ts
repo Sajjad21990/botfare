@@ -1,10 +1,10 @@
 /**
- * /verify's example receipt: the latest clean, attested purchase on the demo site (Crema Notes,
+ * /verify's example receipt: the latest clean, attested purchase on the demo site (Saffron & Salt,
  * owned by the publisher persona). Each test uses its own publisher email, so receipts other test
  * files leave in botfare_test never match. `ledger.charge` takes any resource URL, so paths that
- * the real demo would never settle (a bare /api/brew-ratio) still work as fixtures.
+ * the real demo would never settle (a bare /api/nutrition) still work as fixtures.
  */
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { DEMO_SITE_NAME } from "@botfare/contracts";
 import { contentDigestSha256 } from "@botfare/contracts/fare";
 import {
@@ -34,8 +34,8 @@ import { makeAgent, useTestDatabase } from "./helpers";
 // Server modules run outside Next: no "server-only" guard.
 vi.mock("server-only", () => ({}));
 
-const ORIGIN = "https://crema.example";
-const ARTICLE = "<h1>Burr grinders</h1><p>Conical and flat burrs.</p>";
+const ORIGIN = "https://saffron-and-salt.example";
+const ARTICLE = "<h1>Red lentil dal</h1><p>Rinse the lentils, then simmer for 20 minutes.</p>";
 
 let keyring: ReceiptKeyring;
 let kids: string[];
@@ -73,7 +73,7 @@ async function demoWorld(name = DEMO_SITE_NAME) {
     ownerUserId: publisher.id,
     name,
     origin: ORIGIN,
-    pricing: [{ pattern: "/articles/*", priceCents: 3 }],
+    pricing: [{ pattern: "/recipes/*", priceCents: 2 }],
   });
   const agent = await makeAgent(db, 200);
   // Receipts a second apart, so "latest" never depends on timing.
@@ -90,7 +90,7 @@ async function demoWorld(name = DEMO_SITE_NAME) {
       keyId: agent.key.id,
       payTo: siteId,
       nonce: crypto.randomUUID(),
-      amountCents: 3,
+      amountCents: 2,
       network: PAYPAL_SANDBOX,
       resourceUrl: `${ORIGIN}${path}`,
       expiresAt: Math.floor(Date.now() / 1000) + 60,
@@ -123,7 +123,7 @@ describe("findExampleReceiptId", () => {
     const world = await demoWorld();
     expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBeNull();
 
-    await world.buy("/articles/burr-basics");
+    await world.buy("/recipes/weeknight-red-lentil-dal");
     expect(await findExampleReceiptId(sql, { kids: [], publisherEmail: world.email })).toBeNull();
   });
 
@@ -131,22 +131,22 @@ describe("findExampleReceiptId", () => {
     const { sql } = getDbHandle();
     const world = await demoWorld();
 
-    const older = await world.buy("/articles/burr-basics");
-    const latestClean = await world.buy("/articles/water-chemistry");
+    const older = await world.buy("/recipes/weeknight-red-lentil-dal");
+    const latestClean = await world.buy("/recipes/crispy-oven-potatoes");
     expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(
       latestClean,
     );
 
     // Newer, but refunded: skipped.
-    const refunded = await world.buy("/articles/dialing-in-espresso");
+    const refunded = await world.buy("/techniques/tempering-spices");
     const refund = await refundReceipt(world.db, { receiptId: refunded, siteId: world.site.id });
     expect(refund.ok).toBe(true);
     // Newer, but never attested (no delivery statement): skipped.
-    await world.buy("/articles/milk-texturing", { attest: false });
-    // Newer, but the Fare Court stub article: skipped.
+    await world.buy("/recipes/one-pan-lemon-chicken-rice", { attest: false });
+    // Newer, but the Fare Court stub recipe: skipped.
     await world.buy(FARE_COURT_STUB_PATH);
     // Newer, but disputed (still open): skipped.
-    const disputed = await world.buy("/articles/tamping");
+    const disputed = await world.buy("/meal-plans/five-weeknight-dinners");
     const dispute = await openDispute(world.db, {
       agentKeyId: world.agent.key.id,
       request: {
@@ -163,35 +163,46 @@ describe("findExampleReceiptId", () => {
     expect(latestClean).not.toBe(older);
 
     // A newer clean purchase takes over.
-    const newest = await world.buy("/articles/grind-size");
+    const newest = await world.buy("/techniques/freezing-and-reheating");
     expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(newest);
   });
 
-  it("prefers an article to the brew-ratio API", async () => {
+  it("prefers a page to the nutrition API", async () => {
     const { sql } = getDbHandle();
     const world = await demoWorld();
-    const article = await world.buy("/articles/burr-basics");
-    await world.buy("/api/brew-ratio");
-    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(article);
+    const recipe = await world.buy("/recipes/weeknight-red-lentil-dal");
+    await world.buy("/api/nutrition");
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(recipe);
+
+    const technique = await world.buy("/techniques/tempering-spices");
+    await world.buy("/api/nutrition");
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(technique);
+  });
+
+  it("falls back to the nutrition API when it is the only clean purchase", async () => {
+    const { sql } = getDbHandle();
+    const world = await demoWorld();
+    const api = await world.buy("/api/nutrition");
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(api);
   });
 
   it("skips URLs with a query string or fragment, which the buyer chooses", async () => {
     const { sql } = getDbHandle();
     const world = await demoWorld();
-    await world.buy("/articles/burr-basics?note=hello");
+    await world.buy("/recipes/weeknight-red-lentil-dal?note=hello");
     expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBeNull();
 
-    const plain = await world.buy("/articles/burr-basics");
-    await world.buy("/articles/water-chemistry?utm_source=anyone");
-    await world.buy("/articles/grind-size#notes");
-    await world.buy("/api/brew-ratio?method=v60&coffeeGrams=18");
+    const plain = await world.buy("/recipes/weeknight-red-lentil-dal");
+    await world.buy("/recipes/crispy-oven-potatoes?utm_source=anyone");
+    await world.buy("/techniques/tempering-spices#notes");
+    await world.buy("/api/nutrition?recipe=weeknight-red-lentil-dal");
     expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(plain);
   });
 
   it("only counts statements signed by a published key", async () => {
     const { sql } = getDbHandle();
     const world = await demoWorld();
-    await world.buy("/articles/burr-basics");
+    await world.buy("/recipes/weeknight-red-lentil-dal");
     const other = await receiptKeyringFromEnv({
       BOTFARE_RECEIPT_KEY_SEED: "some-other-receipt-seed-0123456789-abcdefgh",
       BOTFARE_URL: "https://botfare.example",
@@ -206,39 +217,44 @@ describe("findExampleReceiptId", () => {
   it("only reads the seeded demo site: the publisher's oldest site with the demo name", async () => {
     const { sql } = getDbHandle();
     const world = await demoWorld();
-    const seeded = await world.buy("/articles/burr-basics");
+    const seeded = await world.buy("/recipes/weeknight-red-lentil-dal");
     // A newer site with the same name (a judge added one through the persona): ignored.
     const { site: copy } = await createSite(world.db, {
       ownerUserId: world.publisher.id,
       name: DEMO_SITE_NAME,
       origin: "https://copy.example",
-      pricing: [{ pattern: "/articles/*", priceCents: 3 }],
+      pricing: [{ pattern: "/recipes/*", priceCents: 2 }],
     });
-    await world.buy("/articles/water-chemistry", { siteId: copy.id });
+    await world.buy("/recipes/crispy-oven-potatoes", { siteId: copy.id });
     expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(seeded);
 
     // A site with another name is not the demo site.
-    const renamed = await demoWorld("Crema Notes (copy)");
-    await renamed.buy("/articles/burr-basics");
+    const renamed = await demoWorld("Saffron & Salt (copy)");
+    await renamed.buy("/recipes/weeknight-red-lentil-dal");
     expect(await findExampleReceiptId(sql, { kids, publisherEmail: renamed.email })).toBeNull();
   });
 
-  it("names the same stub article as apps/demo", async () => {
-    const source = await readFile(new URL("../../demo/src/app.ts", import.meta.url), "utf8");
-    const slug = FARE_COURT_STUB_PATH.replace("/articles/", "");
-    expect(source).toContain(`FARE_COURT_STUB_SLUG = "${slug}"`);
+  it("names the same stub recipe as apps/demo", async () => {
+    expect(FARE_COURT_STUB_PATH).toBe("/recipes/sourdough-starter");
+    const dir = new URL("../../demo/src/", import.meta.url);
+    const files = (await readdir(dir)).filter((name) => name.endsWith(".ts"));
+    const sources = await Promise.all(files.map((name) => readFile(new URL(name, dir), "utf8")));
+    const slug = FARE_COURT_STUB_PATH.split("/").pop();
+    expect(sources.some((source) => source.includes(`FARE_COURT_STUB_SLUG = "${slug}"`))).toBe(
+      true,
+    );
   });
 });
 
 describe("exampleReceiptId", () => {
   it("caches the lookup for a minute", async () => {
     const world = await demoWorld();
-    const first = await world.buy("/articles/burr-basics");
+    const first = await world.buy("/recipes/weeknight-red-lentil-dal");
     let now = Date.now();
     const lookup = () => exampleReceiptId({ publisherEmail: world.email, now: () => now });
 
     expect(await lookup()).toBe(first);
-    const second = await world.buy("/articles/water-chemistry");
+    const second = await world.buy("/recipes/crispy-oven-potatoes");
     now += EXAMPLE_CACHE_MS - 1;
     expect(await lookup()).toBe(first);
     now += 2;

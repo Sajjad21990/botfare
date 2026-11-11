@@ -286,8 +286,8 @@ function ExampleBanner({
         <span className="mr-2 inline-block rounded-sm border border-current px-1.5 py-px align-[0.1em] font-mono text-[0.7rem] font-semibold tracking-wider uppercase">
           Example
         </span>
-        A real {amount ? `${amount} ` : ""}purchase by an agent on Crema Notes, our demo coffee
-        blog.
+        A real {amount ? `${amount} ` : ""}purchase by an agent on Saffron &amp; Salt, our demo
+        recipe blog.
       </p>
       <Button type="button" variant="outline" className="shrink-0" onClick={onCheckAnother}>
         Check another receipt

@@ -1,6 +1,12 @@
 import "server-only";
 import { DEMO_PERSONAS, type DemoPersona } from "@botfare/contracts";
-import { createUser, getUserByEmail, getUserById, type User } from "@botfare/core";
+import {
+  createUser,
+  getUserByEmail,
+  getUserById,
+  migrateLegacyDemoPublisher,
+  type User,
+} from "@botfare/core";
 import { jwtVerify, SignJWT } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -80,9 +86,19 @@ export async function requireApiUser(): Promise<{ user: User } | { response: Res
       };
 }
 
-/** Finds or creates the persona's user (same emails as `pnpm seed`). */
+/**
+ * Finds or creates the persona's user (same emails as `pnpm seed`). When only a user with the
+ * publisher's old email exists (a database seeded before the rename), it is moved to the new email
+ * in place, as `pnpm seed` does, so signing in before the seed runs keeps the demo site and history.
+ */
 export async function personaUser(persona: DemoPersona): Promise<User> {
   const { email, name } = DEMO_PERSONAS[persona];
   const db = getDb();
-  return (await getUserByEmail(db, email)) ?? createUser(db, { email, name });
+  const existing = await getUserByEmail(db, email);
+  if (existing) return existing;
+  if (persona === "publisher") {
+    const { publisher } = await migrateLegacyDemoPublisher(db);
+    if (publisher) return publisher;
+  }
+  return createUser(db, { email, name });
 }

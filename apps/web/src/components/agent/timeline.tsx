@@ -220,7 +220,7 @@ function EntryRow({
                 <li key={source.siteId} className="truncate">
                   {source.siteName}:{" "}
                   {source.available
-                    ? `${source.articleCount} articles`
+                    ? `${source.articleCount} ${source.articleCount === 1 ? "page" : "pages"}`
                     : (source.error ?? "unavailable")}
                 </li>
               ))}

@@ -70,7 +70,7 @@ const fields: AgFieldDefinition[] = [
     id: "path",
     name: "Page",
     format: "textFormat",
-    description: "Path of the paid page or API endpoint, e.g. /articles/grinders.",
+    description: "Path of the paid page or API endpoint, e.g. /recipes/crispy-oven-potatoes.",
   },
   {
     id: "agentKeyId",

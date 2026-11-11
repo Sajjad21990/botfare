@@ -6,7 +6,7 @@ import styles from "./landing.module.css";
 const steps: { title: string; body: string; icon: ReactNode }[] = [
   {
     title: "The site sets a price.",
-    body: "Crema Notes, our demo coffee blog, charges 3¢ for most articles.",
+    body: "Saffron & Salt, our demo recipe blog, charges 2¢ for a recipe.",
     icon: <GlobeIcon aria-hidden className="size-6" />,
   },
   {

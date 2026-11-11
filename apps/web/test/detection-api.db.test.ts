@@ -223,7 +223,7 @@ describe("PUT /api/publisher/sites/[siteId]/detection", () => {
         await createSite(getDb(), {
           ownerUserId: publisher.id,
           name: DEMO_SITE_NAME,
-          origin: "https://crema.example",
+          origin: "https://saffron-and-salt.example",
           pricing: DEMO_SITE_PRICING,
           freePaths: DEMO_SITE_FREE_PATHS,
           detection: CREMA_NOTES_DETECTION,

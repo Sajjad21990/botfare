@@ -1,4 +1,9 @@
-import { DEMO_SITE_NAME, DEMO_SITE_PRICING } from "@botfare/contracts";
+import {
+  DEMO_SITE_FREE_PATHS,
+  DEMO_SITE_NAME,
+  DEMO_SITE_PRICING,
+  type PricingRule,
+} from "@botfare/contracts";
 import { contentDigestSha256 } from "@botfare/contracts/fare";
 import { generateAgentKeyPair } from "@botfare/x402-paypal";
 import { eq, sql } from "drizzle-orm";
@@ -37,8 +42,44 @@ afterAll(close);
 
 const DAY = 24 * 3_600_000;
 
+/** A coffee site's prices (a fixture of its own, not the demo's): first match wins. */
+const COFFEE_PRICING: PricingRule[] = [
+  {
+    pattern: "/articles/premium-*",
+    method: "GET",
+    priceCents: 50,
+    audience: "agents",
+    description: "Premium article (full text)",
+    mimeType: "text/html",
+  },
+  {
+    pattern: "/articles/dialing-in-espresso",
+    method: "GET",
+    priceCents: 5,
+    audience: "agents",
+    description: "Full article: Dialing in espresso at home",
+    mimeType: "text/html",
+  },
+  {
+    pattern: "/articles/*",
+    method: "GET",
+    priceCents: 3,
+    audience: "agents",
+    description: "Full article (text)",
+    mimeType: "text/html",
+  },
+  {
+    pattern: "/api/brew-ratio",
+    method: "GET",
+    priceCents: 1,
+    audience: "everyone",
+    description: "Brew ratio API: water, grind and time for a dose of coffee",
+    mimeType: "application/json",
+  },
+];
+
 /** A publisher with its own origin (declines are matched to sites by origin). */
-async function makeSite(pricing = DEMO_SITE_PRICING) {
+async function makeSite(pricing = COFFEE_PRICING) {
   const owner = await makeUser(db, "publisher");
   const origin = `https://${crypto.randomUUID().slice(0, 8)}.crema.example`;
   const { site } = await createSite(db, {
@@ -120,7 +161,7 @@ describe("recordOfferTelemetry", () => {
       ownerUserId: owner.id,
       name: "Second site",
       origin: `https://${crypto.randomUUID().slice(0, 8)}.second.example`,
-      pricing: DEMO_SITE_PRICING,
+      pricing: COFFEE_PRICING,
     });
     const now = new Date();
     const limit = ADVISOR_LIMITS.maxOfferEventsPerOwnerPerDay;
@@ -511,7 +552,7 @@ describe("advisorInputs", () => {
     expect(inputs).not.toBeNull();
     if (!inputs) return;
     expect(inputs.days).toBe(14);
-    expect(inputs.rules.map((r) => r.pattern)).toEqual(DEMO_SITE_PRICING.map((r) => r.pattern));
+    expect(inputs.rules.map((r) => r.pattern)).toEqual(COFFEE_PRICING.map((r) => r.pattern));
 
     const premiumRule = inputs.rules[0];
     expect(premiumRule).toMatchObject({
@@ -745,14 +786,15 @@ describe("applyPriceChange", () => {
     const { site } = await createSite(db, {
       ownerUserId: owner.id,
       name: DEMO_SITE_NAME,
-      origin: "https://crema-demo.example",
+      origin: "https://saffron-demo.example",
       pricing: DEMO_SITE_PRICING,
-      freePaths: ["/", "/catalog.json", "/health", "/static/*", "/favicon.ico"],
+      freePaths: DEMO_SITE_FREE_PATHS,
     });
+    expect(site.pricing[0]).toMatchObject({ pattern: "/cookbook/*", priceCents: 50 });
     const changed = await applyPriceChange(db, {
       siteId: site.id,
       ownerUserId: owner.id,
-      pattern: "/articles/premium-*",
+      pattern: "/cookbook/*",
       priceCents: 8,
     });
     expect(changed).toMatchObject({ ok: true, changed: true });

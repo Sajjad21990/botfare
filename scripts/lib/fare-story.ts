@@ -4,16 +4,16 @@
  * live endpoints use, so the Advisor and the Disputes tab have a story to tell.
  *
  * Over the same 14 days as the paid traffic (anchored to the same time):
- * - offers shown (middleware telemetry): one before every paid request on Crema Notes and before
- *   every decline note, plus agents that looked at an offer and left without a word, on every
- *   article and the brew API;
- * - decline notes: the 50¢ premium roundup is turned down again and again ("Thin listicle, not
- *   worth 50¢", "Preview lists names only", over the per-page cap), and a few other pages for
- *   other reasons;
- * - citations: the research and newsletter agents' answers cite burr-basics and dialing-in most
- *   often, the premium roundup rarely;
- * - Fare Court: the research agent buys the 3¢ grinder-maintenance article four times and gets the
- *   "subscribe to keep reading" stub; Crema Notes attests the stub's digest; each purchase is
+ * - offers shown (middleware telemetry): one before every paid request on Saffron & Salt and
+ *   before every decline note, plus agents that looked at an offer and left without a word, on
+ *   every page and the nutrition API;
+ * - decline notes: the 50¢ cookbook chapter is shown often, bought rarely and turned down again
+ *   and again (Thin list, not worth 50¢; Preview lists spice names only; over the per-page cap),
+ *   and a few other pages for other reasons;
+ * - citations: the research and newsletter agents' answers cite the dal recipe and the freezing
+ *   guide in most answers that paid for them, the cookbook chapter rarely;
+ * - Fare Court: the research agent buys the 2¢ sourdough starter recipe four times and gets the
+ *   "subscribe to keep reading" stub; the site attests the stub's digest; each purchase is
  *   disputed with the stub's exact bytes. Three verdicts refund by policy (refund, 90%+ sure); the
  *   latest one is less sure (72%) and waits for the publisher.
  *
@@ -49,19 +49,20 @@ import {
   seedWallet,
 } from "@botfare/core";
 import { PAYPAL_SANDBOX } from "@botfare/x402-paypal";
-import { FARE_COURT_STUB_SLUG } from "../../apps/demo/src/app";
+import { FARE_COURT_STUB_PATH, FARE_COURT_STUB_SLUG } from "../../apps/demo/src/app";
 import { loadArticles, truncate } from "../../apps/demo/src/content";
 import { subscribeStubPage } from "../../apps/demo/src/pages";
-import { priceCentsFor } from "../../apps/demo/src/pricing";
+import { DEMO_PAGES, demoPriceCents, NUTRITION_PATH } from "./traffic";
 
 /** Part of every key this module writes: bump it when the story changes so runs never overlap. */
-const STORY_VERSION = "v1";
+const STORY_VERSION = "v2";
 const DAYS = 14;
 const DAY_MS = 24 * 3600 * 1000;
 const MINUTE_MS = 60_000;
 
-const PREMIUM_PATH = "/articles/premium-grinder-roundup";
-const STUB_PATH = `/articles/${FARE_COURT_STUB_SLUG}`;
+/** The 50¢ page agents keep declining. */
+const COOKBOOK_PATH = DEMO_PAGES.cookbook;
+const STUB_PATH = FARE_COURT_STUB_PATH;
 /** Days of the window (0 = oldest, 13 = the anchor's day) on which the research agent buys the stub. */
 const STUB_DAYS = [3, 6, 9, 12];
 /** Agents that write answers (and so cite and decline): the traffic keys plus the demo key. */
@@ -97,35 +98,35 @@ function weighted<T>(random: () => number, items: readonly (readonly [number, T]
 
 type DeclineTemplate = { category: DeclineCategory; reason: string };
 
-/** Why agents turn the 50¢ roundup down (the case-insensitive spelling groups in the Advisor). */
-const PREMIUM_DECLINES: (readonly [number, DeclineTemplate])[] = [
-  [5, { category: "too_expensive", reason: "Thin listicle, not worth 50¢" }],
-  [3, { category: "low_quality_preview", reason: "Preview lists names only" }],
+/** Why agents turn the 50¢ cookbook chapter down (the Advisor groups spellings case-insensitively). */
+const COOKBOOK_DECLINES: (readonly [number, DeclineTemplate])[] = [
+  [5, { category: "too_expensive", reason: "Thin list, not worth 50¢" }],
+  [3, { category: "low_quality_preview", reason: "Preview lists spice names only" }],
   [2, { category: "over_budget", reason: "Over this agent's per-page cap" }],
-  [1, { category: "low_quality_preview", reason: "Clickbait preview, no test data" }],
+  [1, { category: "low_quality_preview", reason: "Preview gives no quantities or uses" }],
 ];
 
 const OTHER_DECLINES: { path: string; day: number; key: string; note: DeclineTemplate }[] = [
   {
-    path: "/articles/latte-art-hearts",
+    path: DEMO_PAGES.potatoes,
     day: 2,
     key: "Research agent",
-    note: { category: "irrelevant", reason: "About milk art; the question was about grinders" },
+    note: { category: "irrelevant", reason: "About roast potatoes; the question was about dal" },
   },
   {
-    path: "/articles/latte-art-hearts",
+    path: DEMO_PAGES.potatoes,
     day: 8,
     key: "Demo research agent",
-    note: { category: "irrelevant", reason: "About milk art; the question was about grinders" },
+    note: { category: "irrelevant", reason: "About roast potatoes; the question was about dal" },
   },
   {
-    path: "/articles/grinders-under-200",
+    path: DEMO_PAGES.mealPlan,
     day: 5,
     key: "Newsletter bot",
-    note: { category: "already_have", reason: "Already bought this guide for an earlier answer" },
+    note: { category: "already_have", reason: "Already bought this plan for an earlier issue" },
   },
   {
-    path: "/articles/dialing-in-espresso",
+    path: DEMO_PAGES.tempering,
     day: 11,
     key: "Demo research agent",
     note: { category: "over_budget", reason: "Run budget spent on two other pages" },
@@ -134,35 +135,39 @@ const OTHER_DECLINES: { path: string; day: number; key: string; note: DeclineTem
 
 /** What an answer took from each page (shown next to the citation in analytics). */
 const CLAIMS: Record<string, string> = {
-  "/articles/burr-basics": "Conical and flat burrs: how burr geometry shapes the grind",
-  "/articles/dialing-in-espresso": "Change one variable at a time, starting with grind size",
-  "/articles/latte-art-hearts": "Steam milk to 55–60 °C for a glossy microfoam",
-  "/articles/grinders-under-200": "Budget burr grinders worth buying",
-  [PREMIUM_PATH]: "Named the high-end grinders in the roundup",
+  [DEMO_PAGES.dal]: "Freeze the dal plain and fry a fresh tadka when you reheat",
+  [DEMO_PAGES.freezing]: "Cool it within 2 hours and freeze it flat in portion bags",
+  [DEMO_PAGES.tempering]: "Heat the fat until one cumin seed sizzles, then add the spices",
+  [DEMO_PAGES.potatoes]: "Parboil with a little baking soda and roast in fat that is already hot",
+  [DEMO_PAGES.lemonChicken]: "Brown the thighs first, then bake the rice in the same pan",
+  [DEMO_PAGES.mealPlan]: "Five dinners for four from one weekend shop",
+  [COOKBOOK_PATH]: "Named the spices in the pantry chapter",
 };
 
 /** How often an agent's answer cites a page it paid for. */
 const CITE_RATE: Record<string, number> = {
-  "/articles/burr-basics": 0.85,
-  "/articles/dialing-in-espresso": 0.8,
-  "/articles/grinders-under-200": 0.35,
-  "/articles/latte-art-hearts": 0.25,
-  [PREMIUM_PATH]: 0.1,
+  [DEMO_PAGES.dal]: 0.85,
+  [DEMO_PAGES.freezing]: 0.8,
+  [DEMO_PAGES.mealPlan]: 0.5,
+  [DEMO_PAGES.tempering]: 0.4,
+  [DEMO_PAGES.potatoes]: 0.35,
+  [DEMO_PAGES.lemonChicken]: 0.3,
+  [COOKBOOK_PATH]: 0.1,
 };
 
 /** Scripted verdicts for the stub disputes: the last one is not sure enough to refund by itself. */
-function stubVerdict(index: number): DisputeVerdict {
+function stubVerdict(index: number, declaredTitle: string): DisputeVerdict {
   const sure = index < STUB_DAYS.length - 1;
   return {
     decision: "refund",
     confidence: sure ? 0.93 : 0.72,
     category: "stub_or_paywall",
     rationale: sure
-      ? "The offer declared a step-by-step maintenance guide; the delivered page repeats the one-sentence summary and then a 'Subscribe to keep reading' wall. None of the promised steps were delivered."
-      : "The page shows the summary the preview promised and then a subscription wall. The steps are missing, but the summary itself matches the offer, so the share of the promise that was kept is unclear.",
+      ? "The offer declared a day-by-day guide to starting a sourdough starter. The delivered page shows the two-sentence summary and then a Subscribe to keep reading wall. None of the promised steps were delivered."
+      : "The page shows the summary the preview promised and then a subscription wall. The feeding steps are missing, but the summary itself matches the offer, so how much of the promise was kept is unclear.",
     evidence: [
       {
-        declared: "Grinder maintenance, step by step",
+        declared: declaredTitle,
         delivered: "Subscribe to keep reading",
       },
     ],
@@ -266,7 +271,7 @@ export async function runFareStory(
   if (!article) throw new Error(`apps/demo has no ${FARE_COURT_STUB_SLUG} article`);
   const stubBytes = new TextEncoder().encode(subscribeStubPage(article));
   const stubDigest = await contentDigestSha256(stubBytes);
-  const stubPrice = priceCentsFor("GET", STUB_PATH);
+  const stubPrice = demoPriceCents(STUB_PATH);
   // What botfare() declares for this page (apps/demo previewFor): the offer the stub breaks.
   const declared = {
     title: article.title,
@@ -324,7 +329,7 @@ export async function runFareStory(
       request: {
         receiptId,
         reason: "stub_or_paywall",
-        note: "Paid for the step-by-step maintenance guide; got the summary and a subscribe wall.",
+        note: "Paid for the day-by-day starter guide; got the summary and a subscribe wall.",
         contentBase64: Buffer.from(stubBytes).toString("base64"),
       },
       contentBytes: stubBytes,
@@ -342,7 +347,7 @@ export async function runFareStory(
     }
     const decided = await applyVerdict(db, {
       disputeId: opened.dispute.id,
-      verdict: stubVerdict(index),
+      verdict: stubVerdict(index, article.title),
       autoAllowed: opened.autoAllowed,
       now: new Date(filedAt.getTime() + 4_000),
     });
@@ -353,14 +358,19 @@ export async function runFareStory(
   }
 
   // 2. Decline notes (each one follows an offer the agent was shown).
-  const premiumUrl = `${site.origin}${PREMIUM_PATH}`;
-  const premiumPrice = priceCentsFor("GET", PREMIUM_PATH);
+  const cookbookUrl = `${site.origin}${COOKBOOK_PATH}`;
+  const cookbookPrice = demoPriceCents(COOKBOOK_PATH);
   const declines: { keyName: string; path: string; at: Date; note: DeclineTemplate }[] = [];
   for (let day = 0; day < DAYS; day++) {
     for (const keyName of DECLINING_KEYS) {
       if (random() > 0.62) continue;
       const at = timeOn(anchor, day, 7, random() * 14 * 3600_000);
-      declines.push({ keyName, path: PREMIUM_PATH, at, note: weighted(random, PREMIUM_DECLINES) });
+      declines.push({
+        keyName,
+        path: COOKBOOK_PATH,
+        at,
+        note: weighted(random, COOKBOOK_DECLINES),
+      });
     }
   }
   for (const other of OTHER_DECLINES) {
@@ -377,9 +387,8 @@ export async function runFareStory(
     const recorded = await recordDecline(db, {
       agentKeyId: key.id,
       note: {
-        url: decline.path === PREMIUM_PATH ? premiumUrl : `${site.origin}${decline.path}`,
-        priceCents:
-          decline.path === PREMIUM_PATH ? premiumPrice : priceCentsFor("GET", decline.path),
+        url: decline.path === COOKBOOK_PATH ? cookbookUrl : `${site.origin}${decline.path}`,
+        priceCents: decline.path === COOKBOOK_PATH ? cookbookPrice : demoPriceCents(decline.path),
         category: decline.note.category,
         reason: decline.note.reason,
       },
@@ -398,15 +407,17 @@ export async function runFareStory(
     ...STUB_DAYS.map((_, index) => stubNonce(runKey, index)),
   ]);
   const browsing: { path: string; at: Date; priceCents: number }[] = [];
-  const browsedPaths = [...loadArticles().map((a) => `/articles/${a.slug}`), "/api/brew-ratio"];
+  const browsedPaths = [...Object.values(DEMO_PAGES), STUB_PATH, NUTRITION_PATH];
   for (let day = 0; day < DAYS; day++) {
     for (const path of browsedPaths) {
-      const extra = path === PREMIUM_PATH ? 1 + Math.floor(random() * 3) : Math.floor(random() * 3);
+      // The cookbook chapter is shown most: agents look, then mostly leave or decline.
+      const extra =
+        path === COOKBOOK_PATH ? 2 + Math.floor(random() * 3) : Math.floor(random() * 3);
       for (let i = 0; i < extra; i++) {
         browsing.push({
           path,
           at: timeOn(anchor, day, 0, random() * DAY_MS),
-          priceCents: priceCentsFor("GET", path),
+          priceCents: demoPriceCents(path),
         });
       }
     }
@@ -431,7 +442,7 @@ export async function runFareStory(
       ...declines.map((d) => ({
         path: d.path,
         at: new Date(d.at.getTime() - 5_000),
-        priceCents: priceCentsFor("GET", d.path),
+        priceCents: demoPriceCents(d.path),
         signal: "signed-agent" as const,
       })),
       ...siteReceipts.flatMap((receipt) => {
@@ -494,7 +505,7 @@ export async function runFareStory(
       const rate = CITE_RATE[path] ?? 0;
       if (unit(`cite:${STORY_VERSION}:${runKey}:${receipt.id}`) >= rate) continue;
       const day = receipt.createdAt.toISOString().slice(0, 10).replaceAll("-", "");
-      const answerId = `story-${runKey}-${keyIndex}-${day}`;
+      const answerId = `story-${STORY_VERSION}-${runKey}-${keyIndex}-${day}`;
       answers.set(answerId, [...(answers.get(answerId) ?? []), receipt]);
     }
     for (const [answerId, cited] of answers) {

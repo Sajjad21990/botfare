@@ -1,6 +1,7 @@
 /**
- * The Crema Notes demo publisher: original articles and a brew-ratio API behind `botfare()`.
- * Humans read free; agents pay per request. Without BotFare credentials it runs in free mode.
+ * The Saffron & Salt demo publisher: original recipes, techniques, a meal plan and a cookbook
+ * chapter, plus a nutrition API, behind `botfare()`. Humans read free; agents pay per request.
+ * Without BotFare credentials it runs in free mode.
  */
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -8,22 +9,24 @@ import { fileURLToPath } from "node:url";
 import { AGENT_HEADER, type OfferPreview } from "@botfare/contracts";
 import { type BotFareLocals, botfare, normalizePath } from "@botfare/express";
 import express, { type Request } from "express";
-import { BREW_METHODS, brewRatio, brewRatioQuerySchema } from "./brew-ratio";
-import { type Article, loadArticles, truncate } from "./content";
-import { articlePage, indexPage, notFoundPage, subscribeStubPage } from "./pages";
+import { type Article, loadArticles, SECTIONS, sectionById, truncate } from "./content";
+import { NUTRITION_RECIPES, nutritionFor, nutritionQuerySchema } from "./nutrition";
+import { articlePage, homePage, notFoundPage, sectionPage, subscribeStubPage } from "./pages";
 import { priceCentsFor, SITE_NAME, SITE_TAGLINE } from "./pricing";
 
 const PUBLIC_DIR = fileURLToPath(new URL("../public", import.meta.url));
 const PREVIEW_CHARS = 280;
 
 /**
- * FARE COURT DEMO CASE (deliberately bad publisher behaviour). This 3¢ article has a real, useful
- * preview, and humans reading free get the full article, but an agent that *pays* for it is served
+ * FARE COURT DEMO CASE (deliberately bad publisher behaviour). This 2¢ recipe has a real, useful
+ * preview, and humans reading free get the full guide, but an agent that *pays* for it is served
  * a "subscribe to keep reading" stub instead. botfare() still attests the digest of that stub, so
  * the agent can prove what it received, file a dispute, and Fare Court refunds the fare. Every
- * other article is served honestly.
+ * other page is served honestly.
  */
-export const FARE_COURT_STUB_SLUG = "grinder-maintenance";
+export const FARE_COURT_STUB_SLUG = "sourdough-starter";
+/** Where the stub page lives (its section prefix plus FARE_COURT_STUB_SLUG). */
+export const FARE_COURT_STUB_PATH = "/recipes/sourdough-starter";
 
 /** True when botfare() verified a payment for this request (the handler only runs after that). */
 function isPaidRequest(res: express.Response): boolean {
@@ -39,7 +42,7 @@ export interface DemoOptions {
   botfareUrl?: string;
   /** Public origin used for URLs in catalog.json. Default: the request's own origin. */
   origin?: string;
-  /** Directory of markdown articles. Default: apps/demo/content. */
+  /** Directory of markdown pages. Default: apps/demo/content. */
   contentDir?: string;
   /** Passed to botfare(). */
   configTtlMs?: number;
@@ -59,7 +62,7 @@ export function createApp(options: DemoOptions = {}): express.Express {
   const bySlug = new Map(articles.map((article) => [article.slug, article]));
   const priced = (article: Article) => ({
     ...article,
-    priceCents: priceCentsFor("GET", `/articles/${article.slug}`),
+    priceCents: priceCentsFor("GET", article.path),
   });
 
   const app = express();
@@ -91,33 +94,29 @@ export function createApp(options: DemoOptions = {}): express.Express {
   app.use("/static", express.static(PUBLIC_DIR, { maxAge: "1h" }));
 
   app.get("/", (_req, res) => {
-    res.type("html").send(indexPage(articles.map(priced)));
+    res.type("html").send(homePage(articles.map(priced)));
   });
 
-  app.get("/articles/:slug", (req, res) => {
-    const article = bySlug.get(req.params.slug.toLowerCase());
-    if (!article) {
-      res.status(404).type("html").send(notFoundPage());
-      return;
-    }
-    if (article.slug === FARE_COURT_STUB_SLUG && isPaidRequest(res)) {
-      res.type("html").send(subscribeStubPage(article)); // the Fare Court demo case, see above
-      return;
-    }
-    res.type("html").send(articlePage(article));
-  });
-
-  app.get("/api/brew-ratio", (req, res) => {
-    const query = brewRatioQuerySchema.safeParse(req.query);
+  app.get("/api/nutrition", (req, res) => {
+    const query = nutritionQuerySchema.safeParse(req.query);
     if (!query.success) {
       res.status(400).json({
         error: "invalid_query",
-        message: `Use ?method=${Object.keys(BREW_METHODS).join("|")}&coffeeGrams=1..250`,
-        issues: query.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+        message: `Use ?recipe=<slug>, one of: ${NUTRITION_RECIPES.join(", ")}`,
+        recipes: NUTRITION_RECIPES,
       });
       return;
     }
-    res.json(brewRatio(query.data.method, query.data.coffeeGrams));
+    const nutrition = nutritionFor(query.data.recipe);
+    if (!nutrition) {
+      res.status(404).json({
+        error: "unknown_recipe",
+        message: `No nutrition figures for "${query.data.recipe}". Use one of: ${NUTRITION_RECIPES.join(", ")}`,
+        recipes: NUTRITION_RECIPES,
+      });
+      return;
+    }
+    res.json(nutrition);
   });
 
   app.get("/catalog.json", (req, res) => {
@@ -129,9 +128,16 @@ export function createApp(options: DemoOptions = {}): express.Express {
         agents: `pay per request over x402 (scheme "prepaid", network "paypal:sandbox", amounts in USD cents); send the ${AGENT_HEADER} header`,
         payments: paymentsOn ? "on" : "off (free mode)",
       },
+      sections: SECTIONS.map((section) => ({
+        id: section.id,
+        name: section.name,
+        description: section.description,
+        url: `${origin}/${section.id}`,
+      })),
       articles: articles.map((article) => ({
         slug: article.slug,
-        url: `${origin}/articles/${article.slug}`,
+        section: article.section,
+        url: `${origin}${article.path}`,
         title: article.title,
         excerpt: article.excerpt,
         priceCents: priced(article).priceCents,
@@ -140,16 +146,13 @@ export function createApp(options: DemoOptions = {}): express.Express {
       api: [
         {
           method: "GET",
-          path: "/api/brew-ratio",
-          url: `${origin}/api/brew-ratio`,
-          description: "Water, grind, time and temperature for a dose of coffee.",
-          priceCents: priceCentsFor("GET", "/api/brew-ratio"),
+          path: "/api/nutrition",
+          url: `${origin}/api/nutrition`,
+          description: "Calories, protein, carbs and fat per serving for one recipe.",
+          priceCents: priceCentsFor("GET", "/api/nutrition"),
           audience: "everyone",
-          query: {
-            method: Object.keys(BREW_METHODS),
-            coffeeGrams: "number, 1 to 250",
-          },
-          example: `${origin}/api/brew-ratio?method=pour-over&coffeeGrams=15`,
+          query: { recipe: NUTRITION_RECIPES },
+          example: `${origin}/api/nutrition?recipe=${NUTRITION_RECIPES[0]}`,
         },
       ],
     });
@@ -159,6 +162,34 @@ export function createApp(options: DemoOptions = {}): express.Express {
     res.json({ ok: true, site: SITE_NAME, payments: paymentsOn ? "on" : "off" });
   });
 
+  app.get("/favicon.ico", (_req, res) => {
+    res.redirect(301, "/static/favicon.svg");
+  });
+
+  // Section indexes (free) and pages (priced by section). Express matches case-insensitively and
+  // ignores a trailing slash, the same as botfare()'s path normalization.
+  app.get("/:section", (req, res, next) => {
+    const section = sectionById(req.params.section);
+    if (!section) return next();
+    const pages = articles.filter((article) => article.section === section.id).map(priced);
+    res.type("html").send(sectionPage(section, pages));
+  });
+
+  app.get("/:section/:slug", (req, res, next) => {
+    const section = sectionById(req.params.section);
+    if (!section) return next();
+    const article = bySlug.get(req.params.slug.toLowerCase());
+    if (!article || article.section !== section.id) {
+      res.status(404).type("html").send(notFoundPage());
+      return;
+    }
+    if (article.slug === FARE_COURT_STUB_SLUG && isPaidRequest(res)) {
+      res.type("html").send(subscribeStubPage(article)); // the Fare Court demo case, see above
+      return;
+    }
+    res.type("html").send(articlePage(article, priced(article).priceCents));
+  });
+
   app.use((_req, res) => {
     res.status(404).type("html").send(notFoundPage());
   });
@@ -166,23 +197,24 @@ export function createApp(options: DemoOptions = {}): express.Express {
   return app;
 }
 
+const PAGE_PATH = /^\/([a-z0-9-]+)\/([^/]+)$/;
+
 /** The free preview in the 402 body: title, the first ~280 characters and the length. */
 function previewFor(req: Request, bySlug: Map<string, Article>): OfferPreview | undefined {
   const path = normalizePath(req.baseUrl + req.path);
-  const slug = /^\/articles\/([^/]+)$/.exec(path)?.[1];
+  if (path === "/api/nutrition") {
+    return {
+      title: "Nutrition API",
+      excerpt: `JSON for one recipe per call: servings, plus calories, protein, carbs and fat per serving. Recipes: ${NUTRITION_RECIPES.join(", ")}.`,
+    };
+  }
+  const [, section, slug] = PAGE_PATH.exec(path) ?? [];
   const article = slug ? bySlug.get(slug) : undefined;
-  if (article) {
+  if (article && article.section === section) {
     return {
       title: article.title,
       excerpt: truncate(article.lead, PREVIEW_CHARS),
       wordCount: article.wordCount,
-    };
-  }
-  if (path === "/api/brew-ratio") {
-    return {
-      title: "Brew ratio API",
-      excerpt:
-        "JSON recipe for a dose of coffee: water (or espresso yield) in grams, ratio, grind size, brew time and temperature. Methods: pour-over, espresso, french-press.",
     };
   }
   return undefined;

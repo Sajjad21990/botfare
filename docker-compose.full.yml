@@ -1,9 +1,9 @@
 # The whole BotFare stack in Docker, for judges: Postgres, a one-shot setup (migrations, seed, demo
-# traffic), the BotFare web app and the Crema Notes demo publisher. See docker/README.md.
+# traffic), the BotFare web app and the Saffron & Salt demo publisher. See docker/README.md.
 #
 #   docker compose -f docker-compose.full.yml -p botfare-judge up --build
 #
-# Then open http://localhost:3300 (BotFare) and http://localhost:4300 (Crema Notes).
+# Then open http://localhost:3300 (BotFare) and http://localhost:4300 (Saffron & Salt).
 #
 # Self-contained on purpose: its own Postgres service, volumes and network under the project name
 # "botfare-judge", and host ports 3300/4300, so it never touches the development database of

@@ -4,16 +4,18 @@
  *
  * - issues (or reuses, by name) three more agent keys for the agent owner persona:
  *   "Research agent", "Price watcher" and "Newsletter bot", each with its own budget;
- * - plans about 150 paid requests over the last 14 days across the Crema Notes articles and the
- *   brew ratio API (a fixed pseudo-random plan per run key, busier on weekdays and growing);
+ * - plans about 150 paid requests over the last 14 days on Saffron & Salt (a fixed pseudo-random
+ *   plan per run key, busier on weekdays and growing): the research agent buys recipes and
+ *   techniques, the price watcher calls the nutrition API, the newsletter bot buys meal plans and
+ *   the occasional technique;
  * - tops the agent owner's wallet up with a `seed` posting that covers the plan, once per run key;
  * - settles each request through PostgresPrepaidLedger with a clock set to the request's time,
  *   so every per-request max, daily cap, allowed-site and balance rule applies as it would live;
  * - refunds two receipts, as a publisher would after a duplicate fetch;
  * - adds the Fare Court and Fare Advisor story around that traffic (scripts/lib/fare-story.ts):
- *   offers shown, decline notes on the 50¢ premium roundup, citations, and stub purchases of the
- *   grinder-maintenance article that are attested and disputed (three refunded by policy, one
- *   waiting for the publisher);
+ *   offers shown, decline notes on the 50¢ cookbook chapter, citations of the dal recipe and the
+ *   freezing guide, and stub purchases of the sourdough starter recipe that are attested and
+ *   disputed (three refunded by policy, one waiting for the publisher);
  * - checks the ledger invariants at the end.
  *
  * Idempotent per run key: nonces, the wallet top-up and the refunds are all keyed by it, and the
@@ -24,7 +26,7 @@
  * run dry. The plan itself lives in scripts/lib/traffic.ts.
  */
 import { parseArgs } from "node:util";
-import { DEMO_PERSONAS } from "@botfare/contracts";
+import { DEMO_PERSONAS, DEMO_SITE_NAME } from "@botfare/contracts";
 import {
   checkLedgerInvariants,
   createDb,
@@ -32,7 +34,6 @@ import {
   listSites,
   walletBalanceMicros,
 } from "@botfare/core";
-import { SITE_NAME } from "../apps/demo/src/pricing";
 import { loadRootEnv, requireEnv } from "./lib/env-file";
 import { runFareStory } from "./lib/fare-story";
 import { nonceFor, runTraffic, weeklyRunKey } from "./lib/traffic";
@@ -58,8 +59,12 @@ async function main(): Promise<void> {
     const owner = await getUserByEmail(db, DEMO_PERSONAS.agentOwner.email);
     const publisher = await getUserByEmail(db, DEMO_PERSONAS.publisher.email);
     if (!owner || !publisher) throw new Error("Demo personas are missing: run pnpm seed first");
-    const site = (await listSites(db, publisher.id)).find((s) => s.name === SITE_NAME);
-    if (!site) throw new Error(`${SITE_NAME} is not registered: run pnpm seed first`);
+    const site = (await listSites(db, publisher.id)).find((s) => s.name === DEMO_SITE_NAME);
+    if (!site) {
+      throw new Error(
+        `${DEMO_SITE_NAME} is not registered: run pnpm seed first (it also renames a site seeded under an earlier name)`,
+      );
+    }
 
     const run = await runTraffic(db, { runKey, ownerUserId: owner.id, site });
     for (const { name, key, created } of run.keys) {

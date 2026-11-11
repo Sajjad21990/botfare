@@ -1,9 +1,9 @@
 /**
  * Copy-paste curl commands for "See a 402 yourself" on /judge, against the demo publisher.
- * Crema Notes runs at the Standard detection level: a request with real browser headers reads
+ * Saffron & Salt runs at the Standard detection level: a request with real browser headers reads
  * free, while `x-botfare-agent: 1` (or a plain curl user agent) gets an x402 price.
  */
-export const DEMO_ARTICLE_PATH = "/articles/burr-basics";
+export const DEMO_PAGE_PATH = "/recipes/weeknight-red-lentil-dal";
 
 /** A desktop Chrome user agent with the headers a real browser sends on a navigation. */
 const BROWSER_HEADERS = [
@@ -22,7 +22,7 @@ export function demoBaseUrl(raw: string | undefined): string {
 }
 
 export function demoCommands(baseUrl: string) {
-  const url = `${baseUrl}${DEMO_ARTICLE_PATH}`;
+  const url = `${baseUrl}${DEMO_PAGE_PATH}`;
   return {
     url,
     human: [

@@ -1,13 +1,13 @@
 # Run the whole stack in Docker
 
-One command starts BotFare and the Crema Notes demo publisher with a seeded database, for judges
+One command starts BotFare and the Saffron & Salt demo publisher with a seeded database, for judges
 and anyone who wants to try BotFare without installing Node or pnpm:
 
 ```sh
 docker compose -f docker-compose.full.yml -p botfare-judge up --build
 ```
 
-When the log shows `[demo] Crema Notes listening`, open the URLs below. To run it in the background
+When the log shows `[demo] Saffron & Salt listening`, open the URLs below. To run it in the background
 instead, add `-d --wait`: the command then returns once every service is healthy.
 
 ```sh
@@ -19,7 +19,7 @@ docker compose -f docker-compose.full.yml -p botfare-judge up --build -d --wait
 | --- | --- |
 | The two-minute tour for judges | http://localhost:3300/judge |
 | BotFare (sign in as the publisher or the agent owner, no password) | http://localhost:3300 |
-| Crema Notes, the demo publisher (free for people, paid for agents) | http://localhost:4300 |
+| Saffron & Salt, our demo recipe blog (free for people, paid for agents) | http://localhost:4300 |
 | Health checks | http://localhost:3300/api/health, http://localhost:4300/health |
 
 Any browser works, Safari included: the session cookie is marked `Secure` only when the request
@@ -35,13 +35,13 @@ images.
 | `db` | `postgres:17-alpine` | The judge database, in its own volume `judge-pgdata`. Not published to the host. |
 | `setup` | `Dockerfile.demo` | One-shot: `pnpm db:migrate`, `pnpm seed`, `pnpm seed:traffic`, then exits. |
 | `web` | `Dockerfile.web` | The BotFare app (`next start`), container port 3000 on host port **3300**. |
-| `demo` | `Dockerfile.demo` | Crema Notes behind `botfare()`, container port 4000 on host port **4300**. |
+| `demo` | `Dockerfile.demo` | Saffron & Salt behind `botfare()`, container port 4000 on host port **4300**. |
 
 Start order: `db` healthy, then `setup` completes, then `web` is healthy (`/api/health` reports the
 database as reachable), then `demo` starts. The demo talks to BotFare's facilitator over the compose
 network at `http://web:3000`.
 
-`setup` seeds the two judge personas, the Crema Notes site with its prices and bot detection, a
+`setup` seeds the two judge personas, the Saffron & Salt site with its prices and bot detection, a
 $5.00 demo wallet, a demo agent key, and two weeks of settled demo traffic so the dashboards have
 data. It writes the site's ID and secret, the demo agent key (for the research agent) and a
 generated `SESSION_SECRET` and receipt-signing seed (`BOTFARE_RECEIPT_KEY_SEED`) to `judge.env` on a shared volume (`judge-shared`); `web` and `demo` load that file when they start
@@ -50,7 +50,7 @@ characters only. Every step is idempotent, so `up` again reuses the same site se
 
 ## How the web container reaches the demo
 
-Crema Notes is registered as `http://localhost:4300`, the address browsers and agents on the host
+Saffron & Salt is registered as `http://localhost:4300`, the address browsers and agents on the host
 use. Inside the `web` container `localhost` is the container itself, so `web` sets
 `DEMO_PUBLIC_URL=http://localhost:4300` and `DEMO_INTERNAL_URL=http://demo:4000`: the research
 agent's requests for the public origin (catalog, offers, paid reads) go to the `demo` service on
@@ -90,11 +90,12 @@ PayPal webhooks cannot reach `localhost`, so top-ups credit on capture and payou
 ## Try it as an agent
 
 An agent request without payment gets `402 Payment Required` with a `PAYMENT-REQUIRED` header
-(plain `curl` counts as an agent; so does any request with an `x-botfare-agent` header):
+(plain `curl` counts as an agent; so does any request with an `x-botfare-agent` header). A recipe
+costs agents 2¢; the nutrition API costs every caller 1¢:
 
 ```sh
-curl -i http://localhost:4300/articles/burr-basics
-curl -i -H 'x-botfare-agent: 1' 'http://localhost:4300/api/brew-ratio?dose=18'
+curl -i http://localhost:4300/recipes/weeknight-red-lentil-dal
+curl -i 'http://localhost:4300/api/nutrition?recipe=weeknight-red-lentil-dal'
 ```
 
 To pay for real, sign in as the agent owner at http://localhost:3300, create an agent key on the
@@ -133,7 +134,8 @@ Measured on an Apple Silicon Mac with Docker Desktop (8 Nov):
 ## Verified
 
 On 8 Nov, after `up --build -d --wait`: `/api/health` returned `{"ok":true,"db":true}`, `/health`
-returned `{"ok":true,"site":"Crema Notes","payments":"on"}`, a bot request to an article got
-`402` with `PAYMENT-REQUIRED`, a paid request through `@botfare/sdk` from the host settled
-(`200`, receipt issued), and both personas signed in and loaded their dashboards. Then
-`down -v` removed only the `botfare-judge` containers, volumes and network.
+returned `{"ok":true,"site":"Crema Notes","payments":"on"}` (the coffee demo site of the time), a
+bot request to an article got `402` with `PAYMENT-REQUIRED`, a paid request through
+`@botfare/sdk` from the host settled (`200`, receipt issued), and both personas signed in and
+loaded their dashboards. Then `down -v` removed only the `botfare-judge` containers, volumes and
+network.

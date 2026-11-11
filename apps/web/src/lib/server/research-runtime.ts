@@ -54,7 +54,7 @@ export function missingConfigMessage(missing: string[]): string {
   return `The research agent needs ${names.join(" and ")} on the server. Set ${missing.length > 1 ? "them" : "it"} in .env (pnpm seed writes BOTFARE_AGENT_KEY) and restart the app.`;
 }
 
-/** Where the seed registers Crema Notes when DEMO_ORIGIN is not set (local development only). */
+/** Where the seed registers the demo site when DEMO_ORIGIN is not set (local development only). */
 const LOCAL_DEMO_ORIGIN = "http://localhost:4000";
 
 /**

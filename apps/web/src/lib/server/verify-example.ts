@@ -1,5 +1,11 @@
 import "server-only";
-import { DEMO_PERSONAS, DEMO_SITE_NAME } from "@botfare/contracts";
+import {
+  DEMO_PERSONAS,
+  DEMO_SITE_FREE_PATHS,
+  DEMO_SITE_NAME,
+  DEMO_SITE_PRICING,
+  findPricingRule,
+} from "@botfare/contracts";
 import { type DbHandle, getReceiptKeyring, receiptJwks } from "@botfare/core";
 import { getDbHandle } from "./db";
 
@@ -7,7 +13,7 @@ import { getDbHandle } from "./db";
  * The receipt /verify opens with when the link names none, so a visitor sees a real verified
  * receipt without hunting for an ID.
  *
- * It is the latest clean purchase on Crema Notes, the seeded demo site (the oldest site named
+ * It is the latest clean purchase on Saffron & Salt, the seeded demo site (the oldest site named
  * DEMO_SITE_NAME owned by the publisher persona, as core's judge-mode reset finds it; only the demo
  * server holds its secret, so every receipt on it is a real purchase from apps/demo):
  *
@@ -15,21 +21,27 @@ import { getDbHandle } from "./db";
  * - a payment and a delivery statement stored, both signed by a key in today's public JWKS, so the
  *   example verifies in the browser;
  * - a resource URL with no query string or fragment (the buyer picks those, and every visitor sees
- *   the example), and not the Fare Court stub article (paying agents get a subscribe stub there);
- *   an article is preferred over the brew-ratio API.
+ *   the example), and not the Fare Court stub recipe (paying agents get a subscribe stub there);
+ *   a page (a recipe, technique, meal plan or cookbook chapter) is preferred over the nutrition
+ *   API;
+ * - a path the demo still prices today, so the example's page link works (receipts from an earlier
+ *   demo site, such as Crema Notes' /articles/*, are skipped).
  *
  * Statements are public already (GET /api/receipts/:id/statements); this returns only an ID. The
  * lookup is cached in memory for EXAMPLE_CACHE_MS and gives up after LOOKUP_TIMEOUT_MS, so /verify
  * stays one cheap render. Any failure means no example: the page then renders as it always did.
  */
 
-/** apps/demo's FARE_COURT_STUB_SLUG as a path: paying agents are served a subscribe stub there. */
-export const FARE_COURT_STUB_PATH = "/articles/grinder-maintenance";
+/** apps/demo's FARE_COURT_STUB_PATH: paying agents are served a subscribe stub there. */
+export const FARE_COURT_STUB_PATH = "/recipes/sourdough-starter";
+
+/** Paths under this prefix are the demo's paid APIs; any other path is a page. */
+const API_PREFIX = "/api/";
 
 export const EXAMPLE_CACHE_MS = 60_000;
 const LOOKUP_TIMEOUT_MS = 2_000;
 /** Newest qualifying receipts read per lookup; the stub filter runs on these. */
-const CANDIDATES = 25;
+const CANDIDATES = 100;
 
 type Sql = DbHandle["sql"];
 
@@ -91,12 +103,17 @@ export async function findExampleReceiptId(sql: Sql, query: ExampleQuery): Promi
     limit ${CANDIDATES}
   `;
 
+  const demo = { pricing: DEMO_SITE_PRICING, freePaths: DEMO_SITE_FREE_PATHS };
   const candidates = rows.filter((row) => {
     const path = plainPathOf(row.resource_url);
-    return path !== null && path !== FARE_COURT_STUB_PATH;
+    return (
+      path !== null &&
+      path !== FARE_COURT_STUB_PATH &&
+      findPricingRule(demo, "GET", path) !== undefined
+    );
   });
-  const article = candidates.find((row) => plainPathOf(row.resource_url)?.startsWith("/articles/"));
-  return (article ?? candidates[0])?.id ?? null;
+  const page = candidates.find((row) => !plainPathOf(row.resource_url)?.startsWith(API_PREFIX));
+  return (page ?? candidates[0])?.id ?? null;
 }
 
 interface CachedExample {

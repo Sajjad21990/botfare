@@ -158,7 +158,7 @@ function EmptyState({
             >
               Run the research agent
             </Link>{" "}
-            to create some. It pays the demo coffee site, Crema Notes, a few cents a page.
+            to create some. It pays Saffron &amp; Salt, our demo recipe blog, a few cents a page.
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-2">

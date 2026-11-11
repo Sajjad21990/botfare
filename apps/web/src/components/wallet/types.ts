@@ -29,7 +29,7 @@ export interface WalletReceipt {
   createdAt: string;
   siteId: string;
   siteName: string;
-  /** Path of the paid resource, e.g. `/articles/grinders`. */
+  /** Path of the paid resource, e.g. `/recipes/crispy-oven-potatoes`. */
   path: string;
   agentKeyId: string;
   agentKeyName: string;

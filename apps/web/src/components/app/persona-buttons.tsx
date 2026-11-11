@@ -14,7 +14,7 @@ const SIDES: Record<DemoPersona, { title: string; blurb: string; Icon: LucideIco
   publisher: {
     title: "I run a website",
     blurb:
-      "Sign in as Crema Notes, our demo coffee blog. Agents pay from 3¢ an article, and you keep 95%.",
+      "Sign in as Saffron & Salt, our demo recipe blog. Agents pay 2¢ for a recipe, and you keep 95%.",
     Icon: Globe,
   },
   agentOwner: {

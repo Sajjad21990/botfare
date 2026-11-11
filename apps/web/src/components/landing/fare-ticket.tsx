@@ -1,18 +1,18 @@
 import { ArrowUpRightIcon } from "lucide-react";
 import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import styles from "./landing.module.css";
-import { DEMO_ARTICLE_URL } from "./links";
+import { DEMO_RECIPE_URL } from "./links";
 import { NewTabLink } from "./new-tab-link";
 import { NotchedTicket } from "./notched-ticket";
 
 /**
  * The hero's example: one paid page drawn as a printed ticket. The figures are illustrative; the
- * page link is the real demo article, which reads free in a browser.
+ * page link is the real demo recipe, which reads free in a browser.
  */
 export function FareTicket() {
   return (
     <figure
-      aria-label="A research agent paid Crema Notes 3¢ for one article"
+      aria-label="A research agent paid Saffron & Salt 2¢ for one recipe"
       className="mx-auto w-full max-w-sm lg:rotate-2"
     >
       <NotchedTicket>
@@ -32,13 +32,13 @@ export function FareTicket() {
             <dd className="text-lg font-semibold">Research agent</dd>
             <dt className="text-sm text-muted-foreground">Paid to</dt>
             <dd className="min-w-0">
-              <span className="block text-lg font-semibold">Crema Notes</span>
+              <span className="block text-lg font-semibold">Saffron &amp; Salt</span>
               <NewTabLink
-                href={DEMO_ARTICLE_URL}
+                href={DEMO_RECIPE_URL}
                 icon={<ArrowUpRightIcon aria-hidden className="ml-0.5 inline size-3.5" />}
                 className={`${styles.focusRing} ${styles.mono} rounded-sm text-[0.8125rem] break-all underline decoration-foreground/40 underline-offset-4 hover:decoration-foreground`}
               >
-                /articles/burr-basics
+                /recipes/weeknight-red-lentil-dal
               </NewTabLink>
             </dd>
           </dl>
@@ -56,7 +56,7 @@ export function FareTicket() {
             <p
               className={`${styles.tabular} font-heading text-6xl leading-none font-extrabold tracking-tight`}
             >
-              3¢
+              2¢
             </p>
           </div>
           <span

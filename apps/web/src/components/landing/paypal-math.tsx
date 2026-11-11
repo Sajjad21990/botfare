@@ -2,8 +2,8 @@ import styles from "./landing.module.css";
 import { readmeUrl } from "./links";
 import { NewTabLink } from "./new-tab-link";
 
-/** $5.00 at 3¢ a page; one PayPal payment per page would cost 166 fees of about 49¢ each. */
-const PAGES_PER_TOP_UP = 166;
+/** $5.00 at 2¢ a recipe; one PayPal payment per page would cost 250 fees of about 49¢ each. */
+const PAGES_PER_TOP_UP = 250;
 
 const apis = ["PayPal Checkout", "Payouts", "Webhooks", "Log in with PayPal", "x402", "MCP"];
 
@@ -39,7 +39,7 @@ export function PaypalMath() {
             1 fee, not {PAGES_PER_TOP_UP}.
           </h2>
           <p className="mt-6 max-w-xl text-lg leading-relaxed">
-            A PayPal payment per 3¢ page would cost about 49¢ in fees. A $5 top-up covers{" "}
+            A PayPal payment for a 2¢ recipe would cost about 49¢ in fees. A $5 top-up covers{" "}
             {PAGES_PER_TOP_UP} pages.
           </p>
           <p className="mt-4 max-w-xl leading-relaxed">

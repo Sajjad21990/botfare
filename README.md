@@ -6,13 +6,13 @@ BotFare lets websites charge AI agents a few cents a page, paid through PayPal, 
 
 - **Websites and APIs** add one line of code, set prices in a dashboard, and get paid to their PayPal account.
 - **AI agent owners** top up once with PayPal and give each agent a key with a budget: a daily limit, a top price per page and the sites it may pay.
-- **AI makes the 3¢ decisions:** the agent buys only the pages worth their price, [Fare Court](#fare-court-buyer-protection-for-3-purchases) refunds a page that wasn't as promised, and [Fare Advisor](#fare-advisor-why-didnt-the-bot-buy) suggests prices. Code, not the model, moves the money.
+- **AI makes the 2¢ decisions:** the agent buys only the pages worth their price, [Fare Court](#fare-court-buyer-protection-for-3-purchases) refunds a page that wasn't as promised, and [Fare Advisor](#fare-advisor-why-didnt-the-bot-buy) suggests prices. Code, not the model, moves the money.
 
 Why now: AI answers take the clicks that paid for the writing. With a Google AI Overview on the page, people click a result on 8% of visits instead of 15% ([Pew Research Center, 2025](https://www.seroundtable.com/pew-google-ai-overviews-39808.html)).
 
 **Try it in 2 minutes:** https://botfare-web.onrender.com/judge
 
-Three steps, no sign-up: watch an AI agent pay, see the website's dashboard, and top up a wallet with PayPal. Everything runs in the PayPal sandbox with test money. The demo website is [Crema Notes](https://botfare-demo.onrender.com), and one [Docker command](#run-everything-in-docker) runs the whole stack on your machine.
+Three steps, no sign-up: watch an AI agent pay, see the website's dashboard, and top up a wallet with PayPal. Everything runs in the PayPal sandbox with test money. The demo website is [Saffron & Salt](https://botfare-demo.onrender.com), a made-up recipe blog, and one [Docker command](#run-everything-in-docker) runs the whole stack on your machine.
 
 ## Quick start
 
@@ -36,7 +36,7 @@ import { createBotFareAgent } from "@botfare/sdk";
 
 // BOTFARE_AGENT_KEY and BOTFARE_URL live in .env
 const agent = createBotFareAgent({ agentKey: process.env.BOTFARE_AGENT_KEY!, maxPerRequestUsd: 0.1 });
-const { response, paid, receiptId } = await agent.fetch("https://botfare-demo.onrender.com/articles/burr-basics");
+const { response, paid, receiptId } = await agent.fetch("https://botfare-demo.onrender.com/recipes/weeknight-red-lentil-dal");
 ```
 
 The agent is charged only when the page is delivered, never above `maxPerRequestUsd`, and BotFare enforces the key's daily limit again when it settles. For the live app, `BOTFARE_URL=https://botfare-web.onrender.com`. Using Claude Desktop or Claude Code? Add the [MCP server](packages/mcp/README.md) instead.
@@ -47,7 +47,7 @@ AI agents read pages and call APIs for free, and the open standard for paying pe
 
 Agent owners fund a USD wallet with **PayPal Checkout**, every request settles in BotFare's double-entry ledger, BotFare keeps 5%, and publishers are paid through **PayPal Payouts**. Humans browsing the same site are never charged: a score decides who pays, never a hard block ([who pays](#who-pays-agent-detection)). AI (Claude by default, or any model you configure; the live demo runs Groq's `openai/gpt-oss-120b`) makes the decisions too small for a person, and code moves the money ([AI on every side of the fare](#ai-on-every-side-of-the-fare)).
 
-Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), November 2026. **Live demo:** [botfare-web.onrender.com/judge](https://botfare-web.onrender.com/judge) (BotFare) · [botfare-demo.onrender.com](https://botfare-demo.onrender.com) (Crema Notes, the demo publisher).
+Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), November 2026. **Live demo:** [botfare-web.onrender.com/judge](https://botfare-web.onrender.com/judge) (BotFare) · [botfare-demo.onrender.com](https://botfare-demo.onrender.com) (Saffron & Salt, the demo publisher).
 
 ## How BotFare meets the judging criteria
 
@@ -55,17 +55,17 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), Nov
 | --- | --- |
 | Technological Implementation (PayPal + AI) | A real x402 plug-in on the official SDK ([`packages/x402-paypal`](packages/x402-paypal), [protocol](docs/PROTOCOL.md)); PayPal Orders v2 with JS SDK v6, Payouts, webhooks and Log in with PayPal ([PayPal APIs used](#paypal-apis-used)); a double-entry ledger ([`packages/core`](packages/core)); AI with policy in code: [Fare Court](apps/web/src/lib/server/fare-court.ts), [Fare Advisor](apps/web/src/lib/server/fare-advisor.ts), the [research agent](#the-research-agent) on any model; [signed receipts](#signed-receipts) |
 | Design | `/judge` tour, a one-line publisher setup, the wallet's PayPal top-up, the research agent's wire inspector and Verify sources, AG Studio analytics in BotFare's theme (`/publisher/analytics`) |
-| Potential Impact | Small publishers and API owners earn from AI traffic through PayPal accounts they already have; one $5 top-up (one $0.66 fee) covers about 166 reads ([fee maths](#why-it-needs-a-ledger)) |
+| Potential Impact | Small publishers and API owners earn from AI traffic through PayPal accounts they already have; one $5 top-up (one $0.66 fee) covers 250 recipes at 2¢ ([fee maths](#why-it-needs-a-ledger)) |
 | Quality of the Idea | x402 for PayPal's 440 million accounts; [AI on every side of the fare](#ai-on-every-side-of-the-fare) for decisions too small for a person |
 | Presentation | The `/judge` tour, the one-command [Docker stack](#run-everything-in-docker), the demo video, and [honest limits](#honest-limits) written down |
 
 ## Why it needs a ledger
 
-A PayPal payment costs at least 49¢ in fees (3.49% + $0.49), and even PayPal's micropayments rate is 4.99% + 9¢. Neither works for a 3¢ article. BotFare batches the PayPal side and settles each request in its own ledger:
+A PayPal payment costs at least 49¢ in fees (3.49% + $0.49), and even PayPal's micropayments rate is 4.99% + 9¢. Neither works for a 2¢ recipe. BotFare batches the PayPal side and settles each request in its own ledger:
 
 | | PayPal per read | Through BotFare |
 | --- | --- | --- |
-| Agent owner | ~49¢ fee on every 3¢ read | One $5.00 top-up, one **$0.66** fee (measured in sandbox; BotFare pays it, so the wallet gets the full $5.00), about 166 reads |
+| Agent owner | ~49¢ fee on every 2¢ read | One $5.00 top-up, one **$0.66** fee (measured in sandbox; BotFare pays it, so the wallet gets the full $5.00), 250 reads at 2¢ |
 | Publisher | One payment per read | One Payouts batch for all of a day's earnings |
 | Each request | A full PayPal transaction | A signed authorization, a ledger posting and a receipt |
 
@@ -77,15 +77,15 @@ sequenceDiagram
     participant A as AI agent<br/>(@x402/fetch + BotFare plug-in)
     participant P as Publisher server<br/>(@x402/express + BotFare plug-in)
     participant F as BotFare facilitator<br/>(x402Facilitator + ledger)
-    A->>P: GET /articles/burr-basics
-    P-->>A: 402 + PAYMENT-REQUIRED<br/>(prepaid, paypal:sandbox, USD, amount 3) + free preview
+    A->>P: GET /recipes/weeknight-red-lentil-dal
+    P-->>A: 402 + PAYMENT-REQUIRED<br/>(prepaid, paypal:sandbox, USD, amount 2) + free preview
     Note over A: Checks price against its budget,<br/>signs an Ed25519 authorization with a fresh nonce
     A->>P: GET + PAYMENT-SIGNATURE
     P->>F: POST /verify
     F-->>P: isValid
     Note over P: Runs the handler
     P->>F: POST /settle
-    Note over F: One DB transaction: nonce used,<br/>wallet −3¢, publisher +2.85¢, BotFare +0.15¢
+    Note over F: One DB transaction: nonce used,<br/>wallet −2¢, publisher +1.9¢, BotFare +0.1¢
     F-->>P: success, transaction rcpt_…
     P-->>A: 200 + content + PAYMENT-RESPONSE
 ```
@@ -100,7 +100,7 @@ Settlement happens only after the publisher's handler succeeds, so an agent is n
 | --- | --- |
 | Off | Only agents that identify themselves: signed agents, the `x-botfare-agent` header, an x402 payment |
 | Known AI bots (default for new sites) | Also known AI crawlers, and anything that claims to be one from outside its published IP ranges |
-| Standard (Crema Notes) | Also requests whose automation score reaches 60 (CDN bot scores, HTTP-client and headless signs) |
+| Standard (Saffron & Salt) | Also requests whose automation score reaches 60 (CDN bot scores, HTTP-client and headless signs) |
 | Strict | Like Standard, from a score of 40 |
 
 The first signal that charges at the site's level is recorded on the receipt and sent to BotFare in the x402 requirements (`extra.botfareSignal`), so the analytics show **revenue by detection signal**:
@@ -114,9 +114,9 @@ The first signal that charges at the site's level is recorded on the receipt and
 | `edge-score` | Cloudflare `cf-bot-score` at or below 29, or an Akamai bot verdict, when the publisher enables those headers | Standard, Strict |
 | `automation` | HTTP client user agents (curl, python-requests, Node fetch: 80), headless browsers (80), no user agent (70), any other user agent that is not a browser, i.e. has no `Mozilla/` token, such as `research-bot/1.0` (70), a desktop-browser user agent without a real `Accept-Language` (30) or without `Sec-Fetch-Site`/`-Dest` (30) | Standard, Strict |
 | `payment-signature` | An x402 payment and nothing above | every level |
-| `everyone` | The path charges every request (the brew API) | every level |
+| `everyone` | The path charges every request (the nutrition API) | every level |
 
-**The human check.** A browser asking for HTML that is charged only on a score (`automation` or `edge-score`) gets a page that says "Reading as a human? Continue free." with a Cloudflare Turnstile widget, still as a 402 that carries the offer for agents. Passing it posts to `/__botfare/human`, which verifies the token with Cloudflare and sets a signed, HttpOnly, 24-hour `botfare_human` cookie; the reader returns to the page and reads free. The pass switches off scores only: it never covers a self-identified agent, a signed agent, a crawler or an impostor. Crema Notes uses Cloudflare's always-pass test key, so the demo works without a Cloudflare account; a test site key always uses Cloudflare's test secret, and a real site key needs its own widget's secret in the publisher's `TURNSTILE_SECRET_KEY` (botfare() logs it when that is missing or is a test secret). If BotFare's facilitator is briefly unreachable, the check is still served (as a 503 page), so a suspected human is never stuck. A real Chrome, Firefox or Safari scores at most 30 (plain HTTP to a LAN address) and is never charged at any level, even without the check.
+**The human check.** A browser asking for HTML that is charged only on a score (`automation` or `edge-score`) gets a page that says "Reading as a human? Continue free." with a Cloudflare Turnstile widget, still as a 402 that carries the offer for agents. Passing it posts to `/__botfare/human`, which verifies the token with Cloudflare and sets a signed, HttpOnly, 24-hour `botfare_human` cookie; the reader returns to the page and reads free. The pass switches off scores only: it never covers a self-identified agent, a signed agent, a crawler or an impostor. Saffron & Salt uses Cloudflare's always-pass test key, so the demo works without a Cloudflare account; a test site key always uses Cloudflare's test secret, and a real site key needs its own widget's secret in the publisher's `TURNSTILE_SECRET_KEY` (botfare() logs it when that is missing or is a test secret). If BotFare's facilitator is briefly unreachable, the check is still served (as a 503 page), so a suspected human is never stuck. A real Chrome, Firefox or Safari scores at most 30 (plain HTTP to a LAN address) and is never charged at any level, even without the check.
 
 **Honest limits.**
 
@@ -142,7 +142,13 @@ The first signal that charges at the site's level is recorded on the receipt and
 | `dispute` | Takes a page bought in this run that is not what its offer declared (a stub, an error page) to [Fare Court](#fare-court-buyer-protection-for-3-purchases) with the exact bytes received; at most 2 per run, and a disputed page cannot be cited unless the dispute was denied | Only back to the run (a refund) |
 | `finish` | The answer; every citation must name a receipt bought in this run, and the citations are reported to BotFare | No |
 
-Hard limits live in code, not in the prompt: 10¢ per page (the 50¢ trap article is refused by the SDK before anything is signed), the run's budget (the SDK's per-request cap is always the smaller of 10¢ and what is left, whatever price the free offer showed; a page served after a signed payment but without a receipt still counts), and the key's daily cap, enforced again by the facilitator. The page streams the run over SSE: a timeline of offers, decisions, payments and refusals, a cost meter, a **wire inspector** (decoded `PAYMENT-REQUIRED`, the signed JWS header and claims, `PAYMENT-RESPONSE`) and the cited answer, each citation linked to its receipt.
+Hard limits live in code, not in the prompt: 10¢ per page (the 50¢ cookbook chapter is refused by the SDK before anything is signed), the run's budget (the SDK's per-request cap is always the smaller of 10¢ and what is left, whatever price the free offer showed; a page served after a signed payment but without a receipt still counts), and the key's daily cap, enforced again by the facilitator. The page streams the run over SSE: a timeline of offers, decisions, payments and refusals, a cost meter, a **wire inspector** (decoded `PAYMENT-REQUIRED`, the signed JWS header and claims, `PAYMENT-RESPONSE`) and the cited answer, each citation linked to its receipt.
+
+The page suggests three questions for Saffron & Salt:
+
+- How do I make a weeknight dal that freezes well? (the default; the 2¢ dal recipe and the 5¢ freezing guide answer it)
+- What's the trick to really crispy roast potatoes?
+- How do I start a sourdough starter? (the agent buys the 2¢ starter page, gets a subscribe stub, disputes it in [Fare Court](#fare-court-buyer-protection-for-3-purchases) and gets the 2¢ back)
 
 It needs `BOTFARE_AGENT_KEY` (written by `pnpm seed`) and one AI provider; without them the page says what is missing. The tests drive it with scripted models.
 
@@ -156,9 +162,9 @@ Micropayments have failed for more than 25 years less on technology than on the 
 
 | Seat | The micro-decision | AI in BotFare |
 | --- | --- | --- |
-| Agent (buyer) | Is this page worth 3¢? | Research agent (any model) and MCP server (Claude Desktop or Code): the model reads the free offer, buys or skips with a reason |
+| Agent (buyer) | Is this page worth 2¢? | Research agent (any model) and MCP server (Claude Desktop or Code): the model reads the free offer, buys or skips with a reason |
 | Publisher | What should this page cost an AI? | **Fare Advisor**: prices from what agents say and do |
-| BotFare (referee) | Was that 3¢ page what was promised? | **Fare Court**: AI arbitration of micro-disputes |
+| BotFare (referee) | Was that 2¢ page what was promised? | **Fare Court**: AI arbitration of micro-disputes |
 | Agent owner | How much may my agent spend, and where? | Caps today (daily cap, per-request max, allowed sites); a plain-English allowance is on the backlog |
 
 Every model answer is checked with zod before anything happens, and nothing the model says moves money by itself: refunds happen only through code with fixed thresholds (or a publisher's click), and prices change only when the publisher clicks **Apply**.
@@ -173,7 +179,7 @@ PayPal's Buyer Protection, for purchases too small for a person to dispute.
 4. **The AI judge** (Claude or any configured model) **compares** the declared offer with the delivered text, treating both as untrusted data, and returns a structured verdict (decision, confidence, category, rationale, evidence), validated with zod.
 5. **Policy decides, in code** (`DISPUTE_POLICY`): a `refund` verdict at 80% or more refunds at once through the ledger's one-refund-per-receipt path; a `deny` at 80% or more closes the dispute; everything else goes to the publisher's **Disputes** page (`/publisher/disputes`) with the AI's reasoning, the declared offer next to the delivered excerpt, and Accept refund / Decline refund. Each key may file 10 disputes a day, and once a key disputes more than a fifth of its purchases in 7 days, its refunds need the publisher.
 
-The demo case: Crema Notes' 3¢ "Grinder maintenance, step by step" has a real preview, and people read it in full, but an agent that pays gets a "Subscribe to keep reading" stub. The research agent disputes it, and with an AI provider configured (Claude by default; Groq on the live demo) the 3¢ comes back in seconds; without one the dispute waits for the publisher, who sees the stub next to the promise. The shared demo research key that every judge's run uses gets 200 disputes a day and no dispute-rate rule (other keys keep the policy), so one judge's runs cannot switch instant refunds off for the next.
+The demo case is Saffron & Salt's 2¢ sourdough starter recipe (`/recipes/sourdough-starter`). It has a real preview and people read it in full, but an agent that pays gets a "Subscribe to keep reading" stub. Ask the research agent how to start a sourdough starter and it disputes the stub. With an AI provider configured (Claude by default; Groq on the live demo) the 2¢ comes back in seconds. Without one the dispute waits for the publisher, who sees the stub next to the promise. The shared demo research key that every judge's run uses gets 200 disputes a day and no dispute-rate rule (other keys keep the policy), so one judge's runs cannot switch instant refunds off for the next.
 
 ### Fare Advisor: "Why didn't the bot buy?"
 
@@ -185,7 +191,7 @@ The publisher dashboard's **Fare Advisor** card shows a funnel per pricing rule 
 - **cited**: which paid reads an agent's answer actually used. **Citations are the new clicks**: they replace the clicks AI summaries took away, and the analytics dashboard shows "Cited vs paid by page";
 - **disputed**: Fare Court cases.
 
-The AI groups the decline reasons per page and recommends price, preview or audience changes. Every recommendation is checked in code before it is shown: the pattern must be one of the site's rules, its evidence must match the real counts and reasons, and its text may not contain numbers that are not in the data. The projected weekly revenue comes from BotFare's own funnel model, not from the model. **Apply** opens a confirmation, then changes the pricing rule; the middleware picks it up within 30 seconds. The demo story (`pnpm seed:traffic`, refreshed weekly on Render so it never leaves the 14-day window): the 50¢ premium roundup is shown dozens of times, bought rarely and declined as "Thin listicle, not worth 50¢" and "Preview lists names only", while burr-basics and dialing-in are cited in most answers that paid for them.
+The AI groups the decline reasons per page and recommends price, preview or audience changes. Every recommendation is checked in code before it is shown: the pattern must be one of the site's rules, its evidence must match the real counts and reasons, and its text may not contain numbers that are not in the data. The projected weekly revenue comes from BotFare's own funnel model, not from the model. **Apply** opens a confirmation, then changes the pricing rule; the middleware picks it up within 30 seconds. In the demo story (`pnpm seed:traffic`, refreshed weekly on Render so it stays inside the 14-day window), agents see the 50¢ cookbook chapter (`/cookbook/spice-pantry-chapter`, a list of about 20 spices) dozens of times. They rarely buy it and decline it with "Thin list, not worth 50¢" and "Preview lists spice names only". Meanwhile the dal recipe and the freezing guide are cited in most answers that paid for them.
 
 ### Honest limits
 
@@ -223,12 +229,12 @@ The public keys are at [`/.well-known/botfare-receipt-keys.json`](docs/PROTOCOL.
 
 How to verify one:
 
-- **In the browser:** [`/verify`](apps/web/src/app/verify/page.tsx) takes a receipt ID, a link or pasted statements, fetches the public keys and checks every signature in the page itself, then shows the claims in plain words ("Paid 3¢ to … for /articles/burr-basics", the split, "Delivered 6,278 bytes", the refund) with the raw JWS. "Check your copy" hashes a file you hold and compares it with the signed delivery digest. Wallet receipt rows and dispute rows link to it.
+- **In the browser:** [`/verify`](apps/web/src/app/verify/page.tsx) takes a receipt ID, a link or pasted statements, fetches the public keys and checks every signature in the page itself, then shows the claims in plain words ("Paid 2¢ to … for /recipes/weeknight-red-lentil-dal", the split, the number of bytes delivered, the refund) with the raw JWS. "Check your copy" hashes a file you hold and compares it with the signed delivery digest. Wallet receipt rows and dispute rows link to it.
 - **In code:** `verifyStatement(token, jwks, { issuer, kind })` from `@botfare/contracts/receipts` (Node and browsers, `jose` + WebCrypto); the SDK's `agent.verifyReceipt(result.receiptStatement)` fetches and caches the keys; `PaidResult.readDigest` is the digest of the bytes the agent read.
 - **From Claude:** the MCP server's `fetch_paid` returns the signed receipt with a signature check, and `verify_receipt` checks every statement BotFare holds for a receipt.
 - **The research agent's answer** carries a **sources manifest**: for each citation, the signed payment and delivery statements and the digest of the bytes the agent read. Its **Verify sources** panel checks in the browser, per source, **Paid** (BotFare's signature, for this receipt and the URL the publisher served; a refunded fare or a payment bound to no URL does not count), **Delivered** (signed digest) and **Bytes match** (what the agent read is what the publisher attested). This answer paid for its sources, and you can verify every one.
 
-`pnpm e2e` checks it on real servers: the paid article's `PAYMENT-RESPONSE` statement verifies against the JWKS fetched from the app, edited claims or signatures fail, the delivery digest equals the digest of the bytes the agent received, the publisher refund and the Fare Court refund each get a signed refund statement, the JWKS holds no private key members, and `/verify` renders.
+`pnpm e2e` checks it on real servers: the paid recipe's `PAYMENT-RESPONSE` statement verifies against the JWKS fetched from the app, edited claims or signatures fail, the delivery digest equals the digest of the bytes the agent received, the publisher refund and the Fare Court refund each get a signed refund statement, the JWKS holds no private key members, and `/verify` renders.
 
 **Honest limit.** A signed receipt proves BotFare issued it and cannot later deny it. It does not prove BotFare never deleted or edited history: a receipt that was never shown to anyone could be dropped. A tamper-evident ledger (signed Merkle checkpoints of all receipts, so a missing or changed one is detectable) is the stretch goal.
 
@@ -238,7 +244,7 @@ How to verify one:
 
 ## Judge mode and Log in with PayPal
 
-`/judge` is a three-step tour, each step one click that signs in the right persona: watch the research agent pay, open Crema Notes' publisher dashboard, and top up the wallet. Under **For developers**, a copy-paste curl shows an agent getting a 402 (a browser gets the article). The demo personas need no password and are shared, so signing in restores Crema Notes' prices and payout email, and the site secret, payout account and seeded agent keys are locked. Every judge's research run pays with the one seeded demo key (10¢ per page, $10.00 a day), and the agent owner's wallet is put back to $5.00 at sign-in and before each run, so earlier judges cannot leave it empty. Runs are one at a time per visitor (user and IP), not per shared persona. When `JUDGE_SANDBOX_BUYER_EMAIL` and `JUDGE_SANDBOX_BUYER_PASSWORD` are set, the page shows that PayPal **sandbox** buyer (test money) for approving a top-up, with the password hidden until **Show** and copy buttons for both.
+`/judge` is a three-step tour, each step one click that signs in the right persona: watch the research agent pay, open Saffron & Salt's publisher dashboard, and top up the wallet. Under **For developers**, a copy-paste curl shows an agent getting a 402 (a browser gets the recipe). The demo personas need no password and are shared, so signing in restores Saffron & Salt's prices and payout email, and the site secret, payout account and seeded agent keys are locked. Every judge's research run pays with the one seeded demo key (10¢ per page, $10.00 a day), and the agent owner's wallet is put back to $5.00 at sign-in and before each run, so earlier judges cannot leave it empty. Runs are one at a time per visitor (user and IP), not per shared persona. When `JUDGE_SANDBOX_BUYER_EMAIL` and `JUDGE_SANDBOX_BUYER_PASSWORD` are set, the page shows that PayPal **sandbox** buyer (test money) for approving a top-up, with the password hidden until **Show** and copy buttons for both.
 
 Publishers who want their own account use **Log in with PayPal** (sandbox), which signs them in by their verified PayPal email and sets it as their payout email. It is off until `PAYPAL_LOGIN_ENABLED=true`, because the sandbox app must be set up first:
 
@@ -294,7 +300,7 @@ flowchart LR
 | Side | Class | What it does |
 | --- | --- | --- |
 | Agent | `PrepaidPayPalClient` (`SchemeNetworkClient`) | Signs an Ed25519 JWS over scheme, network, asset, amount, payee and a fresh nonce |
-| Publisher | `PrepaidPayPalServer` (`SchemeNetworkServer`) | Turns `"$0.03"` into `{ asset: "USD", amount: "3" }`; uses the verify, serve, settle flow |
+| Publisher | `PrepaidPayPalServer` (`SchemeNetworkServer`) | Turns `"$0.02"` into `{ asset: "USD", amount: "2" }`; uses the verify, serve, settle flow |
 | Facilitator | `PrepaidPayPalFacilitator` (`SchemeNetworkFacilitator`) | Checks the signature, expiry and field binding, then charges through a ledger port |
 
 A decoded `PAYMENT-REQUIRED` header from the official `@x402/express` middleware looks like this:
@@ -302,9 +308,9 @@ A decoded `PAYMENT-REQUIRED` header from the official `@x402/express` middleware
 ```json
 {
   "x402Version": 2,
-  "resource": { "url": "https://demo.example/articles/burr-basics", "description": "Burr grinders, explained", "mimeType": "text/html" },
+  "resource": { "url": "https://demo.example/recipes/weeknight-red-lentil-dal", "description": "Recipe (full text)", "mimeType": "text/html" },
   "accepts": [
-    { "scheme": "prepaid", "network": "paypal:sandbox", "amount": "3", "asset": "USD", "payTo": "site_demo", "maxTimeoutSeconds": 60, "extra": {} }
+    { "scheme": "prepaid", "network": "paypal:sandbox", "amount": "2", "asset": "USD", "payTo": "site_demo", "maxTimeoutSeconds": 60, "extra": {} }
   ]
 }
 ```
@@ -333,7 +339,7 @@ Everything runs in the PayPal **sandbox only**.
 | Postgres double-entry ledger, `PostgresPrepaidLedger`, refunds | ✅ Built; DB tests cover concurrency, caps, replays and refunds |
 | Facilitator API in the Next.js app (`/api/x402/*`, site config, health) | ✅ Built; site Basic auth |
 | `botfare()` publisher middleware, agent SDK (`getOffer`, paid `fetch`, spend cap, wire events) | ✅ Built |
-| Crema Notes demo publisher (articles + brew-ratio API) | ✅ Built |
+| Saffron & Salt demo publisher (8 pages of recipes, techniques, a meal plan and a cookbook chapter, plus a nutrition API) | ✅ Built |
 | `pnpm seed` + `pnpm e2e`: Phase 1 on real processes and Postgres | ✅ All checks pass |
 | Render Blueprint ([`render.yaml`](render.yaml)): app, demo, daily payouts cron, weekly demo-refresh cron, Postgres | ✅ Deployed (11 Nov) |
 | Wallet: balance, PayPal JS SDK v6 top-up, agent keys made in the browser, receipts | ✅ Built; a real sandbox top-up ($5.00, PayPal fee $0.66 booked from the capture) credited the wallet |
@@ -345,7 +351,7 @@ Everything runs in the PayPal **sandbox only**.
 | Research agent (`/agent`): tools, budget and caps, SSE timeline, wire inspector, cited answer | ✅ Built; tested with a scripted model and run live on Groq's and OpenRouter's free tiers (the live demo runs Groq's `openai/gpt-oss-120b`; Claude is the default when its key is set) |
 | MCP server ([`packages/mcp`](packages/mcp/README.md)) and the signed agent API | ✅ Built and tested against an in-process publisher and facilitator |
 | `/judge` tour and judge mode | ✅ Built |
-| Fare Court: declared offers, attested `Content-Digest`, signed disputes, AI judge with policy in code, publisher Disputes page, SDK/MCP/research agent disputes, the Crema Notes stub case | ✅ Built; `pnpm e2e` checks it on real servers without an AI key (the publisher decides); live verdicts checked on Groq's free tier (needs any AI provider key) |
+| Fare Court: declared offers, attested `Content-Digest`, signed disputes, AI judge with policy in code, publisher Disputes page, SDK/MCP/research agent disputes, the sourdough starter stub case | ✅ Built; `pnpm e2e` checks it on real servers without an AI key (the publisher decides); live verdicts checked on Groq's free tier (needs any AI provider key) |
 | Fare Advisor: offer telemetry, decline notes, citations, funnel per rule, checked AI recommendations, Apply, citations in analytics | ✅ Built; `pnpm e2e` checks the funnel and Apply → middleware → next agent buys; live recommendations checked on Groq's free tier (needs any AI provider key) |
 | Signed receipts: payment, delivery and refund statements (Ed25519 JWS), JWKS, public statements endpoint, `/verify`, SDK `verifyReceipt`, MCP `verify_receipt`, research agent sources manifest and Verify sources | ✅ Built; `pnpm e2e` verifies payment, delivery and refund statements against the published keys |
 | Log in with PayPal | ✅ Live on Render: signs a publisher in by their verified PayPal email |
@@ -374,7 +380,7 @@ apps/web               Next.js: landing page, /judge, sign-in (personas, Log in 
                        research agent (/agent), publisher dashboard, Disputes and analytics, Fare Court
                        judge and Fare Advisor, x402 facilitator API (/api/x402/*), agent API (/api/agent/*,
                        /api/disputes, /api/offers/decline, /api/citations), PayPal webhook, site config, health
-apps/demo              Crema Notes: fictional coffee site and brew-ratio API behind botfare()
+apps/demo              Saffron & Salt: a fictional recipe blog and nutrition API behind botfare()
 scripts/seed.ts        demo personas, site, $5 wallet and agent key, written to .env
 scripts/traffic.ts     demo traffic: three more agent keys, ~150 paid requests over 14 days, and the Fare Court
                        and Fare Advisor story (offers, declines, citations, disputed stub purchases)
@@ -396,7 +402,7 @@ pnpm install
 cp .env.example .env    # PayPal sandbox keys: top-ups, Withdraw now and the spikes need them
 pnpm db:up              # Postgres 17 in Docker (botfare and botfare_test databases)
 pnpm db:migrate         # apply the Drizzle migrations to DATABASE_URL
-pnpm seed               # judge personas, Crema Notes site, $5.00 wallet, agent key (and a receipt seed) -> .env
+pnpm seed               # judge personas, Saffron & Salt site, $5.00 wallet, agent key (and a receipt seed) -> .env
 pnpm seed:traffic       # ~150 paid requests over the last 14 days, plus the Fare Court and Advisor story
 pnpm e2e                # start the app and the demo, pay for content, check every ledger movement
 ```
@@ -410,22 +416,22 @@ WEB_PORT=3100 DEMO_PORT=4100 E2E_WEB=start pnpm e2e
 
 It then checks:
 
-- a human in a real browser (full Chrome headers) reads an article free;
-- `getOffer` shows 3¢ with a preview and moves no money;
-- the agent pays and gets a receipt;
-- the ledger moved exactly (wallet −30,000 micro-dollars, publisher +28,500, BotFare +1,500);
+- a human in a real browser (full Chrome headers) reads a recipe free;
+- `getOffer` shows 2¢ with a preview and moves no money;
+- the agent pays 2¢ for the recipe and gets a receipt;
+- the ledger moved exactly (wallet −20,000 micro-dollars, publisher +19,000, BotFare +1,000);
 - a replayed payment is refused with `nonce_used` and the original receipt;
-- a 50¢ article is refused by the 10¢ cap before anything is signed;
-- the brew API charges 1¢ to any paying client;
+- the 50¢ cookbook chapter is refused by the 10¢ cap before anything is signed;
+- the nutrition API charges 1¢ to any paying client;
 - a refund restores the wallet exactly once;
 - curl and python-requests without the agent header, a script with a bare Chrome user agent, and a `research-bot/1.0` user agent get a 402 with signal `automation`, while a Slack link preview reads free;
 - a GPTBot user agent from 127.0.0.1 is a `bot-impostor`;
 - the SDK's signed requests are recognised as `signed-agent` and pay;
 - a headless browser gets the Turnstile page, Cloudflare's test token sets the human pass, and its next read is free (an agent with the same cookie still pays);
 - each receipt records the right detection signal;
-- signed receipts: the JWKS fetched from the app holds only public Ed25519 keys; the paid article's `PAYMENT-RESPONSE` carries a payment statement that verifies against it (receipt, amount, 95/5 split, payee, payer, URL, signal), and the SDK's verifier agrees; an edited amount, receipt or signature fails; after the publisher attests, a signed delivery statement's digest equals the digest of the bytes the agent received (Paid ✓ Delivered ✓ Bytes match ✓, as the Verify sources panel checks); the facilitator refund and the Fare Court refund each get a signed refund statement (`via: publisher`, `via: dispute` with the dispute ID); `/verify` renders;
-- Fare Court: the paid stub article declares its offer and the demo attests the digest of exactly the bytes the agent received; a dispute with tampered bytes is `invalid`; a dispute with the real bytes is accepted and, with no AI judge, waits for the publisher; the publisher's accept through the API refunds 3¢ exactly once, and a second accept or dispute is refused;
-- Fare Advisor: a decline note and a citation report are recorded, the middleware's offer telemetry reaches BotFare, the advisor returns the funnel per rule with `aiAvailable: false`, and Apply 50¢ → 8¢ on the premium rule shows in the site config, reaches the middleware within 30 seconds, and the 10¢-capped agent then buys it (the price is put back to 50¢ afterwards);
+- signed receipts: the JWKS fetched from the app holds only public Ed25519 keys; the paid recipe's `PAYMENT-RESPONSE` carries a payment statement that verifies against it (receipt, amount, 95/5 split, payee, payer, URL, signal), and the SDK's verifier agrees; an edited amount, receipt or signature fails; after the publisher attests, a signed delivery statement's digest equals the digest of the bytes the agent received (Paid ✓ Delivered ✓ Bytes match ✓, as the Verify sources panel checks); the facilitator refund and the Fare Court refund each get a signed refund statement (`via: publisher`, `via: dispute` with the dispute ID); `/verify` renders;
+- Fare Court: the paid sourdough starter stub declares its offer and the demo attests the digest of exactly the bytes the agent received; a dispute with tampered bytes is `invalid`; a dispute with the real bytes is accepted and, with no AI judge, waits for the publisher; the publisher's accept through the API refunds 2¢ exactly once, and a second accept or dispute is refused;
+- Fare Advisor: a decline note and a citation report are recorded, the middleware's offer telemetry reaches BotFare, the advisor returns the funnel per rule with `aiAvailable: false`, and Apply 50¢ → 8¢ on the cookbook rule (`/cookbook/*`) shows in the site config, reaches the middleware within 30 seconds, and the 10¢-capped agent then buys the chapter (the price is put back to 50¢ afterwards);
 - the ledger sums to zero.
 
 The web app it starts runs with every AI provider key blanked, so the required checks cover Fare Court's no-AI path. With any provider key in `.env`, `E2E_AI=1` keeps the keys and adds an optional check that the AI judge refunds the stub at once.
@@ -438,7 +444,7 @@ To click around yourself:
 
 ```bash
 pnpm dev:web            # BotFare app on http://localhost:3000 (GET /api/health)
-pnpm dev:demo           # Crema Notes on http://localhost:4000, payments on with the seeded site
+pnpm dev:demo           # Saffron & Salt on http://localhost:4000, payments on with the seeded site
 ```
 
 Open http://localhost:3000/signin and pick a persona:
@@ -446,15 +452,16 @@ Open http://localhost:3000/signin and pick a persona:
 - **Agent owner** (`/wallet`, `/agent`): balance, a PayPal top-up button ($5, $10 or $20, approved with a sandbox buyer account), agent keys generated in the browser with their budgets (revoked keys are hidden until "Show revoked"), receipts, and the research agent.
 - **Publisher** (`/publisher`, `/publisher/disputes`, `/publisher/analytics`): earnings (Available, and Clearing for fares still inside the 24-hour dispute window), Withdraw now to `PUBLISHER_PAYPAL_EMAIL` through PayPal Payouts, payout history with "Refresh status", the Fare Advisor card, the pricing editor, Fare Court's Disputes page, and the AG Studio analytics dashboard.
 
-`pnpm seed:traffic` is safe to run again: nonces, the wallet funding and two publisher refunds are keyed by its run key, and the plan's dates are anchored to the first run (stored with the funding), so a rerun moves no money on the same day or any later one. `pnpm seed:traffic --run-key <name>` adds a fresh batch, and `--weekly` names it after the ISO week (what the Render cron runs). The story is dated inside the 14 days before its run, so it leaves the Fare Advisor's window two weeks later; offers and citations are written only for that run's own purchases, so overlapping batches never count one twice. It settles every request through `PostgresPrepaidLedger` with a clock set to the request's time, so per-request maxes, daily caps and allowed sites apply as they would live. It then writes the Fare Court and Fare Advisor story through the same core services the live endpoints use: offers shown for every article, the premium roundup declined again and again at 50¢, burr-basics and dialing-in cited often, and four stub purchases of the grinder-maintenance article, attested and disputed (three refunded by policy, one waiting for the publisher). Those verdicts are scripted, since no model runs in the seed; the refunds still go through the dispute policy and the ledger's refund.
+`pnpm seed:traffic` is safe to run again: nonces, the wallet funding and two publisher refunds are keyed by its run key, and the plan's dates are anchored to the first run (stored with the funding), so a rerun moves no money on the same day or any later one. `pnpm seed:traffic --run-key <name>` adds a fresh batch, and `--weekly` names it after the ISO week (what the Render cron runs). The story is dated inside the 14 days before its run, so it leaves the Fare Advisor's window two weeks later; offers and citations are written only for that run's own purchases, so overlapping batches never count one twice. It settles every request through `PostgresPrepaidLedger` with a clock set to the request's time, so per-request maxes, daily caps and allowed sites apply as they would live. Its three keys buy what fits them: the Research agent buys recipes and techniques, the Price watcher calls the nutrition API, and the Newsletter bot buys meal plans and the odd technique. It then writes the Fare Court and Fare Advisor story through the same core services the live endpoints use. Offers are shown for every page, the 50¢ cookbook chapter is declined again and again, and the dal recipe and the freezing guide are cited often. Four purchases of the sourdough starter stub are attested and disputed: three are refunded by policy and one waits for the publisher. Those verdicts are scripted, since no model runs in the seed; the refunds still go through the dispute policy and the ledger's refund.
 
 `pnpm payouts:run` is the daily payout job: one Payouts batch for every publisher with $1.00 or more of cleared earnings and a payout email (it prints what is still clearing), then a status sync of every open payout. It is idempotent (`sender_batch_id` and `PayPal-Request-Id` per batch), and on Render it runs as the `botfare-payouts` cron job.
 
-Then open http://localhost:4000 in a browser, where humans read free. Agents get a 402 with a price and a preview; at Crema Notes' Standard level a plain curl does too, with signal `automation` in the decoded `PAYMENT-REQUIRED`:
+Then open http://localhost:4000 in a browser, where humans read free. Agents get a 402 with a price and a preview; at Saffron & Salt's Standard level a plain curl does too, with signal `automation` in the decoded `PAYMENT-REQUIRED`:
 
 ```bash
-curl -i -H 'x-botfare-agent: 1' http://localhost:4000/articles/burr-basics
-curl -i http://localhost:4000/articles/burr-basics
+curl -i -H 'x-botfare-agent: 1' http://localhost:4000/recipes/weeknight-red-lentil-dal
+curl -i http://localhost:4000/recipes/weeknight-red-lentil-dal
+curl -i 'http://localhost:4000/api/nutrition?recipe=weeknight-red-lentil-dal'   # 1¢ for every caller
 ```
 
 Or start at http://localhost:3000/judge for the guided tour.
@@ -463,13 +470,13 @@ Run `pnpm seed` again whenever you like. It keeps the site secret in `.env` whil
 
 ### Run everything in Docker
 
-One command builds and starts Postgres, a one-shot setup (migrations, seed, two weeks of demo traffic), the BotFare app and Crema Notes, isolated from the development database under the project name `botfare-judge`:
+One command builds and starts Postgres, a one-shot setup (migrations, seed, two weeks of demo traffic), the BotFare app and Saffron & Salt, isolated from the development database under the project name `botfare-judge`:
 
 ```bash
 docker compose -f docker-compose.full.yml -p botfare-judge up --build -d --wait
 ```
 
-Then open http://localhost:3300/judge (BotFare) and http://localhost:4300 (Crema Notes). PayPal and AI provider keys are read from `.env` when present; browsing, the dashboards and paid agent requests work without them. Inside the stack the research agent reaches the demo through `DEMO_INTERNAL_URL` (`http://demo:4000`), since `localhost:4300` is the host's port. Stop with `docker compose -f docker-compose.full.yml -p botfare-judge down` (add `-v` to delete the judge database). Details: [`docker/README.md`](docker/README.md).
+Then open http://localhost:3300/judge (BotFare) and http://localhost:4300 (Saffron & Salt). PayPal and AI provider keys are read from `.env` when present; browsing, the dashboards and paid agent requests work without them. Inside the stack the research agent reaches the demo through `DEMO_INTERNAL_URL` (`http://demo:4000`), since `localhost:4300` is the host's port. Stop with `docker compose -f docker-compose.full.yml -p botfare-judge down` (add `-v` to delete the judge database). Details: [`docker/README.md`](docker/README.md).
 
 ### Checks
 
@@ -516,7 +523,7 @@ DEMO_ORIGIN=https://<botfare-demo>.onrender.com pnpm seed --print-secrets
 
 1. Copy the printed `BOTFARE_SITE_ID` and `BOTFARE_SITE_SECRET` into `botfare-demo` > Environment and save; Render redeploys the demo with payments on.
 2. Copy `BOTFARE_AGENT_KEY` into `botfare-web` > Environment and save (the research agent on `/agent` pays with it); also put it in a local `.env` if you run the SDK or MCP server against the live app.
-3. Check `https://<botfare-demo>.onrender.com/health` reports payments on, then `curl -i -H 'x-botfare-agent: 1' https://<botfare-demo>.onrender.com/articles/burr-basics` returns a 402.
+3. Check `https://<botfare-demo>.onrender.com/health` reports payments on, then `curl -i -H 'x-botfare-agent: 1' https://<botfare-demo>.onrender.com/recipes/weeknight-red-lentil-dal` returns a 402.
 4. Smoke test from `/judge`: as the agent owner, top up $5 with a sandbox buyer and run the research agent (paid citations, Verify sources all green); as the publisher, Withdraw now (earnings clear 24 hours after purchase, and the judge persona always has some cleared) and check the payout reaches `SUCCESS`.
 5. Optional: Log in with PayPal ([steps](#judge-mode-and-log-in-with-paypal)) with the return URL `https://<botfare-web>.onrender.com/api/auth/paypal/callback`, then `PAYPAL_LOGIN_ENABLED=true`.
 
@@ -528,9 +535,18 @@ Then point PayPal at the app: in the sandbox app's Webhooks section, add `https:
 
 `botfare-web` also takes `BOTFARE_URL` (its public `https://` URL: PayPal return URLs, the agent API's host check, the publisher snippet, the `iss` of signed receipts), `DEMO_PUBLIC_URL` (the demo's URL for `/judge`, and the one site the research agent may read), optional `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD`, `PAYPAL_LOGIN_ENABLED` and, for the research agent, `BOTFARE_AGENT_KEY` from the seed. Session cookies are `Secure` whenever the request arrived over https, which Render's proxy reports with `X-Forwarded-Proto`.
 
-Judge mode is public: anyone who opens the app can sign in as a persona. The personas cannot rotate the demo site's secret, change the payout email or revoke the seeded agent keys, and each publisher sign-in restores Crema Notes' prices, the payout email, enough earnings to try Withdraw, and one Fare Court dispute waiting for review (once a judge decides it, the next sign-in plays that case again: the persona's research key buys the stub again with demo money and disputes it, so every judge can try Accept and Decline); the agent owner's wallet is kept at $5.00 of demo money for the shared research key ($10.00 a day). Rerunning `pnpm seed` raises an older demo key's caps in place, keeping its secret. That shared key also gets Fare Court limits for many users (200 disputes a day, no dispute-rate rule), and any publisher sign-in puts back prices a judge changed with the Fare Advisor's Apply. The analytics assistant runs on the server's default AI provider with a server-side prompt, a 512 KB request cap, a per-visitor turn limit and a shared budget (3M input-token equivalents an hour, 15M a day; see `apps/web/src/lib/server/ai-budget.ts`). The Fare Court judge and the Fare Advisor each have their own budget (1M an hour, 5M a day), and the Advisor allows 12 fresh generations per visitor per 10 minutes. Also set a monthly spend limit on every AI provider account whose key is set.
+Judge mode is public: anyone who opens the app can sign in as a persona. The personas cannot rotate the demo site's secret, change the payout email or revoke the seeded agent keys, and each publisher sign-in restores Saffron & Salt's prices, the payout email, enough earnings to try Withdraw, and one Fare Court dispute waiting for review (once a judge decides it, the next sign-in plays that case again: the persona's research key buys the stub again with demo money and disputes it, so every judge can try Accept and Decline); the agent owner's wallet is kept at $5.00 of demo money for the shared research key ($10.00 a day). Rerunning `pnpm seed` raises an older demo key's caps in place, keeping its secret. That shared key also gets Fare Court limits for many users (200 disputes a day, no dispute-rate rule), and any publisher sign-in puts back prices a judge changed with the Fare Advisor's Apply. The analytics assistant runs on the server's default AI provider with a server-side prompt, a 512 KB request cap, a per-visitor turn limit and a shared budget (3M input-token equivalents an hour, 15M a day; see `apps/web/src/lib/server/ai-budget.ts`). The Fare Court judge and the Fare Advisor each have their own budget (1M an hour, 5M a day), and the Advisor allows 12 fresh generations per visitor per 10 minutes. Also set a monthly spend limit on every AI provider account whose key is set.
 
 Running the seed again keeps the site secret only if it can see the current one, which the Shell's `.env` holds until the next deploy of `botfare-web`. After a redeploy, pass the values back in (`BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed`; the site's origin comes from `DEMO_ORIGIN`, else `DEMO_PUBLIC_URL`), or let it issue a new secret and repeat step 1.
+
+**Moving a live deploy to the recipe demo.** A database seeded by an earlier version, like the live one deployed on 11 Nov, still holds the coffee demo site Crema Notes. After this version deploys, run these two commands in `botfare-web`'s Shell, with the site ID and secret from `botfare-demo` > Environment:
+
+```bash
+BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed
+pnpm seed:traffic --run-key recipes
+```
+
+The seed renames the site to Saffron & Salt and moves the publisher persona to its new email, keeping the site ID, secret, user and history, and replaces the prices and free paths with the recipe ones. The demo needs no new secret. The traffic run adds two weeks of recipe purchases and the Fare Court and Fare Advisor story. The older coffee receipts stay in the history and drop out of the 14-day charts within two weeks.
 
 ## Built with
 

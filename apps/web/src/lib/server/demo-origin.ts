@@ -2,7 +2,7 @@
  * Server-side address mapping for the demo publisher, for when the BotFare server cannot reach the
  * demo at the origin it is registered under.
  *
- * In the judge Docker stack, Crema Notes is registered (and shown to people and to the model) as
+ * In the judge Docker stack, Saffron & Salt is registered (and shown to people and to the model) as
  * http://localhost:4300, the port published on the host. Inside the web container, localhost is
  * the container itself, so the research agent must reach the demo at http://demo:4000 on the
  * compose network instead:

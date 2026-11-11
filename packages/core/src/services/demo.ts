@@ -1,17 +1,25 @@
 /**
  * Judge mode keeps the shared demo working. Every judge who picks "Publisher" is the same user, so
- * each persona sign-in puts back what one judge could have changed for the next: Crema Notes'
+ * each persona sign-in puts back what one judge could have changed for the next: the demo site's
  * prices, free paths and bot detection, the payout email, enough earnings to try "Withdraw now"
  * again, and a Fare Court dispute waiting for review.
+ *
+ * The demo publisher was renamed once (Crema Notes became Saffron & Salt). The demo site is found
+ * by DEMO_SITE_NAME and, failing that, by a name in LEGACY_DEMO_SITE_NAMES, which is renamed in
+ * place; migrateLegacyDemoPublisher moves the persona user from a legacy email the same way.
  */
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import {
   CREMA_NOTES_DETECTION,
+  DEMO_PERSONAS,
   DEMO_SITE_FREE_PATHS,
   DEMO_SITE_NAME,
   DEMO_SITE_PRICING,
+  findPricingRule,
   isDemoPersonaEmail,
+  LEGACY_DEMO_PUBLISHER_EMAILS,
+  LEGACY_DEMO_SITE_NAMES,
   type PricingRule,
 } from "@botfare/contracts";
 import { contentDigestSha256, DISPUTE_POLICY, type DisputeVerdict } from "@botfare/contracts/fare";
@@ -21,10 +29,17 @@ import { Accounts } from "../accounts";
 import type { Db } from "../db";
 import { postTransaction, walletBalanceMicros } from "../ledger";
 import { PostgresPrepaidLedger } from "../postgres-ledger";
-import { disputes, ledgerEntries, payouts, receipts, users } from "../schema";
+import { disputes, ledgerEntries, payouts, receipts, type Site, type User, users } from "../schema";
 import { applyVerdict, attestReceipt, openDispute } from "./fare-court";
 import { publisherEarningsSplit, setPayoutEmail } from "./payouts";
-import { listSites, siteDetection, updateSiteDetection, updateSitePricing } from "./sites";
+import {
+  listSites,
+  siteDetection,
+  updateSiteDetection,
+  updateSitePricing,
+  updateSiteProfile,
+} from "./sites";
+import { getUserByEmail } from "./users";
 
 /**
  * Available earnings (not counting fares still clearing in the dispute window) the publisher
@@ -35,14 +50,16 @@ export const DEMO_EARNINGS_FLOOR_CENTS = 200;
 export const DEMO_WALLET_FLOOR_CENTS = 500;
 
 export interface DemoPublisherReset {
-  /** Crema Notes sites whose prices were put back. */
+  /** Demo sites found under a legacy name and renamed to DEMO_SITE_NAME. */
+  renamed: number;
+  /** Demo sites whose prices were put back. */
   pricingReset: number;
-  /** Crema Notes sites whose bot detection was put back. */
+  /** Demo sites whose bot detection was put back. */
   detectionReset: number;
   payoutEmailReset: boolean;
   /** Demo earnings added this time (0 when available earnings already reached the floor). */
   earningsAddedCents: number;
-  /** Fare Court disputes put back in the publisher's review queue (one per Crema Notes site at most). */
+  /** Fare Court disputes put back in the publisher's review queue (one per demo site at most). */
   pendingDisputesAdded: number;
 }
 
@@ -57,10 +74,17 @@ export async function resetDemoPublisher(
 ): Promise<DemoPublisherReset> {
   let pricingReset = 0;
   let detectionReset = 0;
+  const found = findDemoSites(await listSites(db, input.userId));
   const demoSites: string[] = [];
-  for (const site of await listSites(db, input.userId)) {
-    if (site.name !== DEMO_SITE_NAME) continue;
+  for (const site of found) {
     demoSites.push(site.id);
+    if (site.name !== DEMO_SITE_NAME) {
+      await updateSiteProfile(db, {
+        siteId: site.id,
+        ownerUserId: input.userId,
+        name: DEMO_SITE_NAME,
+      });
+    }
     if (
       !samePricing(site.pricing, DEMO_SITE_PRICING) ||
       JSON.stringify(site.freePaths) !== JSON.stringify(DEMO_SITE_FREE_PATHS) ||
@@ -134,12 +158,67 @@ export async function resetDemoPublisher(
   }
 
   return {
+    renamed: found.filter((site) => site.name !== DEMO_SITE_NAME).length,
     pricingReset,
     detectionReset,
     payoutEmailReset,
     earningsAddedCents,
     pendingDisputesAdded,
   };
+}
+
+/**
+ * The publisher's demo sites: those named DEMO_SITE_NAME, or, when there is none, those still
+ * under a legacy name (a database seeded before the rename), in the order given.
+ */
+export function findDemoSites<T extends Pick<Site, "name">>(sites: T[]): T[] {
+  const current = sites.filter((site) => site.name === DEMO_SITE_NAME);
+  if (current.length > 0) return current;
+  return sites.filter((site) => LEGACY_DEMO_SITE_NAMES.includes(site.name));
+}
+
+export interface LegacyDemoPublisherMigration {
+  /** The user that now has DEMO_PERSONAS.publisher's email, if any. */
+  publisher: User | null;
+  /** A user moved from a legacy email to the persona's email (same user ID, sites and history). */
+  migrated: { userId: string; from: string } | null;
+  /** Users with a legacy email left alone because the persona's email was already taken. */
+  untouched: { userId: string; email: string }[];
+}
+
+/**
+ * Moves the publisher persona off a legacy email (LEGACY_DEMO_PUBLISHER_EMAILS) in place: the
+ * user keeps its ID, so its sites, receipts, payouts and sessions stay its own, and gets the
+ * persona's email and name. When the persona's email already belongs to a user, that user is kept
+ * and every legacy user is left untouched (the caller warns). Idempotent: once moved, there is
+ * nothing left to move. The persona and legacy emails can be overridden (tests).
+ */
+export async function migrateLegacyDemoPublisher(
+  db: Db,
+  input: { email?: string; name?: string; legacyEmails?: readonly string[] } = {},
+): Promise<LegacyDemoPublisherMigration> {
+  const email = (input.email ?? DEMO_PERSONAS.publisher.email).trim().toLowerCase();
+  const name = input.name ?? DEMO_PERSONAS.publisher.name;
+  let publisher = await getUserByEmail(db, email);
+  let migrated: LegacyDemoPublisherMigration["migrated"] = null;
+  const untouched: LegacyDemoPublisherMigration["untouched"] = [];
+  for (const legacyEmail of input.legacyEmails ?? LEGACY_DEMO_PUBLISHER_EMAILS) {
+    const legacy = await getUserByEmail(db, legacyEmail);
+    if (!legacy) continue;
+    if (publisher) {
+      untouched.push({ userId: legacy.id, email: legacy.email });
+      continue;
+    }
+    const [moved] = await db
+      .update(users)
+      .set({ email, name })
+      .where(and(eq(users.id, legacy.id), eq(users.email, legacy.email)))
+      .returning();
+    if (!moved) continue;
+    publisher = moved;
+    migrated = { userId: moved.id, from: legacy.email };
+  }
+  return { publisher, migrated, untouched };
 }
 
 export type DemoPendingDisputeResult =
@@ -182,8 +261,13 @@ export async function ensureDemoPendingDispute(
     )
     .orderBy(desc(disputes.decidedAt), desc(disputes.id))
     .limit(20);
+  // Only a page the demo still sells: a case about a page from before the rename (Crema Notes'
+  // coffee articles) is never played again on Saffron & Salt.
   const template = decided.find(
-    (row) => isDemoPersonaEmail(row.ownerEmail) && row.dispute.deliveredExcerpt?.trim(),
+    (row) =>
+      isDemoPersonaEmail(row.ownerEmail) &&
+      row.dispute.deliveredExcerpt?.trim() &&
+      isCurrentDemoPage(row.receipt.resourceUrl),
   );
   if (!template) return { added: false, reason: "no decided demo dispute to play again" };
   const { dispute, receipt } = template;
@@ -245,6 +329,19 @@ export async function ensureDemoPendingDispute(
     return { added: false, reason: "the replayed dispute did not go to review" };
   }
   return { added: true, disputeId: opened.dispute.id, receiptId };
+}
+
+/** True when the demo's pricing (DEMO_SITE_PRICING) still charges for this URL's path. */
+function isCurrentDemoPage(url: string | null): boolean {
+  if (!url) return false;
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return false;
+  }
+  const config = { pricing: DEMO_SITE_PRICING, freePaths: DEMO_SITE_FREE_PATHS };
+  return findPricingRule(config, "GET", path) !== undefined;
 }
 
 function reviewable(verdict: DisputeVerdict | null): DisputeVerdict | null {

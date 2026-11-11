@@ -122,7 +122,7 @@ export default function OpenGraphImage() {
         >
           <div style={{ display: "flex", fontSize: 18, letterSpacing: 3 }}>ADMIT ONE AI AGENT</div>
           <div style={{ display: "flex", marginTop: 18, fontSize: 22, color: MUTED }}>Fare</div>
-          <div style={{ display: "flex", fontSize: 104, lineHeight: 1, letterSpacing: -3 }}>3¢</div>
+          <div style={{ display: "flex", fontSize: 104, lineHeight: 1, letterSpacing: -3 }}>2¢</div>
         </div>
         <div
           style={{

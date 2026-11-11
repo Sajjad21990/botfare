@@ -91,6 +91,9 @@ export {
   type DemoPublisherReset,
   ensureDemoPendingDispute,
   ensureDemoWalletFloor,
+  findDemoSites,
+  type LegacyDemoPublisherMigration,
+  migrateLegacyDemoPublisher,
   resetDemoPublisher,
 } from "./services/demo";
 export {

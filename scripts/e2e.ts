@@ -1,10 +1,10 @@
 /**
  * `pnpm e2e`: end to end on real processes and the local Postgres.
  *
- * Starts the BotFare web app (reused if already up on WEB_PORT) and the Crema Notes demo
- * (DEMO_PORT) with the values `pnpm seed` wrote to .env, then pays for content with the agent SDK
+ * Starts the BotFare web app (reused if already up on WEB_PORT) and the Saffron & Salt demo
+ * (DEMO_PORT) with the values `pnpm seed` wrote to .env, then pays for recipes with the agent SDK
  * and checks every ledger movement, and checks agent detection (who pays, and why) against the
- * seeded Crema Notes settings (standard level, Turnstile test key). Prints PASS / FAIL lines and
+ * seeded demo site settings (standard level, Turnstile test key). Prints PASS / FAIL lines and
  * exits non-zero on any FAIL.
  *
  * Environment:
@@ -28,6 +28,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   AGENT_HEADER,
+  DEMO_SITE_NAME,
   decodeAgentKey,
   FACILITATOR_PATH,
   siteAuthHeader,
@@ -68,8 +69,11 @@ import { decodePaymentRequiredHeader, decodePaymentSignatureHeader } from "@x402
 import type { PaymentPayload, SettleResponse } from "@x402/core/types";
 import { decodePaymentResponseHeader, wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import type { JSONWebKeySet, JWK } from "jose";
-import { FARE_COURT_STUB_SLUG } from "../apps/demo/src/app";
+import { FARE_COURT_STUB_PATH, FARE_COURT_STUB_SLUG } from "../apps/demo/src/app";
+import { loadArticles } from "../apps/demo/src/content";
+import { NUTRITION } from "../apps/demo/src/nutrition";
 import { loadRootEnv, ROOT, requireEnv } from "./lib/env-file";
+import { DEMO_PAGES, NUTRITION_PATH } from "./lib/traffic";
 
 function port(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);
@@ -84,6 +88,9 @@ const DEMO_PORT = port("DEMO_PORT", 4000);
 const WEB_MODE = process.env.E2E_WEB === "start" ? "start" : "dev";
 const WEB_URL = `http://localhost:${WEB_PORT}`;
 const DEMO_URL = `http://localhost:${DEMO_PORT}`;
+/** The 50¢ chapter the 10¢-capped agent may not buy, and the pricing rule the Advisor changes. */
+const COOKBOOK_PATH = DEMO_PAGES.cookbook;
+const COOKBOOK_PATTERN = "/cookbook/*";
 const VERBOSE = process.env.E2E_VERBOSE === "1";
 /** Every AI provider setting, blanked for the web app this run starts unless E2E_AI is on. */
 const AI_PROVIDER_ENV = [
@@ -431,7 +438,7 @@ async function main(): Promise<void> {
         `Something is already listening on ${DEMO_URL}. Stop it: the e2e run starts its own demo with the current site secret.`,
       );
     }
-    console.log(`Starting the Crema Notes demo on ${DEMO_URL}`);
+    console.log(`Starting the ${DEMO_SITE_NAME} demo on ${DEMO_URL}`);
     const demo = start("demo", ["--filter", "@botfare/demo", "start"], {
       ...process.env,
       PORT: String(DEMO_PORT),
@@ -441,7 +448,7 @@ async function main(): Promise<void> {
       BOTFARE_SITE_SECRET: siteSecret,
     });
     await waitFor(
-      "Crema Notes demo",
+      `${DEMO_SITE_NAME} demo`,
       `${DEMO_URL}/health`,
       (body) => (body as { payments?: string }).payments === "on",
       60_000,
@@ -458,7 +465,8 @@ async function main(): Promise<void> {
     });
     if (!config.ok) throw new Error(`Site config answered ${config.status}: check the site secret`);
 
-    const articleUrl = `${DEMO_URL}/articles/burr-basics`;
+    // A 2¢ recipe: read free by a person, offered, bought, replayed and refunded below.
+    const articleUrl = `${DEMO_URL}${DEMO_PAGES.dal}`;
     const wire: WireEvent[] = [];
     const agent = createBotFareAgent({
       agentKey,
@@ -475,7 +483,7 @@ async function main(): Promise<void> {
     console.log("Both services are up\n");
 
     // 3. Checks.
-    await check("Human in a real browser (full Chrome headers) reads an article free", async () => {
+    await check("Human in a real browser (full Chrome headers) reads a recipe free", async () => {
       const response = await fetch(articleUrl, { headers: CHROME_HEADERS });
       const html = await response.text();
       expect(response.status === 200, `status ${response.status}`);
@@ -489,7 +497,7 @@ async function main(): Promise<void> {
       const offer = await agent.getOffer(articleUrl);
       const after = await snapshot();
       expect(offer, "no 402 offer");
-      expect(offer.priceCents === 3, `price ${offer.priceCents}¢, expected 3¢`);
+      expect(offer.priceCents === 2, `price ${offer.priceCents}¢, expected 2¢`);
       expect(offer.payTo === siteId, `payTo ${offer.payTo}`);
       expect(offer.preview?.title, "no preview title");
       expect((offer.preview?.excerpt.length ?? 0) > 50, "preview excerpt is too short");
@@ -498,14 +506,14 @@ async function main(): Promise<void> {
     });
 
     let receiptId = "";
-    let brewReceiptId = "";
+    let nutritionReceiptId = "";
     let signatureHeader = "";
-    /** The paid article as the agent received it, and the PAYMENT-RESPONSE statement. */
+    /** The paid recipe as the agent received it, and the PAYMENT-RESPONSE statement. */
     let articleBytes: Uint8Array | null = null;
     let articleReadDigest: string | null = null;
     let paymentStatement = "";
     const beforePay = await snapshot();
-    await check("Agent pays 3¢ and gets the article with a receipt", async () => {
+    await check("Agent pays 2¢ and gets the recipe with a receipt", async () => {
       wire.length = 0;
       const result = await agent.fetch(articleUrl);
       const body = await result.response.text();
@@ -513,7 +521,7 @@ async function main(): Promise<void> {
       expect(result.paid && result.receipt?.success, "no successful PAYMENT-RESPONSE");
       expect(result.receipt.transaction.startsWith("rcpt_"), "transaction is not a receipt ID");
       expect(result.receipt.payer === keyId, `payer ${result.receipt.payer}`);
-      expect(body.includes("<article"), "no article in the paid response");
+      expect(body.includes("<article"), "no recipe in the paid response");
       const stages = wire.map((event) => event.stage).join(" -> ");
       expect(
         stages === "payment-required -> payment-signature -> payment-response",
@@ -532,11 +540,14 @@ async function main(): Promise<void> {
       return `200, ${receiptId}, wire: ${stages}`;
     });
 
-    await check("Ledger moved exactly: wallet -30,000, earnings +28,500, fees +1,500", async () => {
-      const moved = delta(beforePay, await snapshot());
-      expectDelta(moved, { wallet: -30_000, earnings: 28_500, fees: 1_500, receipts: 1 }, "pay");
-      return `micros: wallet ${micros(moved.wallet)}, earnings ${micros(moved.earnings)}, fees ${micros(moved.fees)}`;
-    });
+    await check(
+      "Ledger moved exactly: wallet -20,000, publisher +19,000, BotFare +1,000",
+      async () => {
+        const moved = delta(beforePay, await snapshot());
+        expectDelta(moved, { wallet: -20_000, earnings: 19_000, fees: 1_000, receipts: 1 }, "pay");
+        return `micros: wallet ${micros(moved.wallet)}, earnings ${micros(moved.earnings)}, fees ${micros(moved.fees)}`;
+      },
+    );
 
     // Signed receipts: everything below verifies with the public JWKS only.
     let jwks: JSONWebKeySet = { keys: [] };
@@ -573,8 +584,8 @@ async function main(): Promise<void> {
         expect(statement.kind === "payment", `kind ${statement.kind}`);
         const p = statement.payment;
         expect(statement.sub === receiptId, `sub ${statement.sub}, expected ${receiptId}`);
-        expect(p.amount === "3" && p.amountMicros === 30_000, `amount ${p.amount}`);
-        expect(p.publisherMicros === 28_500 && p.feeMicros === 1_500, "split is not 95/5");
+        expect(p.amount === "2" && p.amountMicros === 20_000, `amount ${p.amount}`);
+        expect(p.publisherMicros === 19_000 && p.feeMicros === 1_000, "split is not 95/5");
         expect(p.payTo === siteId, `payTo ${p.payTo}`);
         expect(p.payer === keyId, `payer ${p.payer}`);
         expect(p.resource === articleUrl, `resource ${p.resource}`);
@@ -586,7 +597,7 @@ async function main(): Promise<void> {
         // BotFare keeps it: the public statements endpoint returns the identical JWS.
         const stored = await fetchStatements(receiptId);
         expect(stored?.payment === paymentStatement, "the statements endpoint differs");
-        return `kid ${verified.kid.slice(0, 12)}…, ${p.amount}¢ to ${p.payTo.slice(0, 12)}…, 28,500 + 1,500 micros, signal ${p.signal}`;
+        return `kid ${verified.kid.slice(0, 12)}…, ${p.amount}¢ to ${p.payTo.slice(0, 12)}…, 19,000 + 1,000 micros, signal ${p.signal}`;
       },
     );
 
@@ -622,7 +633,7 @@ async function main(): Promise<void> {
     await check(
       "After attestation a delivery statement's digest equals the bytes the agent received",
       async () => {
-        expect(articleBytes && paymentStatement, "no paid article");
+        expect(articleBytes && paymentStatement, "no paid recipe");
         const digest = await contentDigestSha256(articleBytes);
         expect(articleReadDigest === digest, `SDK readDigest ${articleReadDigest}`);
         const delivery = await waitForStatement(receiptId, "delivery");
@@ -697,12 +708,12 @@ async function main(): Promise<void> {
       return `publisher 402 ${required.error}; settle originalTransaction ${receiptId}`;
     });
 
-    await check("50¢ premium article is refused by the 10¢ cap, no charge", async () => {
+    await check("50¢ cookbook chapter is refused by the 10¢ cap, no charge", async () => {
       const before = await snapshot();
       wire.length = 0;
       let error: unknown;
       try {
-        await agent.fetch(`${DEMO_URL}/articles/premium-grinder-roundup`);
+        await agent.fetch(`${DEMO_URL}${COOKBOOK_PATH}`);
       } catch (err) {
         error = err;
       }
@@ -721,10 +732,11 @@ async function main(): Promise<void> {
     });
 
     await check(
-      "Brew API: 402 to a plain fetch, 1¢ for a paying client without the agent header",
+      "Nutrition API: 402 to a plain fetch, 1¢ for a paying client without the agent header",
       async () => {
-        const brewUrl = `${DEMO_URL}/api/brew-ratio?method=pour-over&coffeeGrams=20`;
-        const plain = await fetch(brewUrl);
+        const recipe = "weeknight-red-lentil-dal";
+        const nutritionUrl = `${DEMO_URL}${NUTRITION_PATH}?recipe=${recipe}`;
+        const plain = await fetch(nutritionUrl);
         await plain.body?.cancel();
         expect(plain.status === 402, `plain fetch got ${plain.status}`);
 
@@ -740,20 +752,32 @@ async function main(): Promise<void> {
           new PrepaidPayPalClient({ keyId, privateJwk: privateJwk as JWK }),
         );
         const before = await snapshot();
-        const response = await wrapFetchWithPayment(recordingFetch, client)(brewUrl);
-        const body = (await response.json()) as { waterGrams?: number };
+        const response = await wrapFetchWithPayment(recordingFetch, client)(nutritionUrl);
+        const body = (await response.json()) as {
+          recipe?: string;
+          servings?: number;
+          perServing?: Record<string, number>;
+        };
         expect(response.status === 200, `paid fetch got ${response.status}`);
         expect(!sentAgentHeader.includes(true), "the agent header was sent");
         const receipt = decodePaymentResponseHeader(response.headers.get("PAYMENT-RESPONSE") ?? "");
         expect(receipt.success, "no successful PAYMENT-RESPONSE");
-        expect(body.waterGrams === 320, `waterGrams ${body.waterGrams}`);
+        // Exactly the figures apps/demo publishes for that recipe.
+        const expected = NUTRITION[recipe];
+        expect(body.recipe === recipe, `recipe ${body.recipe}`);
+        expect(body.servings === expected?.servings, `servings ${body.servings}`);
+        expect(
+          JSON.stringify(body.perServing) === JSON.stringify(expected?.perServing),
+          `per serving ${JSON.stringify(body.perServing)}`,
+        );
+        const kcal = body.perServing?.kcal;
         expectDelta(
           delta(before, await snapshot()),
           { wallet: -10_000, earnings: 9_500, fees: 500, receipts: 1 },
-          "brew",
+          "nutrition",
         );
-        brewReceiptId = receipt.transaction;
-        return `402, then 200 with ${receipt.transaction}; wallet -10,000 micros`;
+        nutritionReceiptId = receipt.transaction;
+        return `402, then 200 with ${receipt.transaction} (${kcal} kcal per serving); wallet -10,000 micros`;
       },
     );
 
@@ -773,7 +797,7 @@ async function main(): Promise<void> {
       const afterFirst = await snapshot();
       expectDelta(
         delta(before, afterFirst),
-        { wallet: 30_000, earnings: -28_500, fees: -1_500, receipts: 0 },
+        { wallet: 20_000, earnings: -19_000, fees: -1_000, receipts: 0 },
         "refund",
       );
       const second = await refund();
@@ -796,14 +820,14 @@ async function main(): Promise<void> {
       expect(verified.statement.kind === "refund", "not a refund statement");
       const r = verified.statement.refund;
       expect(
-        r.refundedMicros === 30_000 && r.via === "publisher",
+        r.refundedMicros === 20_000 && r.via === "publisher",
         `refund ${r.via} ${r.refundedMicros}`,
       );
-      return `wallet +30,000 micros, repeat call alreadyRefunded; signed refund statement (via ${r.via})`;
+      return `wallet +20,000 micros, repeat call alreadyRefunded; signed refund statement (via ${r.via})`;
     });
 
-    // 4. Agent detection: who pays, and why (Crema Notes: standard level, Turnstile test key).
-    const detectUrl = `${DEMO_URL}/articles/grinders-under-200`;
+    // 4. Agent detection on recipe pages: who pays, and why (standard level, Turnstile test key).
+    const detectUrl = `${DEMO_URL}${DEMO_PAGES.potatoes}`;
 
     await check(
       "curl and python-requests without the agent header get 402 (automation)",
@@ -916,7 +940,7 @@ async function main(): Promise<void> {
         signedReceiptId = result.receipt?.transaction ?? "";
         expectDelta(
           delta(before, await snapshot()),
-          { wallet: -30_000, earnings: 28_500, fees: 1_500, receipts: 1 },
+          { wallet: -20_000, earnings: 19_000, fees: 1_000, receipts: 1 },
           "signed",
         );
         return `both legs signed, 402 signal signed-agent, ${signedReceiptId}`;
@@ -929,7 +953,7 @@ async function main(): Promise<void> {
       async () => {
         const paying = rawPayingFetch("python-requests/2.32.3", keyId, privateJwk);
         const before = await snapshot();
-        const response = await paying.fetch(`${DEMO_URL}/articles/latte-art-hearts`);
+        const response = await paying.fetch(`${DEMO_URL}${DEMO_PAGES.lemonChicken}`);
         await response.body?.cancel();
         expect(response.status === 200, `status ${response.status}`);
         expect(!paying.sentAgentHeader.includes(true), "the agent header was sent");
@@ -938,7 +962,7 @@ async function main(): Promise<void> {
         automationReceiptId = receipt.transaction;
         expectDelta(
           delta(before, await snapshot()),
-          { wallet: -30_000, earnings: 28_500, fees: 1_500, receipts: 1 },
+          { wallet: -20_000, earnings: 19_000, fees: 1_000, receipts: 1 },
           "automation",
         );
         return `402 then 200, ${automationReceiptId}`;
@@ -948,7 +972,7 @@ async function main(): Promise<void> {
     await check(
       "Headless browser: Turnstile page, test token sets the pass, next read is free",
       async () => {
-        const path = "/articles/dialing-in-espresso";
+        const path = DEMO_PAGES.lemonChicken;
         const headless = { "User-Agent": HEADLESS_CHROME_UA, Accept: "text/html" };
         const before = await snapshot();
 
@@ -986,7 +1010,7 @@ async function main(): Promise<void> {
         const html = await free.text();
         expect(free.status === 200, `with the pass got ${free.status}`);
         expect(!free.headers.has("PAYMENT-REQUIRED"), "PAYMENT-REQUIRED with the pass");
-        expect(html.includes("<article"), "no article with the pass");
+        expect(html.includes("<article"), "no recipe with the pass");
 
         // The pass covers scores only: a self-identified agent still pays.
         const agentWithPass = await fetch(`${DEMO_URL}${path}`, {
@@ -1009,7 +1033,7 @@ async function main(): Promise<void> {
         ["SDK paid fetch", receiptId, "signed-agent"],
         ["signed SDK fetch", signedReceiptId, "signed-agent"],
         ["python-requests via x402", automationReceiptId, "automation"],
-        ["Node fetch on the everyone-priced brew API", brewReceiptId, "automation"],
+        ["Node fetch on the everyone-priced nutrition API", nutritionReceiptId, "automation"],
       ];
       const seen: string[] = [];
       for (const [label, id, signal] of expected) {
@@ -1121,8 +1145,9 @@ async function waitUntil<T>(
 async function fareChecks(ctx: FareContext): Promise<void> {
   const { db, agent, wire, keyId, site, auth, snapshot } = ctx;
   const runStarted = new Date();
-  const stubUrl = `${DEMO_URL}/articles/${FARE_COURT_STUB_SLUG}`;
-  const premiumPattern = "/articles/premium-*";
+  const stubUrl = `${DEMO_URL}${FARE_COURT_STUB_PATH}`;
+  // The title the demo declares for the stub page (its free preview), which the stub breaks.
+  const stubTitle = loadArticles().find((page) => page.slug === FARE_COURT_STUB_SLUG)?.title;
   // The web app this run started has no AI judge unless E2E_AI=1; a reused one may have either.
   const judge = WEB_STARTED_BY_E2E ? (E2E_AI ? "ai" : "none") : "unknown";
   if (E2E_AI && judge !== "ai") {
@@ -1140,7 +1165,7 @@ async function fareChecks(ctx: FareContext): Promise<void> {
   let stubReceiptId = "";
   let delivered: Uint8Array | null = null;
   await check(
-    "Paid stub article: the offer is declared and the publisher attests the delivered digest",
+    "Paid stub recipe: the offer is declared and the publisher attests the delivered digest",
     async () => {
       const before = await snapshot();
       wire.length = 0;
@@ -1156,7 +1181,8 @@ async function fareChecks(ctx: FareContext): Promise<void> {
               | { title?: string }
               | undefined)
           : undefined;
-      expect(offer?.title === "Grinder maintenance, step by step", `declared ${offer?.title}`);
+      expect(stubTitle, `apps/demo has no ${FARE_COURT_STUB_SLUG} page`);
+      expect(offer?.title === stubTitle, `declared ${offer?.title}, expected ${stubTitle}`);
       stubReceiptId = result.receiptId;
       delivered = result.body;
       const digest = await contentDigestSha256(result.body);
@@ -1173,7 +1199,7 @@ async function fareChecks(ctx: FareContext): Promise<void> {
       expect(receipt.declaredOffer?.title === offer?.title, "receipt lacks the declared offer");
       expectDelta(
         delta(before, await snapshot()),
-        { wallet: -30_000, earnings: 28_500, fees: 1_500, receipts: 1 },
+        { wallet: -20_000, earnings: 19_000, fees: 1_000, receipts: 1 },
         "stub",
       );
       return `${stubReceiptId}, ${result.body.length} bytes, ${digest.slice(0, 20)}…`;
@@ -1209,7 +1235,7 @@ async function fareChecks(ctx: FareContext): Promise<void> {
     const outcome = await agent.dispute({
       receiptId: stubReceiptId,
       reason: "stub_or_paywall",
-      note: "Paid for the maintenance guide and got a subscribe wall (e2e)",
+      note: "Paid for the starter guide and got a subscribe wall (e2e)",
       content: delivered,
     });
     disputeId = outcome.disputeId;
@@ -1254,14 +1280,14 @@ async function fareChecks(ctx: FareContext): Promise<void> {
         };
         expect(accepted.status === 200, `accept answered ${accepted.status}`);
         expect(body.outcome?.status === "refunded", `outcome ${body.outcome?.status}`);
-        expect(body.outcome?.refundedCents === 3, `refunded ${body.outcome?.refundedCents}`);
+        expect(body.outcome?.refundedCents === 2, `refunded ${body.outcome?.refundedCents}`);
         how = "by the publisher";
       }
       if (disputeStatus === "pending_publisher" || disputeStatus === "refunded") {
         const afterRefund = await snapshot();
         expectDelta(
           delta(beforeDispute, afterRefund),
-          { wallet: 30_000, earnings: -28_500, fees: -1_500, receipts: 0 },
+          { wallet: 20_000, earnings: -19_000, fees: -1_000, receipts: 0 },
           "dispute refund",
         );
         const again = await decide();
@@ -1296,31 +1322,34 @@ async function fareChecks(ctx: FareContext): Promise<void> {
           r.via === "dispute" && r.disputeId === disputeId,
           `refund via ${r.via} ${r.disputeId}`,
         );
-        expect(r.refundedMicros === 30_000, `refunded ${r.refundedMicros} micros`);
-        return `refunded 3¢ ${how}; second accept 409, re-dispute refused; signed refund statement via dispute ${disputeId}`;
+        expect(r.refundedMicros === 20_000, `refunded ${r.refundedMicros} micros`);
+        return `refunded 2¢ ${how}; second accept 409, re-dispute refused; signed refund statement via dispute ${disputeId}`;
       }
       return `the AI judge decided ${disputeStatus}; nothing for the publisher to accept`;
     },
   );
 
   if (E2E_AI && judge === "ai") {
-    await check("Optional (E2E_AI=1): the AI judge refunds a stub instantly", async () => {
-      const result = await agent.fetch(stubUrl);
-      expect(result.receiptId && result.body, "no paid stub");
-      await waitUntil(
-        "no attestation arrived",
-        async () => (await getReceipt(db, result.receiptId as string))?.contentDigest,
-        10_000,
-      );
-      const outcome = await agent.dispute({
-        receiptId: result.receiptId,
-        reason: "stub_or_paywall",
-        content: result.body,
-      });
-      expect(outcome.status === "refunded", `status ${outcome.status}: ${outcome.message}`);
-      expect(outcome.verdict?.decision === "refund", `verdict ${outcome.verdict?.decision}`);
-      return `${outcome.verdict?.confidence} sure: ${outcome.verdict?.rationale.slice(0, 80)}`;
-    });
+    await check(
+      "Optional (E2E_AI=1): the AI judge refunds a stub without the publisher",
+      async () => {
+        const result = await agent.fetch(stubUrl);
+        expect(result.receiptId && result.body, "no paid stub");
+        await waitUntil(
+          "no attestation arrived",
+          async () => (await getReceipt(db, result.receiptId as string))?.contentDigest,
+          10_000,
+        );
+        const outcome = await agent.dispute({
+          receiptId: result.receiptId,
+          reason: "stub_or_paywall",
+          content: result.body,
+        });
+        expect(outcome.status === "refunded", `status ${outcome.status}: ${outcome.message}`);
+        expect(outcome.verdict?.decision === "refund", `verdict ${outcome.verdict?.decision}`);
+        return `${outcome.verdict?.confidence} sure: ${outcome.verdict?.rationale.slice(0, 80)}`;
+      },
+    );
   } else {
     console.log("SKIP Optional AI judge check (set any AI provider key and E2E_AI=1 to run it)");
   }
@@ -1329,8 +1358,8 @@ async function fareChecks(ctx: FareContext): Promise<void> {
     // Decline notes find their site by its registered origin (the demo runs here on DEMO_PORT),
     // and one note per key, path and day is kept (the query string is dropped), so a second run
     // on the same day finds the first run's note.
-    const reason = "Thin listicle, not worth 50¢";
-    const declineUrl = `${site.origin}/articles/premium-grinder-roundup?ref=e2e-${runStarted.getTime().toString(36)}`;
+    const reason = "Thin list, not worth 50¢";
+    const declineUrl = `${site.origin}${COOKBOOK_PATH}?ref=e2e-${runStarted.getTime().toString(36)}`;
     const declined = await agent.decline(
       { url: declineUrl, priceCents: 50 },
       { category: "too_expensive", reason },
@@ -1342,7 +1371,7 @@ async function fareChecks(ctx: FareContext): Promise<void> {
         and(
           eq(t.agentKeyId, keyId),
           eq(t.siteId, site.id),
-          eq(t.path, "/articles/premium-grinder-roundup"),
+          eq(t.path, COOKBOOK_PATH),
           eq(t.day, day),
         ),
     });
@@ -1350,7 +1379,7 @@ async function fareChecks(ctx: FareContext): Promise<void> {
       note?.siteId === site.id && note.reason === reason,
       "this run's decline note is missing",
     );
-    expect(note.path === "/articles/premium-grinder-roundup", `stored path ${note.path}`);
+    expect(note.path === COOKBOOK_PATH, `stored path ${note.path}`);
 
     const citable = ctx.citable.filter(Boolean);
     expect(citable.length > 0, "no receipts to cite");
@@ -1368,7 +1397,7 @@ async function fareChecks(ctx: FareContext): Promise<void> {
   });
 
   await check("Offer telemetry from the middleware reaches BotFare", async () => {
-    // botfare() sends a batch every 15 s; this run showed the premium offer to the capped agent.
+    // botfare() sends a batch every 15 s; this run showed the cookbook offer to the capped agent.
     const event = await waitUntil(
       "no offer event from this run",
       () =>
@@ -1403,22 +1432,25 @@ async function fareChecks(ctx: FareContext): Promise<void> {
       expect(body.aiAvailable === false, "aiAvailable without a key");
       expect(body.aiStatus === "unavailable", `aiStatus ${body.aiStatus}`);
     }
-    const premium = body.inputsSummary.rules.find((rule) => rule.pattern === premiumPattern);
-    const articles = body.inputsSummary.rules.find((rule) => rule.pattern === "/articles/*");
-    expect(premium && articles, "pricing rules missing from the funnel");
-    expect(premium.offers > 0 && premium.declined > 0, "no offers or declines on the premium rule");
-    expect(articles.disputed > 0, "no disputes on the article rule");
-    const top = premium.topReasons[0];
-    return `premium ${premium.priceCents}¢: ${premium.offers} offers, ${premium.paid} paid, ${premium.declined} declined (top: "${top?.reason}" ×${top?.count}); aiStatus ${body.aiStatus}`;
+    const cookbook = body.inputsSummary.rules.find((rule) => rule.pattern === COOKBOOK_PATTERN);
+    const recipes = body.inputsSummary.rules.find((rule) => rule.pattern === "/recipes/*");
+    expect(cookbook && recipes, "pricing rules missing from the funnel");
+    expect(
+      cookbook.offers > 0 && cookbook.declined > 0,
+      "no offers or declines on the cookbook rule",
+    );
+    expect(recipes.disputed > 0, "no disputes on the recipe rule");
+    const top = cookbook.topReasons[0];
+    return `cookbook ${cookbook.priceCents}¢: ${cookbook.offers} offers, ${cookbook.paid} paid, ${cookbook.declined} declined (top: ${top?.reason} ×${top?.count}); aiStatus ${body.aiStatus}`;
   });
 
   await check(
-    "Apply 50¢ → 8¢ on the premium rule: config, middleware and the next agent buys",
+    "Apply 50¢ → 8¢ on the cookbook rule: config, middleware and the next agent buys",
     async () => {
       const apply = async (priceCents: number) => {
         const response = await publisherApi("/api/publisher/advisor/apply", {
           method: "POST",
-          body: JSON.stringify({ siteId: site.id, pattern: premiumPattern, priceCents }),
+          body: JSON.stringify({ siteId: site.id, pattern: COOKBOOK_PATTERN, priceCents }),
         });
         const body = (await response.json()) as { changed?: boolean };
         expect(response.status === 200, `apply ${priceCents}¢ answered ${response.status}`);
@@ -1433,37 +1465,37 @@ async function fareChecks(ctx: FareContext): Promise<void> {
           pricing: { pattern: string; priceCents: number }[];
         };
       };
-      const premiumPrice = (c: Awaited<ReturnType<typeof config>>) =>
-        c.pricing.find((rule) => rule.pattern === premiumPattern)?.priceCents;
+      const cookbookPrice = (c: Awaited<ReturnType<typeof config>>) =>
+        c.pricing.find((rule) => rule.pattern === COOKBOOK_PATTERN)?.priceCents;
       const before = await config();
       try {
         expect((await apply(8)).changed, "apply reported no change");
         const after = await config();
-        expect(premiumPrice(after) === 8, `config price ${premiumPrice(after)}`);
+        expect(cookbookPrice(after) === 8, `config price ${cookbookPrice(after)}`);
         expect(after.version !== before.version, "config version did not change");
         // botfare() caches the config for up to 30 s; then the 10¢-capped agent can buy.
-        const premiumUrl = `${DEMO_URL}/articles/premium-grinder-roundup`;
+        const cookbookUrl = `${DEMO_URL}${COOKBOOK_PATH}`;
         await waitUntil(
           "the middleware never offered 8¢",
-          async () => (await agent.getOffer(premiumUrl).catch(() => null))?.priceCents === 8,
+          async () => (await agent.getOffer(cookbookUrl).catch(() => null))?.priceCents === 8,
           40_000,
           2_000,
         );
         const balances = await snapshot();
-        const bought = await agent.fetch(premiumUrl);
+        const bought = await agent.fetch(cookbookUrl);
         await bought.response.body?.cancel();
         expect(bought.paid, `status ${bought.response.status}`);
         expectDelta(
           delta(balances, await snapshot()),
           { wallet: -80_000, earnings: 76_000, fees: 4_000, receipts: 1 },
-          "premium at 8¢",
+          "cookbook at 8¢",
         );
         return `config version ${before.version.slice(0, 8)}… → ${after.version.slice(0, 8)}…, agent paid 8¢ (${bought.receiptId})`;
       } finally {
         await apply(50).catch(() => undefined);
         const restored = await config().catch(() => null);
-        if (restored && premiumPrice(restored) !== 50)
-          fail("restore premium price", "still not 50¢");
+        if (restored && cookbookPrice(restored) !== 50)
+          fail("restore cookbook price", "still not 50¢");
       }
     },
   );

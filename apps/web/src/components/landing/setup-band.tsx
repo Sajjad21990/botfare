@@ -3,7 +3,7 @@ import { ArrowUpRightIcon, CheckIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { CodeTabs } from "./code-tabs";
 import styles from "./landing.module.css";
-import { DEMO_ARTICLE_URL, MCP_README_URL, REPO_URL } from "./links";
+import { DEMO_RECIPE_URL, MCP_README_URL, REPO_URL } from "./links";
 import { NewTabLink } from "./new-tab-link";
 
 /** Keywords and punctuation, dimmed. */
@@ -47,7 +47,7 @@ const agentCode = (
     <K>const</K> {"agent = createBotFareAgent({ agentKey, maxPerRequestUsd: 0.10 });\n"}
     <K>const</K> {"{ response, paid } = "}
     <K>await</K> {"agent.fetch(\n  "}
-    <S>&quot;{DEMO_ARTICLE_URL}&quot;</S>
+    <S>&quot;{DEMO_RECIPE_URL}&quot;</S>
     {",\n);"}
   </Code>
 );
@@ -60,7 +60,7 @@ const inlineArrow = (
 );
 
 /** The demo site's real prices, in the order a reader meets them. */
-const SHOWN_PATTERNS = ["/articles/*", "/articles/premium-*", "/api/brew-ratio"];
+const SHOWN_PATTERNS = ["/recipes/*", "/cookbook/*", "/api/nutrition"];
 
 const shownRules = SHOWN_PATTERNS.map((pattern) =>
   DEMO_SITE_PRICING.find((rule) => rule.pattern === pattern),
@@ -130,7 +130,7 @@ export function SetupBand() {
 
           <div className={`${styles.printed} min-w-0 rounded-2xl bg-card p-4 sm:p-6`}>
             <h3 id="setup-prices" className="text-xl font-bold">
-              Crema Notes prices
+              Saffron &amp; Salt prices
             </h3>
             <table aria-labelledby="setup-prices" className="mt-4 w-full text-left text-sm">
               <thead>

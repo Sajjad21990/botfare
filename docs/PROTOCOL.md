@@ -19,7 +19,7 @@ Each class is registered for the network family `paypal:*`, or for the exact net
 ## Networks and asset
 
 - **Network:** `paypal:<environment>`, written CAIP-2 style. `paypal:sandbox` is the only one in use; this project never calls PayPal's live API.
-- **Asset:** `USD`, 2 decimals. `amount` is a string holding an integer number of US cents (ISO 4217 minor units), with no sign, no decimal point and no leading zero. For example, `"3"` is $0.03. A price below one cent can't be expressed.
+- **Asset:** `USD`, 2 decimals. `amount` is a string holding an integer number of US cents (ISO 4217 minor units), with no sign, no decimal point and no leading zero. For example, `"2"` is $0.02. A price below one cent can't be expressed.
 - The client declares USD through `findDefaultAsset`, so the SDK's spend controls (`maxAmountPerPayment: "$0.10"`) can compare prices before anything is signed.
 
 ## `PaymentRequirements`
@@ -31,7 +31,7 @@ A resource server answers an unpaid request with HTTP 402 and a `PAYMENT-REQUIRE
 | `scheme` | `"prepaid"` |
 | `network` | `"paypal:sandbox"` |
 | `asset` | `"USD"` |
-| `amount` | Price in integer cents as a string, e.g. `"3"` |
+| `amount` | Price in integer cents as a string, e.g. `"2"` |
 | `payTo` | The publisher's BotFare site ID (`site_…`). The ledger credits that site owner's earnings. |
 | `maxTimeoutSeconds` | At most 60. `PrepaidPayPalServer.enhancePaymentRequirements` clamps larger values. |
 | `extra` | `{"botfareSignal": "<signal>", "botfareOffer": {title, preview, wordCount?}, "botfareResource": "<URL served>"}` from BotFare's middleware (see below); the scheme itself needs no fields. |
@@ -43,25 +43,25 @@ A decoded example, as the demo publisher sends it:
   "x402Version": 2,
   "error": "Payment required",
   "resource": {
-    "url": "http://localhost:4000/articles/burr-basics",
-    "description": "Full article (text)",
+    "url": "http://localhost:4000/recipes/weeknight-red-lentil-dal",
+    "description": "Recipe (full text)",
     "mimeType": "text/html"
   },
   "accepts": [{
     "scheme": "prepaid",
     "network": "paypal:sandbox",
-    "amount": "3",
+    "amount": "2",
     "asset": "USD",
     "payTo": "site_22a19e75551c4c2c",
     "maxTimeoutSeconds": 60,
     "extra": {
       "botfareSignal": "signed-agent",
       "botfareOffer": {
-        "title": "Burr grinders, explained",
-        "preview": "Ask ten people what upgrade made the biggest difference to…",
-        "wordCount": 835
+        "title": "Weeknight red lentil dal that freezes well",
+        "preview": "Split red lentils need no soaking and collapse into a creamy dal in about 20 minutes…",
+        "wordCount": 735
       },
-      "botfareResource": "http://localhost:4000/articles/burr-basics"
+      "botfareResource": "http://localhost:4000/recipes/weeknight-red-lentil-dal"
     }
   }]
 }
@@ -82,8 +82,8 @@ The client retries with a `PAYMENT-SIGNATURE` header (base64 JSON, x402 V2):
 ```json
 {
   "x402Version": 2,
-  "resource": { "url": "http://localhost:4000/articles/burr-basics", "...": "..." },
-  "accepted": { "scheme": "prepaid", "network": "paypal:sandbox", "amount": "3", "asset": "USD", "payTo": "site_22a19e75551c4c2c", "maxTimeoutSeconds": 60, "extra": {} },
+  "resource": { "url": "http://localhost:4000/recipes/weeknight-red-lentil-dal", "...": "..." },
+  "accepted": { "scheme": "prepaid", "network": "paypal:sandbox", "amount": "2", "asset": "USD", "payTo": "site_22a19e75551c4c2c", "maxTimeoutSeconds": 60, "extra": {} },
   "payload": { "authorization": "<compact JWS>" }
 }
 ```

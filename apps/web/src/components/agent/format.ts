@@ -12,7 +12,7 @@ export function formatUsd(cents: number): string {
   return usd.format(cents / 100);
 }
 
-/** "http://localhost:4000/articles/burr-basics" → "/articles/burr-basics". */
+/** "http://localhost:4000/recipes/crispy-oven-potatoes" → "/recipes/crispy-oven-potatoes". */
 export function shortPath(url: string): string {
   try {
     const parsed = new URL(url);
@@ -22,7 +22,7 @@ export function shortPath(url: string): string {
   }
 }
 
-/** "http://localhost:4000/articles/x" → "localhost:4000". */
+/** "http://localhost:4000/recipes/x" → "localhost:4000". */
 export function hostOf(url: string): string {
   try {
     return new URL(url).host;

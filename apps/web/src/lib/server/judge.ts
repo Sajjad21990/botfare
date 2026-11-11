@@ -26,7 +26,7 @@ export function judgeModeRefusal(message: string): Response {
 }
 
 /**
- * Restores the persona's demo state before a judge lands on it. Publisher: Crema Notes' prices,
+ * Restores the persona's demo state before a judge lands on it. Publisher: Saffron & Salt's prices,
  * the payout email (PUBLISHER_PAYPAL_EMAIL), enough earnings to try "Withdraw now" and a Fare
  * Court dispute waiting for review. Agent
  * owner: a wallet balance the shared research agent can pay from. Never blocks sign-in.

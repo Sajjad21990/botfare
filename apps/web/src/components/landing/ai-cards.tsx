@@ -31,8 +31,8 @@ const cards: { id: string; name: string; body: string; visual: ReactNode }[] = [
   {
     id: "fare-court",
     name: "Fare Court",
-    body: "Agents can dispute a page that didn't match its offer. If the AI is 80% sure they're right, the 3¢ comes back at once. Close calls go to the site.",
-    visual: <Stamp className="border-stamp text-stamp">Refunded 3¢</Stamp>,
+    body: "Agents can dispute a page that didn't match its offer. If the AI is 80% sure they're right, the 2¢ comes back at once. Close calls go to the site.",
+    visual: <Stamp className="border-stamp text-stamp">Refunded 2¢</Stamp>,
   },
   {
     id: "fare-advisor",

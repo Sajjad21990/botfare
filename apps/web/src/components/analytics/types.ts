@@ -11,7 +11,7 @@ export interface ReceiptRow {
   /** UTC calendar day of `createdAt` (YYYY-MM-DD); the browser re-derives it in local time. */
   day: string;
   siteName: string;
-  /** Path of the paid resource, e.g. `/articles/grinders`. */
+  /** Path of the paid resource, e.g. `/recipes/crispy-oven-potatoes`. */
   path: string;
   agentKeyId: string;
   agentName: string;

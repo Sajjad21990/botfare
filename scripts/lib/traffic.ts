@@ -7,6 +7,12 @@
  */
 import { createHash } from "node:crypto";
 import {
+  DEMO_SITE_FREE_PATHS,
+  DEMO_SITE_NAME,
+  DEMO_SITE_PRICING,
+  findPricingRule,
+} from "@botfare/contracts";
+import {
   type AgentKey,
   createAgentKey,
   type Db,
@@ -18,62 +24,104 @@ import {
   seedWallet,
 } from "@botfare/core";
 import { ErrorReason, generateAgentKeyPair, PAYPAL_SANDBOX } from "@botfare/x402-paypal";
-import { priceCentsFor } from "../../apps/demo/src/pricing";
 
 const DAYS = 14;
 /** Part of every nonce and funding key: bump it when the plan changes so runs never overlap. */
-const PLAN_VERSION = "v2";
+const PLAN_VERSION = "v3";
 const DAY_MS = 24 * 3600 * 1000;
+
+/**
+ * Saffron & Salt's paid pages (apps/demo/content), apart from the Fare Court stub
+ * (FARE_COURT_STUB_PATH, which only scripts/lib/fare-story.ts buys).
+ */
+export const DEMO_PAGES = {
+  dal: "/recipes/weeknight-red-lentil-dal",
+  potatoes: "/recipes/crispy-oven-potatoes",
+  lemonChicken: "/recipes/one-pan-lemon-chicken-rice",
+  tempering: "/techniques/tempering-spices",
+  freezing: "/techniques/freezing-and-reheating",
+  mealPlan: "/meal-plans/five-weeknight-dinners",
+  cookbook: "/cookbook/spice-pantry-chapter",
+} as const;
+
+/** The nutrition API (1¢ for everyone) and the recipes it knows. */
+export const NUTRITION_PATH = "/api/nutrition";
+export const NUTRITION_RECIPES = [
+  "weeknight-red-lentil-dal",
+  "crispy-oven-potatoes",
+  "one-pan-lemon-chicken-rice",
+] as const;
+
+/** What an agent pays for GET `path` (query string ignored) on the demo site; 0 when free. */
+export function demoPriceCents(path: string): number {
+  const pathname = path.split("?")[0] ?? path;
+  const config = { pricing: DEMO_SITE_PRICING, freePaths: DEMO_SITE_FREE_PATHS };
+  return findPricingRule(config, "GET", pathname)?.priceCents ?? 0;
+}
 
 export interface KeyPlan {
   name: string;
   perRequestMaxCents: number;
   dailyCapCents: number;
-  /** Restrict the key to Crema Notes (true) or let it pay any site (false). */
-  cremaOnly: boolean;
+  /** Restrict the key to the demo site (true) or let it pay any site (false). */
+  demoSiteOnly: boolean;
   /** Share of the day's requests. */
   weight: number;
   /** Picks the path for one request. */
   pick: (random: () => number) => string;
 }
 
-const ARTICLES = ["burr-basics", "grinders-under-200", "latte-art-hearts", "dialing-in-espresso"];
-const BREW_METHODS = ["pour-over", "espresso", "french-press"];
-
 function choose<T>(random: () => number, items: readonly T[]): T {
   return items[Math.floor(random() * items.length)] as T;
 }
 
+/** The research agent's reads: the dal and the freezing guide answer its most common question. */
+const RESEARCH_READS = [
+  DEMO_PAGES.dal,
+  DEMO_PAGES.dal,
+  DEMO_PAGES.dal,
+  DEMO_PAGES.freezing,
+  DEMO_PAGES.freezing,
+  DEMO_PAGES.potatoes,
+  DEMO_PAGES.potatoes,
+  DEMO_PAGES.lemonChicken,
+  DEMO_PAGES.lemonChicken,
+  DEMO_PAGES.tempering,
+  DEMO_PAGES.tempering,
+];
+
 export const KEYS: KeyPlan[] = [
   {
+    // Buys recipes and techniques; its 10¢ cap keeps it off the 50¢ cookbook chapter.
     name: "Research agent",
     perRequestMaxCents: 10,
     dailyCapCents: 100,
-    cremaOnly: false,
+    demoSiteOnly: false,
     weight: 0.5,
-    pick: (random) => `/articles/${choose(random, ARTICLES)}`,
+    pick: (random) => choose(random, RESEARCH_READS),
   },
   {
+    // Calls the nutrition API for the recipes it tracks.
     name: "Price watcher",
     perRequestMaxCents: 2,
     dailyCapCents: 50,
-    cremaOnly: true,
+    demoSiteOnly: true,
     weight: 0.35,
-    pick: (random) => {
-      const grams = choose(random, [15, 18, 20, 22, 30]);
-      return `/api/brew-ratio?method=${choose(random, BREW_METHODS)}&coffeeGrams=${grams}`;
-    },
+    pick: (random) => `${NUTRITION_PATH}?recipe=${choose(random, NUTRITION_RECIPES)}`,
   },
   {
+    // Buys the meal plan, the occasional technique and, rarely, the cookbook chapter.
     name: "Newsletter bot",
     perRequestMaxCents: 50,
     dailyCapCents: 200,
-    cremaOnly: true,
+    demoSiteOnly: true,
     weight: 0.15,
-    pick: (random) =>
-      random() < 0.3
-        ? "/articles/premium-grinder-roundup"
-        : `/articles/${choose(random, ARTICLES)}`,
+    pick: (random) => {
+      const roll = random();
+      if (roll < 0.08) return DEMO_PAGES.cookbook;
+      if (roll < 0.7) return DEMO_PAGES.mealPlan;
+      return choose(random, [DEMO_PAGES.tempering, DEMO_PAGES.freezing]);
+    },
   },
 ];
 
@@ -121,7 +169,7 @@ export function planTraffic(runKey: string, now: Date): PlannedRequest[] {
       }) as KeyPlan;
       const path = key.pick(random);
       const at = new Date(dayStart + Math.floor(random() * span));
-      plan.push({ key, path, priceCents: priceCentsFor("GET", path.split("?")[0] ?? path), at });
+      plan.push({ key, path, priceCents: demoPriceCents(path), at });
     }
   }
   plan.sort((a, b) => a.at.getTime() - b.at.getTime());
@@ -154,7 +202,7 @@ export async function ensureKey(
     publicJwk,
     perRequestMaxCents: plan.perRequestMaxCents,
     dailyCapCents: plan.dailyCapCents,
-    allowedSiteIds: plan.cremaOnly ? [siteId] : null,
+    allowedSiteIds: plan.demoSiteOnly ? [siteId] : null,
   });
   return { key, created: true };
 }
@@ -266,7 +314,7 @@ export async function runTraffic(
     const refund = await refundReceipt(db, {
       receiptId,
       siteId: site.id,
-      memo: "Duplicate fetch, refunded by Crema Notes",
+      memo: `Duplicate fetch, refunded by ${DEMO_SITE_NAME}`,
     });
     if (refund.ok && !refund.alreadyRefunded) refunds++;
   }

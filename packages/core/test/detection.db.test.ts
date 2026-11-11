@@ -214,12 +214,12 @@ describe("detection signal on receipts", () => {
 });
 
 describe("resetDemoPublisher", () => {
-  it("restores Crema Notes' detection to the seeded value, once", async () => {
+  it("restores the demo site's detection to the seeded value, once", async () => {
     const publisher = await makeUser(db, "demo-publisher");
     const { site } = await createSite(db, {
       ownerUserId: publisher.id,
       name: DEMO_SITE_NAME,
-      origin: "https://crema-notes.example",
+      origin: "https://saffron-and-salt.example",
       pricing: DEMO_SITE_PRICING,
       freePaths: DEMO_SITE_FREE_PATHS,
       detection: CREMA_NOTES_DETECTION,

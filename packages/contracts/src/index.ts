@@ -290,11 +290,11 @@ export type OfferPreview = z.infer<typeof offerPreviewSchema>;
 
 export const DEMO_PERSONAS = {
   publisher: {
-    email: "publisher@crema-notes.example",
-    name: "Crema Notes publisher",
+    email: "publisher@saffron-and-salt.example",
+    name: "Saffron & Salt publisher",
     label: "Publisher",
     description:
-      "Runs the Crema Notes coffee site, sets prices, watches AI revenue, withdraws to PayPal.",
+      "Runs Saffron & Salt, a recipe blog. Sets prices, sees what AI agents paid, withdraws to PayPal.",
     home: "/publisher",
   },
   agentOwner: {
@@ -313,47 +313,63 @@ export type DemoPersona = keyof typeof DEMO_PERSONAS;
 // that would break the demo for the next judge is locked or reset for them.
 
 /** The demo publisher's site, as `pnpm seed` registers it and apps/demo serves it. */
-export const DEMO_SITE_NAME = "Crema Notes";
+export const DEMO_SITE_NAME = "Saffron & Salt";
 
-/** Crema Notes' prices. First match wins, so the specific article rules come first. */
+/** Earlier names of the demo publisher and its site, which `pnpm seed` renames in place. */
+export const LEGACY_DEMO_SITE_NAMES: readonly string[] = ["Crema Notes"];
+export const LEGACY_DEMO_PUBLISHER_EMAILS: readonly string[] = ["publisher@crema-notes.example"];
+
+/** Saffron & Salt's prices, one per section. First match wins; every rule is a distinct prefix. */
 export const DEMO_SITE_PRICING: PricingRule[] = [
   {
-    pattern: "/articles/premium-*",
+    pattern: "/cookbook/*",
     method: "GET",
     priceCents: 50,
     audience: "agents",
-    description: "Premium article (full text)",
+    description: "Cookbook chapter (full text)",
     mimeType: "text/html",
   },
   {
-    pattern: "/articles/dialing-in-espresso",
+    pattern: "/meal-plans/*",
+    method: "GET",
+    priceCents: 8,
+    audience: "agents",
+    description: "Meal plan with shopping list",
+    mimeType: "text/html",
+  },
+  {
+    pattern: "/techniques/*",
     method: "GET",
     priceCents: 5,
     audience: "agents",
-    description: "Full article: Dialing in espresso at home",
+    description: "Technique guide (full text)",
     mimeType: "text/html",
   },
   {
-    pattern: "/articles/*",
+    pattern: "/recipes/*",
     method: "GET",
-    priceCents: 3,
+    priceCents: 2,
     audience: "agents",
-    description: "Full article (text)",
+    description: "Recipe (full text)",
     mimeType: "text/html",
   },
   {
-    pattern: "/api/brew-ratio",
+    pattern: "/api/nutrition",
     method: "GET",
     priceCents: 1,
     audience: "everyone",
-    description: "Brew ratio API: water, grind and time for a dose of coffee",
+    description: "Nutrition API: calories and protein per serving",
     mimeType: "application/json",
   },
 ];
 
-/** Always free on Crema Notes, even for agents. */
+/** Always free on Saffron & Salt, even for agents: the home page, section indexes and plumbing. */
 export const DEMO_SITE_FREE_PATHS: string[] = [
   "/",
+  "/recipes",
+  "/techniques",
+  "/meal-plans",
+  "/cookbook",
   "/catalog.json",
   "/health",
   "/static/*",
@@ -364,7 +380,7 @@ export const DEMO_SITE_FREE_PATHS: string[] = [
 export const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
 
 /**
- * Crema Notes' agent detection as seeded: score-based ("standard") with the Turnstile human check,
+ * The demo site's agent detection as seeded: score-based ("standard") with the Turnstile human check,
  * so a suspected human can always prove it and read free. Judge mode restores it at sign-in.
  */
 export const CREMA_NOTES_DETECTION: DetectionConfig = detectionConfigSchema.parse({

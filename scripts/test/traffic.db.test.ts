@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DEMO_SITE_FREE_PATHS, DEMO_SITE_NAME, DEMO_SITE_PRICING } from "@botfare/contracts";
 import {
   advisorInputs,
   checkLedgerInvariants,
@@ -8,10 +9,21 @@ import {
   walletBalanceMicros,
 } from "@botfare/core";
 import { afterAll, describe, expect, it } from "vitest";
-import { freePaths, pricing } from "../../apps/demo/src/pricing";
+import { FARE_COURT_STUB_PATH } from "../../apps/demo/src/app";
+import { loadArticles } from "../../apps/demo/src/content";
+import { NUTRITION_RECIPES as DEMO_NUTRITION_RECIPES } from "../../apps/demo/src/nutrition";
 import { makeUser, openTestDb } from "../../packages/core/test/helpers";
 import { runFareStory } from "../lib/fare-story";
-import { nonceFor, planTraffic, runTraffic, weeklyRunKey } from "../lib/traffic";
+import {
+  DEMO_PAGES,
+  demoPriceCents,
+  NUTRITION_PATH,
+  NUTRITION_RECIPES,
+  nonceFor,
+  planTraffic,
+  runTraffic,
+  weeklyRunKey,
+} from "../lib/traffic";
 
 const { db, close } = openTestDb();
 afterAll(() => close());
@@ -23,16 +35,52 @@ async function demoSetup() {
   const publisher = await makeUser(db, "traffic-publisher");
   const { site } = await createSite(db, {
     ownerUserId: publisher.id,
-    name: "Crema Notes",
+    name: DEMO_SITE_NAME,
     // Decline notes find their site by origin: one per test, so earlier runs cannot take them.
-    origin: `https://crema-${randomUUID().slice(0, 8)}.example`,
-    pricing,
-    freePaths,
+    origin: `https://saffron-${randomUUID().slice(0, 8)}.example`,
+    pricing: DEMO_SITE_PRICING,
+    freePaths: DEMO_SITE_FREE_PATHS,
   });
   return { owner, publisher, site };
 }
 
 describe("seed:traffic", () => {
+  it("plans each key's traffic on Saffron & Salt's pages at the demo's prices", () => {
+    // Every planned page is one apps/demo serves, apart from the nutrition API.
+    const pages = new Set(loadArticles().map((page) => page.path));
+    for (const path of [...Object.values(DEMO_PAGES), FARE_COURT_STUB_PATH]) {
+      expect(pages.has(path), `${path} is not in apps/demo/content`).toBe(true);
+    }
+    // The price watcher asks only for recipes the nutrition API knows (no 404s to pay for).
+    for (const recipe of NUTRITION_RECIPES) expect(DEMO_NUTRITION_RECIPES).toContain(recipe);
+    expect(demoPriceCents(DEMO_PAGES.dal)).toBe(2);
+    expect(demoPriceCents(DEMO_PAGES.freezing)).toBe(5);
+    expect(demoPriceCents(DEMO_PAGES.mealPlan)).toBe(8);
+    expect(demoPriceCents(DEMO_PAGES.cookbook)).toBe(50);
+    expect(demoPriceCents(`${NUTRITION_PATH}?recipe=crispy-oven-potatoes`)).toBe(1);
+    expect(demoPriceCents("/recipes")).toBe(0);
+
+    const plan = planTraffic("demo", new Date("2026-11-11T15:00:00Z"));
+    expect(plan.length).toBeGreaterThan(100);
+    const byKey = (name: string) => plan.filter((r) => r.key.name === name).map((r) => r.path);
+    const research = byKey("Research agent");
+    expect(research.every((p) => /^\/(recipes|techniques)\//.test(p))).toBe(true);
+    expect(research).not.toContain(FARE_COURT_STUB_PATH);
+    expect(research).toContain(DEMO_PAGES.dal);
+    expect(research).toContain(DEMO_PAGES.freezing);
+    const watcher = byKey("Price watcher");
+    expect(watcher.length).toBeGreaterThan(20);
+    expect(watcher.every((p) => p.startsWith(`${NUTRITION_PATH}?recipe=`))).toBe(true);
+    const newsletter = byKey("Newsletter bot");
+    expect(newsletter).toContain(DEMO_PAGES.mealPlan);
+    expect(newsletter.every((p) => /^\/(meal-plans|techniques|cookbook)\//.test(p))).toBe(true);
+    for (const request of plan) {
+      expect(request.priceCents).toBe(demoPriceCents(request.path));
+      expect(request.priceCents).toBeGreaterThan(0);
+      expect(request.priceCents).toBeLessThanOrEqual(request.key.perRequestMaxCents);
+    }
+  });
+
   it("plans different traffic on different days, so the anchor has to be fixed", () => {
     const friday = new Date("2026-11-06T15:00:00Z");
     const saturday = new Date(friday.getTime() + DAY_MS);
@@ -116,14 +164,25 @@ describe("seed:traffic", () => {
       now: traffic.anchor,
     });
     const rule = (pattern: string) => inputs?.rules.find((r) => r.pattern === pattern);
-    const premium = rule("/articles/premium-*");
-    expect(premium?.declined).toBeGreaterThan(8);
-    expect(premium?.topReasons[0]?.reason).toBe("Thin listicle, not worth 50¢");
-    expect(premium?.offers).toBeGreaterThanOrEqual((premium?.paid ?? 0) + (premium?.declined ?? 0));
-    const articles = rule("/articles/*");
-    const burr = articles?.paths.find((p) => p.path === "/articles/burr-basics");
-    expect(burr?.cited).toBeGreaterThan(premium?.cited ?? 0);
-    expect(articles?.disputed).toBe(4);
+    const cookbook = rule("/cookbook/*");
+    expect(cookbook?.declined).toBeGreaterThan(8);
+    expect(cookbook?.topReasons[0]?.reason).toBe("Thin list, not worth 50¢");
+    expect(cookbook?.topReasons.map((r) => r.reason)).toContain("Preview lists spice names only");
+    expect(cookbook?.offers).toBeGreaterThanOrEqual(
+      (cookbook?.paid ?? 0) + (cookbook?.declined ?? 0),
+    );
+    expect(cookbook?.offers).toBeGreaterThan(4 * (cookbook?.paid ?? 0));
+    const recipes = rule("/recipes/*");
+    const dal = recipes?.paths.find((p) => p.path === DEMO_PAGES.dal);
+    expect(dal?.cited).toBeGreaterThan(cookbook?.cited ?? 0);
+    // Most answers that paid for the dal or the freezing guide cite them.
+    expect((dal?.cited ?? 0) * 2).toBeGreaterThan(dal?.paid ?? 0);
+    const freezing = rule("/techniques/*")?.paths.find((p) => p.path === DEMO_PAGES.freezing);
+    expect(freezing?.cited).toBeGreaterThan(0);
+    expect(recipes?.disputed).toBe(4);
+    expect(recipes?.paths.find((p) => p.path === FARE_COURT_STUB_PATH)?.disputed).toBe(4);
+    expect(rule("/api/nutrition")?.paid).toBeGreaterThan(0);
+    expect(rule("/meal-plans/*")?.paid).toBeGreaterThan(0);
     for (const r of inputs?.rules ?? []) expect(r.offers).toBeGreaterThanOrEqual(r.paid);
 
     // A rerun on a later day moves no money and adds no signals.
@@ -190,9 +249,9 @@ describe("seed:traffic", () => {
       siteId: site.id,
       now: new Date(first.getTime() + 14 * DAY_MS),
     });
-    const premium = inputs?.rules.find((r) => r.pattern === "/articles/premium-*");
-    expect(premium?.declined).toBeGreaterThan(4);
-    expect(premium?.topReasons.map((r) => r.reason)).toContain("Thin listicle, not worth 50¢");
+    const cookbook = inputs?.rules.find((r) => r.pattern === "/cookbook/*");
+    expect(cookbook?.declined).toBeGreaterThan(4);
+    expect(cookbook?.topReasons.map((r) => r.reason)).toContain("Thin list, not worth 50¢");
     for (const r of inputs?.rules ?? []) expect(r.offers).toBeGreaterThanOrEqual(r.paid);
     expect((await checkLedgerInvariants(db)).ok).toBe(true);
   });

@@ -60,7 +60,7 @@ describe("agent key snippets", () => {
     expect(code).toContain('import { createBotFareAgent } from "@botfare/sdk";');
     expect(code).toContain("agentKey: process.env.BOTFARE_AGENT_KEY!");
     expect(code).toContain("maxPerRequestUsd: 0.05, // never more than 5¢ a page");
-    expect(code).toContain('agent.fetch("http://localhost:4000/articles/burr-basics")');
+    expect(code).toContain('agent.fetch("http://localhost:4000/recipes/weeknight-red-lentil-dal")');
     expect(code).toContain("{ response, paid, receiptId }");
     expect(code).not.toMatch(/npm i/);
   });
@@ -68,7 +68,7 @@ describe("agent key snippets", () => {
   it("defaults to a 10¢ limit and the example site", () => {
     const code = agentUsageSnippet();
     expect(code).toContain("maxPerRequestUsd: 0.10");
-    expect(code).toContain("https://crema-notes.example/articles/burr-basics");
+    expect(code).toContain("https://saffron-and-salt.example/recipes/weeknight-red-lentil-dal");
     expect(agentUsageSnippet({ maxPerRequestCents: 150 })).toContain(
       "never more than $1.50 a page",
     );

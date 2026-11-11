@@ -43,7 +43,7 @@ them with `dispute_purchase`; nothing is written to disk, and purchases made by 
 cannot be disputed from here. BotFare allows at most 10 disputes per key per day, and a key that
 disputes a large share of its purchases has its disputes reviewed by the publisher.
 
-What comes back is the outcome: `refunded` (the 3¢ is back in the wallet; with an AI judge this
+What comes back is the outcome: `refunded` (the fare is back in the wallet; with an AI judge this
 takes a few seconds), `denied` (the AI found the page matched its offer), `pending_publisher`
 (the AI was not sure, or the BotFare app has no AI provider configured: the publisher decides on
 their Disputes page), or `invalid` (filed after 24 hours, or the bytes do not match the
@@ -59,9 +59,9 @@ BotFare signs a **delivery statement** (the receipt and an RFC 9530 `sha-256` co
 refund gets a **refund statement**. `fetch_paid` prints the payment statement and checks it:
 
 ```text
-Paid $0.03 to site site_… for http://localhost:4000/articles/burr-basics. Receipt: rcpt_…
+Paid $0.02 to site site_… for http://localhost:4000/recipes/weeknight-red-lentil-dal. Receipt: rcpt_…
 Signed receipt (BotFare payment statement, Ed25519 JWS): eyJhbGciOiJFZERTQSIs…
-Signature check: verified, signed by BotFare key gNmiJcS5CZdo…: $0.03 paid to site_… for http://… by ak_… at … (publisher $0.0285, BotFare fee $0.0015)
+Signature check: verified, signed by BotFare key gNmiJcS5CZdo…: $0.02 paid to site_… for http://… by ak_… at … (publisher $0.019, BotFare fee $0.001)
 ```
 
 `verify_receipt` fetches the public keys once (`GET /.well-known/botfare-receipt-keys.json`, a
@@ -139,22 +139,23 @@ which is the protocol channel. For a quick manual run from a terminal, `pnpm --f
 
 ## Example prompts
 
-With the demo publisher running (`pnpm dev:demo`, port 4000):
+With the demo publisher running (`pnpm dev:demo`, port 4000; it is Saffron & Salt, a recipe
+blog where a recipe costs agents 2¢, a technique 5¢, a meal plan 8¢ and the cookbook chapter 50¢):
 
-- "What does http://localhost:4000/articles/burr-basics cost? Show me the preview before buying
-  anything."
-- "Read the free catalog at http://localhost:4000/catalog.json, then research how to dial in
-  espresso from those articles. Spend at most $0.20 in total and cite the receipt ID for each
-  article you paid for."
-- "Get a brew ratio for 15 g of coffee from
-  http://localhost:4000/api/brew-ratio?method=pour-over&coffeeGrams=15, but only if it costs
+- "What does http://localhost:4000/recipes/weeknight-red-lentil-dal cost? Show me the preview
+  before buying anything."
+- "Read the free catalog at http://localhost:4000/catalog.json, then find out how to make a
+  weeknight dal that freezes well. Spend at most $0.20 in total and cite the receipt ID for each
+  page you paid for."
+- "Get the calories and protein per serving of the dal from
+  http://localhost:4000/api/nutrition?recipe=weeknight-red-lentil-dal, but only if it costs
   2 cents or less."
 - "How much is left on my BotFare wallet today?"
 - "List my last five BotFare receipts and add up what I spent."
-- "Verify the signed receipt for the article you just bought: was it paid and delivered as
-  attested?"
-- "Buy http://localhost:4000/articles/grinder-maintenance and summarize it. If what you get is not
-  the article the preview promised, dispute it." (the demo's Fare Court case: the paid response
+- "Verify the signed receipt for the recipe you bought. Check that it was paid and delivered
+  as attested."
+- "Buy http://localhost:4000/recipes/sourdough-starter and summarize it. If what you get is not
+  the recipe the preview promised, dispute it." (the demo's Fare Court case: the paid response
   is a subscribe stub)
 
 ## How it authenticates to BotFare

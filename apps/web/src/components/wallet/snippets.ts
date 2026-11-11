@@ -3,8 +3,8 @@
 /** Where the SDK comes from today: the packages are not published to npm yet. */
 export const SDK_SOURCE_URL = "https://github.com/Sajjad21990/botfare#run-it-locally";
 
-const EXAMPLE_ORIGIN = "https://crema-notes.example";
-const EXAMPLE_PATH = "/articles/burr-basics";
+const EXAMPLE_ORIGIN = "https://saffron-and-salt.example";
+const EXAMPLE_PATH = "/recipes/weeknight-red-lentil-dal";
 
 /** The agent's .env: its key and this BotFare app's URL (the SDK reads both). */
 export function agentEnvBlock({

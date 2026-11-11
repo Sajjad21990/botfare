@@ -76,14 +76,14 @@ async function persona(name: DemoPersona): Promise<User> {
   return (await getUserByEmail(getDb(), email)) ?? createUser(getDb(), { email, name: label });
 }
 
-/** The persona's Crema Notes site, created once per test run like `pnpm seed` does. */
+/** The persona's Saffron & Salt site, created once per test run like `pnpm seed` does. */
 async function demoSite(publisher: User) {
   const existing = (await listSites(getDb(), publisher.id)).find((s) => s.name === DEMO_SITE_NAME);
   if (existing) return existing;
   const { site } = await createSite(getDb(), {
     ownerUserId: publisher.id,
     name: DEMO_SITE_NAME,
-    origin: "https://crema.example",
+    origin: "https://saffron-and-salt.example",
     pricing: DEMO_SITE_PRICING,
     freePaths: DEMO_SITE_FREE_PATHS,
   });

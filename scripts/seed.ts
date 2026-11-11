@@ -2,13 +2,18 @@
  * `pnpm seed`: prepares a database for the demo. Safe to run again.
  *
  * - applies migrations;
- * - creates (or reuses, by email) the two judge personas from DEMO_PERSONAS: the Crema Notes
- *   publisher and the agent owner;
+ * - creates (or reuses, by email) the two judge personas from DEMO_PERSONAS: the Saffron & Salt
+ *   publisher and the agent owner. A database seeded before the rename has the publisher under a
+ *   legacy email (LEGACY_DEMO_PUBLISHER_EMAILS); that user is moved to the new email in place,
+ *   keeping its ID, sites and history. If both emails exist, the new one is kept, the old one is
+ *   left alone and a warning is printed;
  * - sets the publisher's payout email (and the site's) to PUBLISHER_PAYPAL_EMAIL, the sandbox
  *   personal account that receives test Payouts;
- * - registers the Crema Notes site with apps/demo's pricing and free paths at DEMO_ORIGIN
- *   (default http://localhost:4000), keeping the site secret in the environment while it still
- *   works and issuing a new one otherwise;
+ * - registers the Saffron & Salt site with the demo's pricing and free paths (DEMO_SITE_PRICING,
+ *   DEMO_SITE_FREE_PATHS) at DEMO_ORIGIN (default http://localhost:4000), keeping the site secret
+ *   in the environment while it still works and issuing a new one otherwise. An existing site,
+ *   found by BOTFARE_SITE_ID or by a legacy name (Crema Notes), is renamed and repriced in place
+ *   and keeps its ID;
  * - gives the agent owner a one-time $5.00 demo balance (in judge mode the app keeps it at $5.00:
  *   lib/server/judge.ts);
  * - issues the demo agent key (10¢ per request, $10.00 a day: every judge's research run shares
@@ -34,6 +39,8 @@ import { parseArgs } from "node:util";
 import {
   agentKeyPayloadSchema,
   DEMO_PERSONAS,
+  DEMO_SITE_FREE_PATHS,
+  DEMO_SITE_PRICING,
   decodeAgentKey,
   encodeAgentKey,
 } from "@botfare/contracts";
@@ -47,6 +54,7 @@ import {
   getUserByEmail,
   MIN_RECEIPT_SEED_LENGTH,
   migrate,
+  migrateLegacyDemoPublisher,
   revokeAgentKey,
   seedWallet,
   setPayoutEmail,
@@ -55,7 +63,6 @@ import {
   walletBalanceMicros,
 } from "@botfare/core";
 import { generateAgentKeyPair } from "@botfare/x402-paypal";
-import { freePaths, pricing } from "../apps/demo/src/pricing";
 import { demoSiteOrigin, ensureDemoSite } from "./lib/demo-site";
 import { lastFour, loadRootEnv, requireEnv, updateEnvFile } from "./lib/env-file";
 
@@ -138,6 +145,18 @@ async function main(): Promise<void> {
 
   const { db, close } = createDb(databaseUrl, { max: 2 });
   try {
+    // A database from before the rename: move the publisher persona to its new email in place.
+    const legacy = await migrateLegacyDemoPublisher(db);
+    if (legacy.migrated) {
+      console.log(
+        `Publisher    ${legacy.migrated.userId} moved from ${legacy.migrated.from} to ${PUBLISHER.email} (same user, sites and history)`,
+      );
+    }
+    for (const old of legacy.untouched) {
+      console.warn(
+        `WARNING      ${old.userId} (${old.email}) left as is: ${PUBLISHER.email} already exists and is the publisher persona now`,
+      );
+    }
     const publisher = await findOrCreateUser(db, PUBLISHER);
     const agentOwner = await findOrCreateUser(db, AGENT_OWNER);
     // The payout email lives on the publisher's profile; leave it alone when the env has none.
@@ -145,8 +164,8 @@ async function main(): Promise<void> {
     console.log(`Publisher    ${publisher.id} (${publisher.email})`);
     console.log(`Agent owner  ${agentOwner.id} (${agentOwner.email})`);
 
-    // Site: same rules and free paths as apps/demo/src/pricing.ts; the secret survives reruns.
-    const { siteId, siteSecret, action } = await ensureDemoSite(db, {
+    // Site: the demo's rules and free paths (apps/demo serves the same); the secret survives reruns.
+    const { siteId, siteSecret, action, renamedFrom } = await ensureDemoSite(db, {
       publisherId: publisher.id,
       origin,
       payoutEmail,
@@ -162,7 +181,10 @@ async function main(): Promise<void> {
       rotated: "updated, new secret",
     };
     console.log(`Site         ${siteId} ${what[action]} (${lastFour(siteSecret)}) at ${origin}`);
-    console.log(`             ${pricing.length} pricing rules, ${freePaths.length} free paths`);
+    if (renamedFrom) console.log(`             renamed from ${renamedFrom}, same ID and history`);
+    console.log(
+      `             ${DEMO_SITE_PRICING.length} pricing rules, ${DEMO_SITE_FREE_PATHS.length} free paths`,
+    );
     console.log(
       `             payout email ${payoutEmail ? "set on the publisher and the site" : "not set (PUBLISHER_PAYPAL_EMAIL is empty)"}`,
     );

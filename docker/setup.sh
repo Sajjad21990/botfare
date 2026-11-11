@@ -3,7 +3,7 @@
 # demo publisher its credentials. Safe to run again (every step is idempotent).
 #
 #   1. pnpm db:migrate     applies the Drizzle migrations to the judge database
-#   2. pnpm seed           judge personas, the Crema Notes site, a $5.00 wallet, a demo agent key
+#   2. pnpm seed           judge personas, the Saffron & Salt site, a $5.00 wallet, a demo agent key
 #   3. pnpm seed:traffic   two weeks of settled demo traffic for the dashboards
 #   4. writes /run/botfare/judge.env (SESSION_SECRET, BOTFARE_RECEIPT_KEY_SEED, BOTFARE_SITE_ID,
 #      BOTFARE_SITE_SECRET, BOTFARE_AGENT_KEY for the research agent) for the web and demo

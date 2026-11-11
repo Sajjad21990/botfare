@@ -96,8 +96,12 @@ describe("updateAgentKeyLimits", () => {
 });
 
 describe("ensureDemoPendingDispute", () => {
-  const STUB = "<html><body><h1>Grinder care</h1><p>Subscribe to keep reading.</p></body></html>";
-  const OFFER = { title: "Grinder care, step by step", preview: "Clean the burrs, then..." };
+  const STUB =
+    "<html><body><h1>Sourdough starter</h1><p>Subscribe to keep reading.</p></body></html>";
+  const OFFER = {
+    title: "Sourdough starter from scratch",
+    preview: "Mix flour and water, then...",
+  };
   const UNSURE: DisputeVerdict = {
     decision: "refund",
     confidence: 0.72,
@@ -122,10 +126,15 @@ describe("ensureDemoPendingDispute", () => {
     return { owner, key };
   }
 
-  /** A demo-site purchase of the stub, attested and disputed, with the scripted 72% verdict. */
-  async function pendingDispute(keyId: string, siteId: string, origin: string) {
+  /** A demo-site purchase of the 2¢ stub, attested and disputed, with the scripted 72% verdict. */
+  async function pendingDispute(
+    keyId: string,
+    siteId: string,
+    origin: string,
+    path = "/recipes/sourdough-starter",
+  ) {
     const charged = await ledger.charge({
-      ...chargeRequest(keyId, siteId, { resourceUrl: `${origin}/articles/grinder-care` }),
+      ...chargeRequest(keyId, siteId, { resourceUrl: `${origin}${path}`, amountCents: 2 }),
       extra: { botfareOffer: OFFER },
     });
     if (!charged.ok) throw new Error(charged.reason);
@@ -157,7 +166,7 @@ describe("ensureDemoPendingDispute", () => {
 
   async function demoSite() {
     const publisher = await makeUser(db, "publisher");
-    const origin = `https://${crypto.randomUUID().slice(0, 8)}.crema-demo.example`;
+    const origin = `https://${crypto.randomUUID().slice(0, 8)}.saffron-demo.example`;
     const { site } = await createSite(db, {
       ownerUserId: publisher.id,
       name: DEMO_SITE_NAME,
@@ -197,12 +206,12 @@ describe("ensureDemoPendingDispute", () => {
       reason: "stub_or_paywall",
       note: "Got the subscribe wall",
       contentDigestOk: true,
-      deliveredExcerpt: "Grinder care\nSubscribe to keep reading.",
+      deliveredExcerpt: "Sourdough starter\nSubscribe to keep reading.",
       verdict: UNSURE,
     });
     expect(again?.receiptId).not.toBe(decided.ok ? decided.dispute.receiptId : "");
     // The persona's wallet paid for the replayed purchase, as a live one would.
-    expect(before - (await walletBalanceMicros(db, agent.owner.id))).toBe(30_000);
+    expect(before - (await walletBalanceMicros(db, agent.owner.id))).toBe(20_000);
 
     // Once per decision: another sign-in while it waits adds nothing.
     expect(
@@ -220,6 +229,24 @@ describe("ensureDemoPendingDispute", () => {
     expect((await ensureDemoPendingDispute(db, { siteId: site.id })).added).toBe(true);
     expect((await ensureDemoPendingDispute(db, { siteId: site.id })).added).toBe(false);
     expect(await pendingDisputeCount(db, publisher.id)).toBe(1);
+  });
+
+  it("never replays a case about a page from before the rename", async () => {
+    const { publisher, site, origin } = await demoSite();
+    const agent = await personaAgent();
+    const disputeId = await pendingDispute(
+      agent.key.id,
+      site.id,
+      origin,
+      "/articles/grinder-maintenance",
+    );
+    await publisherDecide(db, { disputeId, publisherUserId: publisher.id, accept: true });
+    const before = await walletBalanceMicros(db, agent.owner.id);
+    expect(await ensureDemoPendingDispute(db, { siteId: site.id })).toEqual({
+      added: false,
+      reason: "no decided demo dispute to play again",
+    });
+    expect(await walletBalanceMicros(db, agent.owner.id)).toBe(before);
   });
 
   it("never replays a dispute filed by a real user's key", async () => {

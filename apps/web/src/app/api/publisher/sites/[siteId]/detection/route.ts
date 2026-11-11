@@ -75,7 +75,7 @@ export async function GET(
 /**
  * Saves a site's agent detection settings: strictness, edge bot-score headers and the Turnstile
  * human check. Only the site's owner may. In judge mode the shared publisher persona may change
- * them too; the next persona sign-in restores Crema Notes' seeded settings.
+ * them too; the next persona sign-in restores the demo site's seeded settings.
  */
 export async function PUT(
   request: Request,

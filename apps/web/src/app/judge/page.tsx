@@ -89,7 +89,7 @@ export default function JudgePage() {
             title="Watch an AI agent pay"
             action={<PersonaStepButton persona="agentOwner" href="/agent" label="Run the agent" />}
           >
-            Ask a coffee question. The agent pays 3¢ or 5¢ for each page worth reading. If a page
+            Ask a cooking question. The agent pays 2¢ to 8¢ for each page worth reading. If a page
             doesn&apos;t match its preview, Fare Court&apos;s AI judge rules on a refund.
           </Step>
           <Step
@@ -113,8 +113,9 @@ export default function JudgePage() {
               </>
             }
           >
-            Crema Notes is our demo coffee blog. It keeps 95% of what agents pay and withdraws to
-            PayPal. Fare Advisor suggests prices, and a price changes only when you click Apply.
+            Saffron &amp; Salt is our demo recipe blog. It keeps 95% of what agents pay and
+            withdraws to PayPal. Fare Advisor suggests prices, and a price changes only when you
+            click Apply.
           </Step>
           <Step
             n={3}
@@ -157,7 +158,7 @@ export default function JudgePage() {
             </p>
             <Command
               code={commands.agent}
-              caption="Returns 402 Payment Required with the price and a free preview. A browser gets the full article."
+              caption="Returns 402 Payment Required with the price and a free preview. A browser gets the full recipe."
             />
             <Command
               code={commands.decode}

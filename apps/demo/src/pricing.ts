@@ -1,5 +1,5 @@
 /**
- * Crema Notes' prices. The seed script registers exactly these rules and free paths with BotFare,
+ * Saffron & Salt's prices, one per section. The seed script registers exactly these rules and free paths with BotFare,
  * and the catalog reads prices from here, so the site and the dashboard never disagree. They live
  * in @botfare/contracts so the app can restore them when a judge signs in.
  */
@@ -13,9 +13,9 @@ import {
 } from "@botfare/contracts";
 
 export const SITE_NAME = DEMO_SITE_NAME;
-export const SITE_TAGLINE = "Field notes on grinders, espresso and milk, from a home coffee bench.";
+export const SITE_TAGLINE = "Home cooking for weeknights, from a cook who freezes everything.";
 
-/** First match wins, so the specific article rules come before the `/articles/*` catch-all. */
+/** First match wins; each rule is a section prefix (`/recipes/*` and so on) or the nutrition API. */
 export const pricing: PricingRule[] = DEMO_SITE_PRICING;
 
 /** Always free, even for agents. */
