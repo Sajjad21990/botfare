@@ -13,14 +13,14 @@
 | 0. Setup and proof | Sun 8 | ✅ Done | 10 / 10 |
 | 1. Protocol end to end | Mon 9 | ✅ Done (a day early) | 9 / 9 |
 | 2. Real money and dashboards | Tue 10 | ✅ Done (one optional item needs you) | 10 / 11 |
-| 3. Agent detection, AI and polish | Wed 11 | 🔄 Built two days early; Log in with PayPal needs you | 8 / 9 |
+| 3. Agent detection, AI and polish | Wed 11 | ✅ Done | 9 / 9 |
 | 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 8 / 8 |
 | 3c. Signed receipts (proof of payment, delivery, sourcing) | Mon 9 | ✅ Done (a day early) | 5 / 5 |
 | 3d. Payout hold and any-model AI | Mon 9 | ✅ Done | 2 / 2 |
-| 4. Deploy to Render | Wed 11 (last build step) | 🔄 Live; webhook and sandbox buyer left | 3 / 6 |
+| 4. Deploy to Render | Wed 11 (last build step) | ✅ Live | 6 / 6 |
 | 5. Submission | Thu 12 | 🔄 Texts drafted | 2 / 10 |
 
-**Overall: about 81% done** (57 of 70 items). Live at https://botfare-web.onrender.com. Next: PayPal webhook and sandbox buyer, a top-up and Withdraw on the live app, then the video and submission.
+**Overall: about 86% done** (61 of 71 items). Live at https://botfare-web.onrender.com. Next: the video, screenshots, repo public and the Devpost form.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -81,7 +81,7 @@
 | ✅ | Research agent: `list_sources` / `get_offer` / `buy` / `skip` / `finish`, wire inspector, cost meter, citations linked to receipts | `/agent`, `POST /api/research` (SSE); budget 5¢–$1, 10¢ per page, caps in code, SDK and facilitator; tests use a scripted model. 👤 A live run needs `ANTHROPIC_API_KEY`. In Docker it reaches the demo via `DEMO_INTERNAL_URL` |
 | ✅ | `/judge` page: one-click demo flows and sandbox logins | Three steps (publisher, wallet, research agent → `/agent`), curl commands for `DEMO_PUBLIC_URL`, sandbox buyer (fake money) when `JUDGE_SANDBOX_BUYER_*` is set |
 | ✅ | MCP server for Claude Desktop and Claude Code (should) | [`packages/mcp`](../packages/mcp/README.md): `get_offer`, `fetch_paid`, `wallet_balance`, `recent_receipts`; agent API `/api/agent/*` authenticated by Web Bot Auth signatures |
-| 🔄 | Log in with PayPal for publishers (should) | Code done and tested against a mock PayPal (`/api/auth/paypal/*`, off unless `PAYPAL_LOGIN_ENABLED=true`). 👤 Enable it on the sandbox app with the return URL `<BOTFARE_URL>/api/auth/paypal/callback` (README) |
+| ✅ | Log in with PayPal for publishers (should) | Live on Render (11 Nov): a sandbox personal account signed in as a new publisher with its verified email as the payout email. Needs Account verification status in the app's settings (scope `paypalattributes`); return URL changes take up to 3 hours. `/privacy` and `/terms` for the consent page |
 | ✅ | Full-stack Docker Compose so judges can run everything locally (should) | `docker-compose.full.yml`, project `botfare-judge`, ports 3300/4300; Safari-safe cookies (Secure only over https) |
 | ✅ | Agent-safety review: 8 findings confirmed and fixed (two were the same demo-key issue) | Linear `htmlToText` (a hostile 1 MB page took 10–50 s on the event loop, now ms); SDK cap is always min(10¢, remaining budget), unreceipted payments count; agent reads only the demo publisher and a real user's own sites; outbound guard (no redirects, no private/mapped-IPv6/DNS-to-private hosts in production); run lock per visitor; demo key $10/day, raised in place by `pnpm seed`; agent-owner wallet kept at $5 at sign-in and before each run; daily-cap refusals explained. 👤 Rerun `pnpm seed` to raise the existing demo key's cap |
 | ✅ | Polish: empty, loading, error and mobile states (hide revoked test keys in the wallet); feature freeze at 10 pm IST | Wallet "Show revoked" toggle, loading skeleton, error and 404 pages, card actions stack on phones; every page checked at 375 px with no horizontal scroll. Detection: non-browser user agents (no `Mozilla/`) now pay at standard/strict, chat link previews stay free |
@@ -128,10 +128,10 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | --- | --- | --- |
 | ✅ | 👤 Render: New → Blueprint, connect GitHub, enter secrets | 11 Nov: botfare-web, botfare-demo, two crons, Postgres 17 (Oregon); AI on Groq gpt-oss-120b |
 | ✅ | Provision the demo site on Render (`pnpm seed --print-secrets` in botfare-web's Shell) | Plus `pnpm seed:traffic` (148 requests, Fare Court and Advisor story, ledger sums to zero); demo `payments: on` |
-| ⏳ | PayPal sandbox webhook on the live URL; set `PAYPAL_WEBHOOK_ID` | |
+| ✅ | PayPal sandbox webhook on the live URL; set `PAYPAL_WEBHOOK_ID` | Capture and payouts-batch events; add the payouts-item events too |
 | ✅ | Daily payouts cron and weekly demo refresh cron live | `botfare-payouts`, `botfare-demo-refresh` (`pnpm seed:traffic --weekly`, Mondays); both built |
-| 🔄 | Live smoke test: 402 → pay → receipt, top-up, Withdraw now | 11 Nov: browser reads free, agent gets a 402, a Groq research run paid 8¢ with 2 citations, all 4 signed statements verify against the live JWKS, every persona page loads. 👤 Left: a top-up and Withdraw now in the browser |
-| ⏳ | 👤 Sandbox buyer for judges: a sandbox personal account in `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD` on botfare-web, and in the Devpost test-credentials field | `/judge` shows it; without it the page says to use any sandbox personal account |
+| ✅ | Live smoke test: 402 → pay → receipt, top-up, Withdraw now | 11 Nov: browser reads free, agent gets a 402, a Groq research run paid 8¢ with 2 citations, all 4 signed statements verify against the live JWKS, every persona page loads. $20 top-up captured (fee $1.19); Withdraw now $4.41, batch 4L7JYBW8ZQ47E reached SUCCESS |
+| ✅ | 👤 Sandbox buyer for judges: a sandbox personal account in `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD` on botfare-web, and in the Devpost test-credentials field | `/judge` shows it; without it the page says to use any sandbox personal account |
 
 ## Phase 5: Submission ⏳
 

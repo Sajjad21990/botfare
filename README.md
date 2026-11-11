@@ -316,7 +316,7 @@ Everything runs in the PayPal **sandbox only**.
 | Fare Court: declared offers, attested `Content-Digest`, signed disputes, Claude judge with policy in code, publisher Disputes page, SDK/MCP/research agent disputes, the Crema Notes stub case | ✅ Built; `pnpm e2e` checks it on real servers without an AI key (the publisher decides); live verdicts checked on Groq's free tier (needs any AI provider key) |
 | Fare Advisor: offer telemetry, decline notes, citations, funnel per rule, checked Claude recommendations, Apply, citations in analytics | ✅ Built; `pnpm e2e` checks the funnel and Apply → middleware → next agent buys; live recommendations need any AI provider key |
 | Signed receipts: payment, delivery and refund statements (Ed25519 JWS), JWKS, public statements endpoint, `/verify`, SDK `verifyReceipt`, MCP `verify_receipt`, research agent sources manifest and Verify sources | ✅ Built; `pnpm e2e` verifies payment, delivery and refund statements against the published keys |
-| Log in with PayPal | ✅ Code done and tested against a mock PayPal; off until the sandbox app has it enabled |
+| Log in with PayPal | ✅ Live on Render: signs a publisher in by their verified PayPal email |
 | One-command Docker stack ([`docker-compose.full.yml`](docker-compose.full.yml)) | ✅ Built and checked |
 | Deploy to Render | ✅ Live at [botfare-web.onrender.com](https://botfare-web.onrender.com/judge); a paid research run on Groq and its signed receipts checked live |
 
