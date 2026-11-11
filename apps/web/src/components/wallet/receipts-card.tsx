@@ -1,5 +1,5 @@
 import { ReceiptText, ShieldCheck } from "lucide-react";
-import Link from "next/link";
+import { NewTabLink } from "@/components/app/external-link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -95,7 +95,7 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                   <TableCell className="text-xs text-muted-foreground">
                     <span className="flex items-center gap-2">
                       <span className="font-mono">{receipt.id}</span>
-                      <Link
+                      <NewTabLink
                         href={verifyHref(receipt.id)}
                         className="inline-flex items-center gap-1 rounded font-medium text-foreground underline-offset-4 hover:underline"
                         title="Check BotFare's signed statements for this receipt"
@@ -103,7 +103,7 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                         <ShieldCheck aria-hidden className="size-3.5" />
                         Verify
                         <span className="sr-only"> receipt {receipt.id}</span>
-                      </Link>
+                      </NewTabLink>
                     </span>
                   </TableCell>
                 </TableRow>

@@ -2,6 +2,7 @@ import { ChartColumn, ChevronDown } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { NewTabLink } from "@/components/app/external-link";
 import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import { demoBaseUrl, demoCommands } from "@/components/judge/demo-commands";
 import { PersonaStepButton } from "@/components/judge/persona-step-button";
@@ -13,7 +14,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = {
   title: "Try it in 2 minutes · BotFare",
   description:
-    "Three steps, no sign-up: watch an AI agent pay a website a few cents through PayPal, in the PayPal sandbox.",
+    "Watch an AI agent pay a website a few cents through PayPal. It takes three steps in the sandbox, with no account.",
 };
 
 // Reads DEMO_PUBLIC_URL and the sandbox buyer at request time, not at build time.
@@ -50,12 +51,13 @@ export default function JudgePage() {
             BotFare
           </Link>
           <nav aria-label="Main" className="ml-auto flex items-center text-sm">
-            <a
+            <NewTabLink
               href={REPO_URL}
-              className={`${styles.focusRing} hidden rounded-md px-3 py-2 whitespace-nowrap text-muted-foreground hover:text-foreground sm:inline-block`}
+              icon
+              className={`${styles.focusRing} hidden items-center gap-1 rounded-md px-3 py-2 whitespace-nowrap text-muted-foreground hover:text-foreground sm:inline-flex`}
             >
               See the code
-            </a>
+            </NewTabLink>
             <Link
               href="/signin"
               className={`${styles.focusRing} rounded-md px-3 py-2 font-medium whitespace-nowrap hover:bg-muted`}
@@ -75,8 +77,8 @@ export default function JudgePage() {
             Try BotFare in <span className={styles.highlight}>2 minutes</span>
           </h1>
           <p className="max-w-2xl text-lg leading-relaxed">
-            BotFare lets websites charge AI agents a few cents a page, paid through PayPal. People
-            still read free. Three steps, no sign-up, all in the PayPal sandbox (test money).
+            BotFare lets websites charge AI agents a few cents a page through PayPal. People read
+            free. Everything here uses PayPal sandbox test money. You don&apos;t need an account.
           </p>
         </section>
 
@@ -87,13 +89,13 @@ export default function JudgePage() {
             title="Watch an AI agent pay"
             action={<PersonaStepButton persona="agentOwner" href="/agent" label="Run the agent" />}
           >
-            Ask a coffee question and watch the agent check each page&apos;s price, buy only
-            what&apos;s worth it, and ask for its money back when a page isn&apos;t as promised.
+            Ask a coffee question. The agent pays 3¢ or 5¢ for each page worth reading. If a page
+            doesn&apos;t match its preview, Fare Court&apos;s AI judge rules on a refund.
           </Step>
           <Step
             n={2}
             side="Publisher"
-            title="See the website's side"
+            title="See what the website earns"
             action={
               <>
                 <PersonaStepButton
@@ -111,8 +113,8 @@ export default function JudgePage() {
               </>
             }
           >
-            Open Crema Notes, our demo coffee site, to see what agents paid, the one line of code
-            that turned it on, prices you can change, and Withdraw to PayPal.
+            Crema Notes is our demo coffee blog. It keeps 95% of what agents pay and withdraws to
+            PayPal. Fare Advisor suggests prices, and a price changes only when you click Apply.
           </Step>
           <Step
             n={3}
@@ -123,8 +125,8 @@ export default function JudgePage() {
             }
           >
             {buyer
-              ? "Top up $5 with the PayPal button and the test account below, then give an agent a key with a daily limit."
-              : "Top up $5 with the PayPal button and any PayPal sandbox personal account, then give an agent a key with a daily limit."}
+              ? "Top up $5 with the PayPal button and the test account below. Then give an agent a key with a daily cap."
+              : "Top up $5 with the PayPal button and any PayPal sandbox personal account. Then give an agent a key with a daily cap."}
           </Step>
         </ol>
 
@@ -137,7 +139,7 @@ export default function JudgePage() {
             <span className="min-w-0 flex-1">
               <span className="block font-heading text-base font-semibold">For developers</span>
               <span className="block text-sm text-muted-foreground">
-                See a 402 from your terminal, and where the code lives.
+                Get a 402 with curl, and find the code.
               </span>
             </span>
             <ChevronDown
@@ -147,45 +149,46 @@ export default function JudgePage() {
           </summary>
           <div className="space-y-5 border-t px-4 py-4 sm:px-5 sm:py-5">
             <p className="text-sm leading-relaxed">
-              Against the demo site,{" "}
-              <a href={commands.url} className={cn(textLink, "break-all")}>
+              Both commands ask the demo site for{" "}
+              <NewTabLink href={commands.url} className={cn(textLink, "break-all")}>
                 {commands.url.replace(/^https?:\/\//, "")}
-              </a>
-              . Nothing is charged: without a signed payment the site only quotes a price.
+              </NewTabLink>
+              . Without a signed payment the site quotes a price and charges nothing.
             </p>
             <Command
               code={commands.agent}
-              caption="402 Payment Required, with the price and a free preview. A browser gets the article."
+              caption="Returns 402 Payment Required with the price and a free preview. A browser gets the full article."
             />
             <Command
               code={commands.decode}
-              caption="The price header is base64 JSON in the x402 format. Drop the jq if you don't have it."
+              caption="Decodes the price header, which is base64 JSON in the x402 format. Without jq, delete the last pipe."
             />
             <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
               <li>
-                <InlineLink href="/verify">Verify a receipt</InlineLink>
+                <InlineLink href="/verify" newTab>
+                  Verify a receipt
+                </InlineLink>
               </li>
               <li>
-                <InlineLink href={`${REPO_URL}/tree/main/packages/mcp`}>
-                  Use it from Claude Desktop
+                <InlineLink href={`${REPO_URL}/tree/main/packages/mcp#readme`}>
+                  MCP server for Claude Desktop
                 </InlineLink>
               </li>
               <li>
                 <InlineLink href={`${REPO_URL}#how-a-paid-request-works`}>
-                  How it works in depth
+                  How a paid request works
                 </InlineLink>
               </li>
               <li>
-                <InlineLink href={REPO_URL}>Source</InlineLink>
+                <InlineLink href={REPO_URL}>Source on GitHub</InlineLink>
               </li>
             </ul>
           </div>
         </details>
 
         <footer className="border-t pt-6 text-sm text-muted-foreground">
-          Prefer to look around? <InlineLink href="/signin">Sign in</InlineLink>
-          <span aria-hidden> · </span>
-          <InlineLink href="/">How BotFare works</InlineLink>
+          You can also <InlineLink href="/signin">sign in</InlineLink> as either side, or read{" "}
+          <InlineLink href="/">how BotFare works</InlineLink>.
         </footer>
       </main>
     </div>
@@ -236,9 +239,20 @@ function Step({
   );
 }
 
-/** An in-text link: same-site paths use Next's Link, others open as plain anchors. */
-function InlineLink({ href, children }: { href: string; children: ReactNode }) {
-  if (href.startsWith("/")) {
+/**
+ * An in-text link. Same-site paths use Next's Link in this tab; other sites, and same-site side
+ * trips marked `newTab`, open in a new tab with a small arrow.
+ */
+function InlineLink({
+  href,
+  newTab = false,
+  children,
+}: {
+  href: string;
+  newTab?: boolean;
+  children: ReactNode;
+}) {
+  if (href.startsWith("/") && !newTab) {
     return (
       <Link href={href} className={textLink}>
         {children}
@@ -246,9 +260,9 @@ function InlineLink({ href, children }: { href: string; children: ReactNode }) {
     );
   }
   return (
-    <a href={href} className={textLink}>
+    <NewTabLink href={href} icon className={cn(textLink, "inline-flex items-center gap-0.5")}>
       {children}
-    </a>
+    </NewTabLink>
   );
 }
 

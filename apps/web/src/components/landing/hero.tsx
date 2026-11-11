@@ -1,10 +1,11 @@
 import { cn } from "cn";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, ArrowUpRightIcon } from "lucide-react";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { FareTicket } from "./fare-ticket";
 import styles from "./landing.module.css";
 import { REPO_URL } from "./links";
+import { NewTabLink } from "./new-tab-link";
 
 export function Hero() {
   return (
@@ -18,8 +19,8 @@ export function Hero() {
             Every bot pays its <span className={styles.highlight}>fare</span>.
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed sm:text-xl">
-            AI agents read websites for free. BotFare lets a site charge them a few cents a page,
-            paid through PayPal. People still read free.
+            AI agents read your site for free. BotFare charges them a few cents a page through
+            PayPal. People still read free.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
@@ -29,8 +30,9 @@ export function Hero() {
               Try it in 2 minutes
               <ArrowRightIcon aria-hidden data-icon="inline-end" />
             </Link>
-            <a
+            <NewTabLink
               href={REPO_URL}
+              icon={<ArrowUpRightIcon aria-hidden data-icon="inline-end" />}
               className={cn(
                 buttonVariants({
                   variant: "outline",
@@ -40,10 +42,10 @@ export function Hero() {
               )}
             >
               See the code
-            </a>
+            </NewTabLink>
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            PayPal sandbox: test money, no sign-up.
+            The demo uses PayPal sandbox money. No sign-up.
           </p>
         </div>
         <FareTicket />

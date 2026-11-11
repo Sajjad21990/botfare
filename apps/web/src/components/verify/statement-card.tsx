@@ -4,19 +4,21 @@ import { contentDigestSha256 } from "@botfare/contracts/fare";
 import type { BotFareStatement, DeliveryStatement } from "@botfare/contracts/receipts";
 import { ChevronRight, ShieldCheck, ShieldX } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { NewTabLink } from "@/components/app/external-link";
 import { CopyButton } from "@/components/publisher/copy-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  formatFareMicros,
   formatInstant,
   formatMoneyMicros,
   headline,
   KIND_LABELS,
   KIND_SUMMARIES,
   percentOf,
-  signalSentence,
+  signalCopy,
   statementTime,
 } from "./statement-copy";
 import { type CheckedStatement, decodePayloadJson } from "./verify-lib";
@@ -62,11 +64,11 @@ export function StatementCard({ checked, receiptId }: StatementCardProps) {
         </div>
         {!result.ok ? (
           <p className="text-sm text-destructive">
-            {result.message}
+            {result.message}.
             {result.error === "unknown_key"
-              ? ". It may be signed with a key BotFare never published, or with one from another server."
+              ? " BotFare never published this key, or another server signed it."
               : result.error === "bad_signature"
-                ? ". The statement was changed after BotFare signed it, or BotFare did not sign it."
+                ? " Someone changed it after BotFare signed it, or BotFare never signed it."
                 : ""}
           </p>
         ) : otherReceipt ? (
@@ -89,17 +91,17 @@ export function StatementCard({ checked, receiptId }: StatementCardProps) {
                 <time dateTime={statementTime(statement)}>
                   {formatInstant(statementTime(statement))}
                 </time>
-                {!result.ok ? " · claims shown as written, not verified" : null}
+                {!result.ok ? " · shown as written, not verified" : null}
               </p>
             </div>
-            <Facts statement={statement} kid={kid ?? null} />
+            <Facts statement={statement} kid={kid ?? null} verified={verified} />
             {verified && statement.kind === "delivery" ? (
               <CheckYourCopy statement={statement} />
             ) : null}
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            The claims could not be read as a BotFare statement.
+            Could not read this as a BotFare statement.
           </p>
         )}
         <RawJws checked={checked} />
@@ -121,7 +123,30 @@ function Mono({ children }: { children: ReactNode }) {
   return <span className="font-mono text-xs">{children}</span>;
 }
 
-function Facts({ statement, kid }: { statement: BotFareStatement; kid: string | null }) {
+/** An http(s) URL, or null: only these become links. */
+function webUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function Facts({
+  statement,
+  kid,
+  verified,
+}: {
+  statement: BotFareStatement;
+  kid: string | null;
+  /** Only a verified statement's page URL is a link; an unverified one is shown as text. */
+  verified: boolean;
+}) {
+  const pageUrl =
+    verified && statement.kind === "payment" ? webUrl(statement.payment.resource) : null;
+  const signal = statement.kind === "payment" ? signalCopy(statement.payment.signal) : null;
   return (
     <dl className="flex flex-col gap-2 border-t pt-4 text-sm">
       <Fact label="Receipt">
@@ -129,13 +154,7 @@ function Facts({ statement, kid }: { statement: BotFareStatement; kid: string | 
       </Fact>
       {statement.kind === "payment" ? (
         <>
-          <Fact label="Amount">
-            {formatMoneyMicros(statement.payment.amountMicros)}{" "}
-            <span className="text-muted-foreground">
-              ({statement.payment.amount} {statement.payment.asset === "USD" ? "cents" : "units"} of{" "}
-              {statement.payment.asset})
-            </span>
-          </Fact>
+          <Fact label="Price">{formatFareMicros(statement.payment.amountMicros)}</Fact>
           <Fact label="Split">
             Publisher {formatMoneyMicros(statement.payment.publisherMicros)} (
             {percentOf(statement.payment.publisherMicros, statement.payment.amountMicros)}%) ·
@@ -146,13 +165,24 @@ function Facts({ statement, kid }: { statement: BotFareStatement; kid: string | 
             {statement.payment.siteOrigin ?? "Site"} <Mono>({statement.payment.payTo})</Mono>
           </Fact>
           {statement.payment.resource ? (
-            <Fact label="Resource">
-              <Mono>{statement.payment.resource}</Mono>
+            <Fact label="Page">
+              {pageUrl ? (
+                <NewTabLink
+                  href={pageUrl}
+                  icon
+                  className="inline-flex max-w-full items-center gap-0.5 rounded-sm font-mono text-xs underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  {statement.payment.resource}
+                </NewTabLink>
+              ) : (
+                <Mono>{statement.payment.resource}</Mono>
+              )}
             </Fact>
           ) : null}
           <Fact label="Payment type">
             x402 scheme <Mono>{statement.payment.scheme}</Mono> on{" "}
-            <Mono>{statement.payment.network}</Mono>
+            <Mono>{statement.payment.network}</Mono>, amount <Mono>{statement.payment.amount}</Mono>{" "}
+            in {statement.payment.asset === "USD" ? "US cents" : statement.payment.asset}
           </Fact>
           <Fact label="Paid by">
             Agent key <Mono>{statement.payment.payer}</Mono>
@@ -162,12 +192,17 @@ function Facts({ statement, kid }: { statement: BotFareStatement; kid: string | 
               </span>
             ) : null}
           </Fact>
-          <Fact label="Why charged">{signalSentence(statement.payment.signal)}</Fact>
+          {signal ? (
+            <Fact label="Charge reason">
+              {signal.label}
+              <span className="block text-xs text-muted-foreground">{signal.detail}</span>
+            </Fact>
+          ) : null}
           {statement.payment.offerDigest ? (
             <Fact label="Offer digest">
               <Mono>{statement.payment.offerDigest}</Mono>
               <span className="block text-xs text-muted-foreground">
-                The declared offer (title and preview) the agent saw before paying.
+                Hash of the title and preview the agent saw before it paid.
               </span>
             </Fact>
           ) : null}
@@ -178,7 +213,7 @@ function Facts({ statement, kid }: { statement: BotFareStatement; kid: string | 
           <Fact label="Content-Digest">
             <Mono>{statement.delivery.contentDigest}</Mono>
             <span className="block text-xs text-muted-foreground">
-              SHA-256 of the response body, in RFC 9530 form.
+              SHA-256 of the body the site sent, in RFC 9530 format.
             </span>
           </Fact>
           <Fact label="Size">{statement.delivery.contentLength.toLocaleString("en-US")} bytes</Fact>
@@ -190,11 +225,9 @@ function Facts({ statement, kid }: { statement: BotFareStatement; kid: string | 
       ) : null}
       {statement.kind === "refund" ? (
         <>
-          <Fact label="Refunded">{formatMoneyMicros(statement.refund.refundedMicros)}</Fact>
+          <Fact label="Refunded">{formatFareMicros(statement.refund.refundedMicros)}</Fact>
           <Fact label="How">
-            {statement.refund.via === "dispute"
-              ? "A dispute, decided by Fare Court or the publisher"
-              : "A direct refund by the publisher"}
+            {statement.refund.via === "dispute" ? "Fare Court dispute" : "Refund by the publisher"}
             {statement.refund.disputeId ? (
               <>
                 {" "}
@@ -238,17 +271,17 @@ function CheckYourCopy({ statement }: { statement: DeliveryStatement }) {
 
   return (
     <details className="group rounded-lg border bg-muted/30 px-3 py-2 text-sm">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden
           className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none"
         />
-        Check your copy of the content
+        Check your copy
       </summary>
       <div className="mt-3 flex flex-col gap-3">
         <p className="text-muted-foreground">
-          Choose the file you received, or paste the exact text. It is hashed here in your browser
-          and never uploaded.
+          Pick the file you received or paste its exact text. Your browser hashes it and uploads
+          nothing.
         </p>
         <input
           type="file"
@@ -262,7 +295,7 @@ function CheckYourCopy({ statement }: { statement: DeliveryStatement }) {
         <Textarea
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="…or paste the body here"
+          placeholder="Or paste the exact body here"
           aria-label="Content to hash"
           className="max-h-40 font-mono text-xs"
         />
@@ -270,8 +303,8 @@ function CheckYourCopy({ statement }: { statement: DeliveryStatement }) {
           <button
             type="button"
             disabled={!text || busy}
-            onClick={() => hash(text, "the pasted text")}
-            className="rounded-md border bg-background px-2.5 py-1 text-sm font-medium hover:bg-muted disabled:opacity-50"
+            onClick={() => hash(text, "The pasted text")}
+            className="rounded-md border bg-background px-2.5 py-1 text-sm font-medium outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
           >
             Hash the pasted text
           </button>
@@ -283,7 +316,7 @@ function CheckYourCopy({ statement }: { statement: DeliveryStatement }) {
           >
             {matches
               ? `✓ ${outcome.source} matches the signed digest byte for byte.`
-              : `✗ ${outcome.source} hashes to ${outcome.digest}, which differs from the signed digest.`}
+              : `✗ ${outcome.source} hashes to ${outcome.digest}, not the signed digest.`}
           </p>
         ) : null}
       </div>
@@ -295,12 +328,12 @@ function RawJws({ checked }: { checked: CheckedStatement }) {
   const payload = decodePayloadJson(checked.token);
   return (
     <details className="group rounded-lg border px-3 py-2 text-sm">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden
           className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none"
         />
-        Raw statement (JWS)
+        Raw JWS
       </summary>
       <div className="mt-3 flex flex-col gap-3">
         <div>
@@ -310,16 +343,14 @@ function RawJws({ checked }: { checked: CheckedStatement }) {
           </pre>
         </div>
         <div>
-          <p className="mb-1 text-xs font-medium text-muted-foreground">Payload (claims)</p>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Claims</p>
           <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-xs">
             {JSON.stringify(payload, null, 2)}
           </pre>
         </div>
         <div>
           <div className="mb-1 flex items-center justify-between gap-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              Compact JWS (header.payload.signature)
-            </p>
+            <p className="text-xs font-medium text-muted-foreground">Compact JWS</p>
             <CopyButton value={checked.token} label="Copy the JWS" />
           </div>
           <p className="max-h-40 overflow-y-auto rounded-md bg-muted/50 p-2 font-mono text-xs break-all">

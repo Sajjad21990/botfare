@@ -34,7 +34,7 @@ export function SandboxAccount({
           </h2>
           <p className="text-sm leading-relaxed">
             {account
-              ? "A sandbox login for the PayPal window. Nothing real is charged."
+              ? "Log in to the PayPal window with this sandbox buyer. Nothing real is charged."
               : "Log in to the PayPal window with any PayPal sandbox personal account. Nothing real is charged."}
           </p>
         </div>

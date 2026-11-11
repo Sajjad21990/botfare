@@ -1,5 +1,5 @@
 import { Scale } from "lucide-react";
-import Link from "next/link";
+import { NewTabLink } from "@/components/app/external-link";
 import {
   decidedByLabel,
   formatFare,
@@ -74,12 +74,12 @@ export function DisputesCard({ disputes, limit }: { disputes: DisputeView[]; lim
                     <span className="text-foreground">{reasonLabel(dispute.reason)}</span> ·{" "}
                     {dispute.agentKeyName} · <LocalTime iso={dispute.createdAt} />
                     {by ? ` · decided ${by}` : ""} ·{" "}
-                    <Link
+                    <NewTabLink
                       href={verifyHref(dispute.receiptId)}
                       className="font-medium text-foreground underline-offset-4 hover:underline"
                     >
                       Verify receipt
-                    </Link>
+                    </NewTabLink>
                   </p>
                   <p className="text-sm">{dispute.verdict?.rationale ?? dispute.message}</p>
                 </li>

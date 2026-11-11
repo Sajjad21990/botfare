@@ -75,7 +75,7 @@ export function parseVerifyInput(raw: string): VerifyInput {
     return {
       kind: "invalid",
       message:
-        "Not a receipt ID (rcpt_…) or a signed statement (a JWS: three base64url parts joined by dots).",
+        "That is not a receipt ID or a signed statement. Receipt IDs start with rcpt_, and statements are three base64url parts joined by dots.",
     };
   }
   if (tokens.length > 10) return { kind: "invalid", message: "Paste at most 10 statements." };

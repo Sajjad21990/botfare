@@ -1,12 +1,15 @@
 import { cn } from "cn";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, ArrowUpRightIcon } from "lucide-react";
 import Link from "next/link";
 import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import { buttonVariants } from "@/components/ui/button";
 import styles from "./landing.module.css";
 import { LICENSE_URL, REPO_URL } from "./links";
+import { NewTabLink } from "./new-tab-link";
 
 const fine = `${styles.focusRing} rounded-sm underline underline-offset-4 hover:text-foreground`;
+
+const smallArrow = <ArrowUpRightIcon aria-hidden className="ml-px inline size-3 align-[-0.05em]" />;
 
 export function SiteFooter() {
   return (
@@ -26,16 +29,16 @@ export function SiteFooter() {
           </Link>
         </div>
         <div className="mt-14 flex flex-col gap-2 border-t pt-6 text-sm text-muted-foreground sm:flex-row sm:justify-between">
-          <p>PayPal sandbox only: no real money moves.</p>
+          <p>PayPal sandbox only. No real money moves.</p>
           <p>
             Built for the PayPal AI Hackathon, November 2026 ·{" "}
-            <a href={LICENSE_URL} className={fine}>
+            <NewTabLink href={LICENSE_URL} className={fine} icon={smallArrow}>
               MIT
-            </a>
+            </NewTabLink>
             {" · "}
-            <a href={REPO_URL} className={fine}>
+            <NewTabLink href={REPO_URL} className={fine} icon={smallArrow}>
               Source
-            </a>
+            </NewTabLink>
             {" · "}
             <Link href="/privacy" className={fine}>
               Privacy

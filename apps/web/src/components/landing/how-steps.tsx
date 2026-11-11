@@ -6,17 +6,17 @@ import styles from "./landing.module.css";
 const steps: { title: string; body: string; icon: ReactNode }[] = [
   {
     title: "The site sets a price.",
-    body: "Any page or API call, say 3¢.",
+    body: "Crema Notes, our demo coffee blog, charges 3¢ for most articles.",
     icon: <GlobeIcon aria-hidden className="size-6" />,
   },
   {
     title: "The agent's owner tops up.",
-    body: "With PayPal, plus a daily limit for each agent.",
+    body: "$5 with PayPal, plus a daily limit per agent.",
     icon: <WalletIcon aria-hidden className="size-6" />,
   },
   {
     title: "The agent pays.",
-    body: "The site keeps 95%, paid out to PayPal.",
+    body: "The site keeps 95% and cashes out to PayPal.",
     icon: <BotFareMark className="size-7" />,
   },
 ];
@@ -52,9 +52,6 @@ export function HowSteps() {
             </li>
           ))}
         </ol>
-        <p className="mt-10 font-heading text-2xl font-extrabold tracking-tight sm:text-3xl">
-          People never pay. They just read.
-        </p>
       </div>
     </section>
   );

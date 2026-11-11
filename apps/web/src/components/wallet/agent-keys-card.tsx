@@ -4,6 +4,7 @@ import { Check, Copy, ExternalLink, KeyRound, Loader2, Lock } from "lucide-react
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { NewTabLink } from "@/components/app/external-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -235,16 +236,13 @@ function KeyUsage({ exampleOrigin }: { exampleOrigin: string | undefined }) {
           fetch pages through the BotFare SDK. When a page has a price within the key&apos;s limits,
           the SDK pays it from this wallet, and you are charged only after the page arrives.
         </p>
-        <a
+        <NewTabLink
           href={SDK_SOURCE_URL}
-          target="_blank"
-          rel="noreferrer"
           className="inline-flex items-center gap-1 rounded text-sm font-medium underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          Install from GitHub (not on npm yet)
+          Install the SDK from GitHub
           <ExternalLink aria-hidden className="size-3.5" />
-          <span className="sr-only"> (opens in a new tab)</span>
-        </a>
+        </NewTabLink>
       </div>
       <SnippetBlock title="agent.ts" code={agentUsageSnippet({ exampleOrigin })} />
     </section>

@@ -7,8 +7,8 @@ import {
   type SourceCheck,
 } from "@botfare/contracts/receipts";
 import { ExternalLink, Loader2, ShieldCheck, ShieldX } from "lucide-react";
-import Link from "next/link";
 import { useState } from "react";
+import { NewTabLink } from "@/components/app/external-link";
 import { Button } from "@/components/ui/button";
 import {
   fetchReceiptKeys,
@@ -142,15 +142,14 @@ export function VerifySources({ citations, manifest }: VerifySourcesProps) {
                   </span>
                 ) : null}
                 <span className="min-w-0 truncate font-medium">{row.title}</span>
-                <Link
+                <NewTabLink
                   href={verifyHref(row.check.receiptId)}
-                  target="_blank"
                   className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                 >
+                  <span className="sr-only">Verify receipt </span>
                   <span className="font-mono">{row.check.receiptId}</span>
                   <ExternalLink aria-hidden className="size-3" />
-                  <span className="sr-only">(open on the verify page)</span>
-                </Link>
+                </NewTabLink>
               </div>
               <ul className="mt-2 grid gap-2 sm:grid-cols-3">
                 <CheckItem

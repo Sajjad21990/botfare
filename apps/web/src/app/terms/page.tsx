@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { NewTabLink } from "@/components/app/external-link";
 
 export const metadata: Metadata = { title: "Terms · BotFare" };
 
@@ -23,11 +24,14 @@ export default function TermsPage() {
           data or revoke keys at any time.
         </li>
         <li>
-          The source code is MIT licensed (
-          <a href="https://github.com/Sajjad21990/botfare" className="underline underline-offset-4">
+          The source code is on{" "}
+          <NewTabLink
+            href="https://github.com/Sajjad21990/botfare"
+            className="underline underline-offset-4"
+          >
             GitHub
-          </a>
-          ).
+          </NewTabLink>{" "}
+          under the MIT license.
         </li>
       </ul>
       <div className="flex flex-wrap gap-3 font-medium">

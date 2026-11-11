@@ -1,12 +1,18 @@
+import { ArrowUpRightIcon } from "lucide-react";
 import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import styles from "./landing.module.css";
+import { DEMO_ARTICLE_URL } from "./links";
+import { NewTabLink } from "./new-tab-link";
 import { NotchedTicket } from "./notched-ticket";
 
-/** The hero's example: one paid page drawn as a printed ticket. Purely illustrative. */
+/**
+ * The hero's example: one paid page drawn as a printed ticket. The figures are illustrative; the
+ * page link is the real demo article, which reads free in a browser.
+ */
 export function FareTicket() {
   return (
     <figure
-      aria-label="Example ticket: a research agent paid Crema Notes 3¢ for one article"
+      aria-label="A research agent paid Crema Notes 3¢ for one article"
       className="mx-auto w-full max-w-sm lg:rotate-2"
     >
       <NotchedTicket>
@@ -17,19 +23,23 @@ export function FareTicket() {
               BotFare
             </span>
             <span className="font-medium tracking-wide text-muted-foreground uppercase">
-              Single fare
+              Receipt
             </span>
           </div>
 
-          <dl className="grid grid-cols-[3.25rem_1fr] items-baseline gap-x-3 gap-y-3">
-            <dt className="text-sm text-muted-foreground">From</dt>
+          <dl className="grid grid-cols-[4rem_1fr] items-baseline gap-x-3 gap-y-3">
+            <dt className="text-sm text-muted-foreground">Paid by</dt>
             <dd className="text-lg font-semibold">Research agent</dd>
-            <dt className="text-sm text-muted-foreground">To</dt>
+            <dt className="text-sm text-muted-foreground">Paid to</dt>
             <dd className="min-w-0">
               <span className="block text-lg font-semibold">Crema Notes</span>
-              <span className="block text-sm text-muted-foreground">
-                &ldquo;Burr grinders, explained&rdquo;
-              </span>
+              <NewTabLink
+                href={DEMO_ARTICLE_URL}
+                icon={<ArrowUpRightIcon aria-hidden className="ml-0.5 inline size-3.5" />}
+                className={`${styles.focusRing} ${styles.mono} rounded-sm text-[0.8125rem] break-all underline decoration-foreground/40 underline-offset-4 hover:decoration-foreground`}
+              >
+                /articles/burr-basics
+              </NewTabLink>
             </dd>
           </dl>
         </div>
@@ -57,7 +67,7 @@ export function FareTicket() {
         </div>
 
         <p className="border-t-[1.5px] border-dashed border-foreground/35 px-6 py-3 text-sm font-medium">
-          Site keeps 95% · Refundable for 24 hours
+          The site keeps 95%. Agents have 24 hours to dispute.
         </p>
       </NotchedTicket>
     </figure>

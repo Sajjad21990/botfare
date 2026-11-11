@@ -14,12 +14,13 @@ const SIDES: Record<DemoPersona, { title: string; blurb: string; Icon: LucideIco
   publisher: {
     title: "I run a website",
     blurb:
-      "Crema Notes, a demo coffee site: set prices, see what AI agents paid, withdraw to PayPal.",
+      "Sign in as Crema Notes, our demo coffee blog. Agents pay from 3¢ an article, and you keep 95%.",
     Icon: Globe,
   },
   agentOwner: {
     title: "I run AI agents",
-    blurb: "Top up a wallet with PayPal and give each AI agent a budget, then watch one pay.",
+    blurb:
+      "Your agents spend from a wallet you top up with PayPal. The demo key pays at most 10¢ a page.",
     Icon: Bot,
   },
 };
@@ -43,7 +44,7 @@ export function PersonaButtons() {
       router.refresh();
     } catch {
       setPending(null);
-      toast.error("Could not sign in. Is the database running?");
+      toast.error("Could not sign in. Try again in a moment.");
     }
   }
 
@@ -113,7 +114,7 @@ export function PayPalLoginButton() {
         Log in with PayPal
       </a>
       <p className="text-center text-xs text-muted-foreground">
-        Your own publisher account with a PayPal sandbox login; payouts go to its email.
+        Get your own publisher account. Payouts go to your verified PayPal sandbox email.
       </p>
     </div>
   );

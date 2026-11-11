@@ -1,12 +1,17 @@
 import { cn } from "cn";
+import { ArrowUpRightIcon } from "lucide-react";
 import Link from "next/link";
 import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import { buttonVariants } from "@/components/ui/button";
 import styles from "./landing.module.css";
 import { readmeUrl } from "./links";
+import { NewTabLink } from "./new-tab-link";
 
-/** Page anchors, hidden on a phone, where Sign in and the main button are all that fit. */
-const anchor = `${styles.focusRing} hidden rounded-md px-3 py-2 whitespace-nowrap text-muted-foreground hover:text-foreground md:inline-block`;
+/* Page anchors, hidden on a phone, where Sign in and the main button are all that fit. Fare Court
+   and Fare Advisor show from md; the rest join at lg, where all five fit on one line. */
+const anchor = `${styles.focusRing} hidden items-center gap-1 rounded-md px-3 py-2 whitespace-nowrap text-muted-foreground hover:text-foreground`;
+const fromMd = `${anchor} md:inline-flex`;
+const fromLg = `${anchor} lg:inline-flex`;
 
 export function SiteHeader() {
   return (
@@ -21,15 +26,25 @@ export function SiteHeader() {
           <span className="max-[359px]:sr-only">BotFare</span>
         </Link>
         <nav aria-label="Main" className="ml-auto flex items-center text-sm sm:gap-1">
-          <a href="/#how" className={anchor}>
+          <a href="/#fare-court" className={fromMd}>
+            Fare Court
+          </a>
+          <a href="/#fare-advisor" className={fromMd}>
+            Fare Advisor
+          </a>
+          <a href="/#how" className={fromLg}>
             How it works
           </a>
-          <a href="/#setup" className={anchor}>
+          <a href="/#setup" className={fromLg}>
             Set up
           </a>
-          <a href={readmeUrl()} className={anchor}>
+          <NewTabLink
+            href={readmeUrl()}
+            className={fromLg}
+            icon={<ArrowUpRightIcon aria-hidden className="size-3.5" />}
+          >
             README
-          </a>
+          </NewTabLink>
           <Link
             href="/signin"
             className={`${styles.focusRing} rounded-md px-2 py-2 font-medium whitespace-nowrap hover:bg-muted sm:px-3`}

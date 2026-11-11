@@ -3,12 +3,14 @@
 import { RECEIPT_KEYS_PATH, type StatementKind } from "@botfare/contracts/receipts";
 import { AlertCircle, Loader2, SearchCheck, ShieldCheck, ShieldX } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { NewTabLink } from "@/components/app/external-link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatementCard } from "./statement-card";
+import { formatFareMicros } from "./statement-copy";
 import {
   type CheckedStatement,
   checkStatement,
@@ -37,25 +39,40 @@ type State =
   | { status: "done"; outcome: Outcome }
   | { status: "error"; title: string; message: string };
 
+interface ReceiptVerifierProps {
+  initialReceipt: string | null;
+  /** `initialReceipt` is the server's example receipt, not one the link asked for. */
+  example?: boolean;
+}
+
 /** Enter a receipt ID or paste a statement; everything is verified here, in the browser. */
-export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | null }) {
+export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVerifierProps) {
   const [input, setInput] = useState(initialReceipt ?? "");
   const [state, setState] = useState<State>({ status: "idle" });
+  const [showExample, setShowExample] = useState(example && initialReceipt !== null);
   const ran = useRef(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Only the latest check may write the result; an earlier one still in flight is dropped.
+  const latest = useRef(0);
 
-  const lookUp = useCallback(async (receiptId: string) => {
+  const lookUp = useCallback(async (receiptId: string, options: { keepUrl?: boolean } = {}) => {
+    const run = ++latest.current;
+    const settle = (next: State) => {
+      if (run === latest.current) setState(next);
+    };
     setState({ status: "checking", label: `Looking up ${receiptId}` });
-    window.history.replaceState(null, "", verifyHref(receiptId));
+    // The example stays at /verify, so a reload shows the newest example.
+    if (!options.keepUrl) window.history.replaceState(null, "", verifyHref(receiptId));
     try {
       const [keys, statements] = await Promise.all([
         fetchReceiptKeys(),
         fetchReceiptStatements(receiptId),
       ]);
       if (!statements) {
-        setState({
+        settle({
           status: "error",
           title: "No such receipt",
-          message: `BotFare has no receipt ${receiptId}. Check the ID, or paste the signed statement itself.`,
+          message: `BotFare has no receipt ${receiptId}. Check the ID or paste the statement itself.`,
         });
         return;
       }
@@ -65,7 +82,7 @@ export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | n
       const checked = await Promise.all(
         slots.map((slot) => checkStatement(statements[slot] as string, slot, keys)),
       );
-      setState({
+      settle({
         status: "done",
         outcome: {
           receiptId,
@@ -76,12 +93,16 @@ export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | n
         },
       });
     } catch (err) {
-      setState(fetchFailure(err));
+      settle(fetchFailure(err));
     }
   }, []);
 
   const verifyPasted = useCallback(
     async (tokens: { token: string; slot: StatementKind | null }[]) => {
+      const run = ++latest.current;
+      const settle = (next: State) => {
+        if (run === latest.current) setState(next);
+      };
       setState({ status: "checking", label: "Verifying" });
       try {
         const keys = await fetchReceiptKeys();
@@ -95,7 +116,7 @@ export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | n
         );
         const subjects = new Set(checked.map((c) => c.decoded?.sub).filter(Boolean));
         const receiptId = subjects.size === 1 ? ([...subjects][0] as string) : null;
-        setState({
+        settle({
           status: "done",
           outcome: {
             receiptId,
@@ -106,20 +127,21 @@ export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | n
           },
         });
       } catch (err) {
-        setState(fetchFailure(err));
+        settle(fetchFailure(err));
       }
     },
     [],
   );
 
   const submit = useCallback(
-    (text: string) => {
+    (text: string, options: { keepUrl?: boolean } = {}) => {
       const parsed = parseVerifyInput(text);
       if (parsed.kind === "invalid") {
+        latest.current++;
         setState({ status: "error", title: "Nothing to verify", message: parsed.message });
         return;
       }
-      if (parsed.kind === "receipt") void lookUp(parsed.receiptId);
+      if (parsed.kind === "receipt") void lookUp(parsed.receiptId, options);
       else void verifyPasted(parsed.tokens);
     },
     [lookUp, verifyPasted],
@@ -128,18 +150,38 @@ export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | n
   useEffect(() => {
     if (ran.current || !initialReceipt) return;
     ran.current = true;
-    submit(initialReceipt);
-  }, [initialReceipt, submit]);
+    submit(initialReceipt, { keepUrl: example });
+  }, [initialReceipt, example, submit]);
+
+  function checkYours(text: string) {
+    setShowExample(false);
+    submit(text);
+  }
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    submit(input);
+    checkYours(input);
+  }
+
+  function checkAnother() {
+    latest.current++;
+    setShowExample(false);
+    setInput("");
+    setState({ status: "idle" });
+    inputRef.current?.focus();
   }
 
   const checking = state.status === "checking";
 
   return (
     <div className="flex flex-col gap-6">
+      {showExample ? (
+        <ExampleBanner
+          amount={state.status === "done" ? exampleAmount(state.outcome) : null}
+          onCheckAnother={checkAnother}
+        />
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -147,8 +189,8 @@ export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | n
             Check a receipt
           </CardTitle>
           <CardDescription>
-            A receipt ID such as <span className="font-mono">rcpt_9d2e41b7c03a5f18</span>, or one or
-            more signed statements (compact JWS) pasted from an agent, an MCP result or an x402{" "}
+            Paste a receipt ID such as <span className="font-mono">rcpt_9d2e41b7c03a5f18</span>, a
+            /verify link, or the signed statements from an x402{" "}
             <span className="font-mono">PAYMENT-RESPONSE</span>.
           </CardDescription>
         </CardHeader>
@@ -158,13 +200,14 @@ export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | n
               Receipt ID or signed statement
             </Label>
             <Textarea
+              ref={inputRef}
               id="verify-input"
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
-                  submit(input);
+                  checkYours(input);
                 }
               }}
               placeholder="rcpt_… or eyJhbGciOiJFZERTQSIs…"
@@ -178,8 +221,7 @@ export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | n
                 Verify
               </Button>
               <p className="text-xs text-muted-foreground">
-                Verified in your browser with BotFare&apos;s public key. Nothing you paste is sent
-                anywhere.
+                Pasted statements never leave your browser.
               </p>
             </div>
           </form>
@@ -204,12 +246,52 @@ export function ReceiptVerifier({ initialReceipt }: { initialReceipt: string | n
           <Results
             outcome={state.outcome}
             onLookUp={(receiptId) => {
+              setShowExample(false);
               setInput(receiptId);
               void lookUp(receiptId);
             }}
           />
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** The verified price of the example's payment statement, e.g. "3¢"; null until it verifies. */
+function exampleAmount(outcome: Outcome): string | null {
+  for (const checked of outcome.statements) {
+    const { result } = checked;
+    if (
+      result.ok &&
+      result.statement.kind === "payment" &&
+      result.statement.sub === outcome.receiptId
+    ) {
+      return formatFareMicros(result.statement.payment.amountMicros);
+    }
+  }
+  return null;
+}
+
+/** Says the receipt on screen is the demo's example, with a way to clear it and check your own. */
+function ExampleBanner({
+  amount,
+  onCheckAnother,
+}: {
+  amount: string | null;
+  onCheckAnother: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-foreground/15 bg-ticket p-4 text-ticket-foreground sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm leading-relaxed">
+        <span className="mr-2 inline-block rounded-sm border border-current px-1.5 py-px align-[0.1em] font-mono text-[0.7rem] font-semibold tracking-wider uppercase">
+          Example
+        </span>
+        A real {amount ? `${amount} ` : ""}purchase by an agent on Crema Notes, our demo coffee
+        blog.
+      </p>
+      <Button type="button" variant="outline" className="shrink-0" onClick={onCheckAnother}>
+        Check another receipt
+      </Button>
     </div>
   );
 }
@@ -242,8 +324,8 @@ function Results({
           <AlertCircle />
           <AlertTitle>No signed statements for {outcome.receiptId}</AlertTitle>
           <AlertDescription>
-            The receipt exists, but BotFare has not signed a statement for it. Receipts settled
-            before signed receipts were turned on have none.
+            The receipt exists but has no signed statements. Receipts settled before BotFare started
+            signing have none.
           </AlertDescription>
         </Alert>
       ) : (
@@ -277,24 +359,24 @@ function Results({
               ) : null}
             </p>
             <p className="text-muted-foreground">
-              Verified in your browser with BotFare&apos;s public key, from{" "}
-              <a
+              Checked in your browser against the{" "}
+              {outcome.keyCount === 1 ? "public key" : `${outcome.keyCount} public keys`} at{" "}
+              <NewTabLink
                 href={RECEIPT_KEYS_PATH}
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-xs underline underline-offset-4"
+                icon
+                className="inline-flex items-center gap-0.5 rounded-sm font-mono text-xs underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [overflow-wrap:anywhere]"
               >
                 {RECEIPT_KEYS_PATH}
-              </a>{" "}
-              ({outcome.keyCount} {outcome.keyCount === 1 ? "key" : "keys"}).
+              </NewTabLink>
+              .
             </p>
             {outcome.source === "pasted" && outcome.receiptId ? (
               <button
                 type="button"
                 onClick={() => onLookUp(outcome.receiptId as string)}
-                className="w-fit text-left font-medium underline underline-offset-4"
+                className="w-fit rounded-sm text-left font-medium underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                Fetch BotFare&apos;s latest statements for this receipt
+                Look up BotFare&apos;s latest statements for this receipt
               </button>
             ) : null}
           </div>
@@ -304,12 +386,10 @@ function Results({
       {outcome.missing.length > 0 ? (
         <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
           {outcome.missing.includes("payment") ? (
-            <li>No payment statement: this receipt was settled before BotFare signed payments.</li>
+            <li>No payment statement. This receipt was settled before BotFare signed payments.</li>
           ) : null}
           {outcome.missing.includes("delivery") ? (
-            <li>
-              No delivery statement yet: the publisher has not attested the bytes it delivered.
-            </li>
+            <li>No delivery statement yet. The site has not reported what it delivered.</li>
           ) : null}
         </ul>
       ) : null}

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
+import { NewTabLink } from "@/components/app/external-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -75,15 +76,13 @@ export function SiteCard({
                   : `${site.pricing.length} ${site.pricing.length === 1 ? "rule" : "rules"}`}
               </Badge>
             </div>
-            <a
+            <NewTabLink
               href={site.origin}
-              target="_blank"
-              rel="noreferrer"
               className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
             >
               {host}
-              <ExternalLink className="size-3" />
-            </a>
+              <ExternalLink aria-hidden className="size-3" />
+            </NewTabLink>
           </div>
           <dl className="flex gap-6 text-right">
             <div>
@@ -177,14 +176,9 @@ function Integration({ site, botfareUrl }: { site: SiteView; botfareUrl: string 
       <Step n={1} title="Get the package">
         <p className="text-sm">
           Not on npm yet.{" "}
-          <a
-            href={REPO_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium underline underline-offset-2"
-          >
+          <NewTabLink href={REPO_URL} className="font-medium underline underline-offset-2">
             Clone the repo
-          </a>
+          </NewTabLink>
           , run <code className="font-mono">pnpm install</code>, and add{" "}
           <code className="font-mono">{'"@botfare/express": "workspace:*"'}</code> to your
           app&apos;s dependencies (<code className="font-mono">apps/demo</code> does exactly this).

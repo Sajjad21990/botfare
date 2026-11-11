@@ -4,17 +4,22 @@ import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import { HowVerifyWorks } from "@/components/verify/how-verify-works";
 import { ReceiptVerifier } from "@/components/verify/receipt-verifier";
 import { isReceiptId } from "@/components/verify/verify-href";
+import { exampleReceiptId } from "@/lib/server/verify-example";
 
 export const metadata: Metadata = {
   title: "Verify a receipt · BotFare",
   description:
-    "Check a BotFare receipt: payment, delivery and refund statements, verified in your browser with BotFare's public key.",
+    "Check the payment, delivery and refund statements BotFare signed for a receipt, in your browser.",
 };
 
-/** Public: anyone can check a receipt. The signatures are verified in the viewer's browser. */
+/**
+ * Public: anyone can check a receipt. The signatures are verified in the viewer's browser. Without
+ * ?receipt, the page opens on a real example receipt from the demo site (lib/server/verify-example).
+ */
 export default async function VerifyPage({ searchParams }: PageProps<"/verify">) {
   const raw = (await searchParams).receipt;
   const receipt = typeof raw === "string" && isReceiptId(raw.trim()) ? raw.trim() : null;
+  const example = receipt ? null : await exampleReceiptId();
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -32,7 +37,7 @@ export default async function VerifyPage({ searchParams }: PageProps<"/verify">)
               href="/judge"
               className="rounded-md px-3 py-2 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              Two-minute tour
+              Try it in 2 minutes
             </Link>
             <Link
               href="/signin"
@@ -48,12 +53,16 @@ export default async function VerifyPage({ searchParams }: PageProps<"/verify">)
         <div className="space-y-3">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Verify a receipt</h1>
           <p className="max-w-2xl leading-relaxed text-muted-foreground">
-            Every fare BotFare settles comes with statements it signs: what was paid, what was
-            delivered and whether it was refunded. Check one here without taking BotFare&apos;s word
-            for it: the signatures are verified in your browser with BotFare&apos;s public key.
+            BotFare signs a statement when an agent pays, when the site delivers the page, and when
+            a fare is refunded. Your browser checks each signature against BotFare&apos;s public
+            key.
           </p>
         </div>
-        <ReceiptVerifier initialReceipt={receipt} />
+        <ReceiptVerifier
+          key={receipt ?? example ?? "empty"}
+          initialReceipt={receipt ?? example}
+          example={example !== null}
+        />
         <HowVerifyWorks />
       </main>
     </div>

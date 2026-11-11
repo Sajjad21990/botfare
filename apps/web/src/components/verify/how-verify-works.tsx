@@ -1,26 +1,28 @@
 import { RECEIPT_JWT_TYPE, RECEIPT_KEYS_PATH } from "@botfare/contracts/receipts";
 import { ChevronRight } from "lucide-react";
+import { NewTabLink } from "@/components/app/external-link";
+import { readmeUrl } from "@/components/landing/links";
 
 const points = [
   {
-    title: "Signed when it happens",
-    body: "BotFare signs a payment statement when it settles a request, a delivery statement when the publisher attests the bytes it served, and a refund statement when a fare is refunded. Each is a record of that moment; BotFare never re-signs history with different content.",
+    title: "Signed once, when it happens",
+    body: "BotFare signs a payment statement when it settles, a delivery statement when the site reports what it sent, and a refund statement when it refunds. It never signs the same event twice.",
   },
   {
     title: "Ed25519 JWS",
-    body: `Each statement is a compact JSON Web Signature (RFC 7515) with the EdDSA algorithm over Ed25519 (RFC 8037), typ ${RECEIPT_JWT_TYPE}. The kid in its header names the key that signed it.`,
+    body: `Each statement is a compact JWS (RFC 7515) signed with EdDSA over Ed25519 (RFC 8037), typ ${RECEIPT_JWT_TYPE}. Its kid header names the signing key.`,
   },
   {
-    title: "A public key directory (JWKS)",
-    body: `BotFare publishes its public signing keys as a JSON Web Key Set (RFC 7517) at ${RECEIPT_KEYS_PATH}. The private keys never leave the server. This page fetches the set and checks signatures in your browser with WebCrypto, so you do not have to trust what BotFare's database says today.`,
+    title: "Public keys",
+    body: `The public keys are a JWKS (RFC 7517) at ${RECEIPT_KEYS_PATH}. Private keys never leave the server. This page fetches the keys and checks every signature in your browser.`,
   },
   {
-    title: "RFC 9530 content digests",
-    body: "A delivery statement carries the SHA-256 Content-Digest of the exact response body, as the publisher's middleware computed it. Hash your own copy and compare: one changed byte gives a different digest.",
+    title: "Content digests",
+    body: "A delivery statement carries the RFC 9530 SHA-256 digest of the exact body the site sent. Hash your copy and compare. One changed byte gives a different digest.",
   },
   {
-    title: "What it does not prove",
-    body: "A valid signature proves BotFare issued the statement and cannot deny it later. It does not prove BotFare never deleted a receipt or that the publisher's content is accurate; a tamper-evident log of all receipts is future work.",
+    title: "Limits",
+    body: "A valid signature proves BotFare issued the statement. It does not prove that BotFare never deleted a receipt or that the content was accurate. A tamper-evident log of every receipt is not built yet.",
   },
 ];
 
@@ -28,7 +30,7 @@ const points = [
 export function HowVerifyWorks() {
   return (
     <details className="group rounded-xl border px-4 py-3">
-      <summary className="flex cursor-pointer list-none items-center gap-2 font-semibold [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden
           className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none"
@@ -43,10 +45,17 @@ export function HowVerifyWorks() {
           </div>
         ))}
       </dl>
-      <p className="mt-4 text-sm text-muted-foreground">
-        To check offline, use <span className="font-mono">verifyStatement()</span> from{" "}
-        <span className="font-mono">@botfare/contracts/receipts</span> with a saved copy of the key
-        set; it runs in Node and in the browser.
+      <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+        To check offline, call <span className="font-mono">verifyStatement()</span> from{" "}
+        <span className="font-mono">@botfare/contracts/receipts</span> with a saved copy of the
+        keys. It runs in Node and in the browser.{" "}
+        <NewTabLink
+          href={readmeUrl("signed-receipts")}
+          icon
+          className="inline-flex items-center gap-0.5 rounded-sm font-medium text-foreground underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          Signed receipts in the README
+        </NewTabLink>
       </p>
     </details>
   );

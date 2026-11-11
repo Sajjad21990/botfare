@@ -48,7 +48,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/signin">)
             Sign in to BotFare
           </h1>
           <p className="text-lg leading-relaxed">
-            A PayPal sandbox demo. Pick a side; no password needed.
+            This demo runs in the PayPal sandbox. Pick a side to sign in without a password.
           </p>
         </div>
         {error && (
@@ -61,14 +61,13 @@ export default async function SignInPage({ searchParams }: PageProps<"/signin">)
         <PersonaButtons />
         <div className="space-y-1.5 text-sm">
           <p className="text-muted-foreground">
-            Shared demo accounts: prices reset when you sign in.
+            Demo accounts are shared, so prices reset when you sign in.
           </p>
           <p>
-            Judging?{" "}
             <Link href="/judge" className={textLink}>
               Try it in 2 minutes
-            </Link>
-            .
+            </Link>{" "}
+            if you&apos;re judging.
           </p>
         </div>
         {paypal && (

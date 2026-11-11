@@ -1,9 +1,10 @@
 import { DEMO_SITE_PRICING, type PricingRule } from "@botfare/contracts";
-import { CheckIcon } from "lucide-react";
+import { ArrowUpRightIcon, CheckIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { CodeTabs } from "./code-tabs";
 import styles from "./landing.module.css";
-import { MCP_README_URL, REPO_URL } from "./links";
+import { DEMO_ARTICLE_URL, MCP_README_URL, REPO_URL } from "./links";
+import { NewTabLink } from "./new-tab-link";
 
 /** Keywords and punctuation, dimmed. */
 function K({ children }: { children: ReactNode }) {
@@ -46,12 +47,17 @@ const agentCode = (
     <K>const</K> {"agent = createBotFareAgent({ agentKey, maxPerRequestUsd: 0.10 });\n"}
     <K>const</K> {"{ response, paid } = "}
     <K>await</K> {"agent.fetch(\n  "}
-    <S>&quot;https://botfare-demo.onrender.com/articles/burr-basics&quot;</S>
+    <S>&quot;{DEMO_ARTICLE_URL}&quot;</S>
     {",\n);"}
   </Code>
 );
 
 const linkClass = `${styles.focusRing} rounded-sm font-semibold underline underline-offset-4`;
+
+/** The arrow after an inline new-tab link in running text. */
+const inlineArrow = (
+  <ArrowUpRightIcon aria-hidden className="ml-0.5 inline size-3.5 align-[-0.1em]" />
+);
 
 /** The demo site's real prices, in the order a reader meets them. */
 const SHOWN_PATTERNS = ["/articles/*", "/articles/premium-*", "/api/brew-ratio"];
@@ -64,10 +70,10 @@ function formatPrice(cents: number): string {
   return cents < 100 ? `${cents}¢` : `$${(cents / 100).toFixed(2)}`;
 }
 
+/* Config refresh: the middleware's configTtlMs default (30 s). Payouts: PAYOUT_HOLD_MS. */
 const checks = [
-  "Change a price; it's live in 30 seconds",
-  "See what every agent paid",
-  "Cash out to PayPal any time",
+  "New prices reach your site within 30 seconds.",
+  "Earnings pay out to PayPal after the 24-hour dispute window.",
 ];
 
 /** The page's one yellow band: the code a site adds, and the dashboard that runs it. */
@@ -83,13 +89,12 @@ export function SetupBand() {
           id="setup-title"
           className="max-w-3xl text-3xl leading-tight font-extrabold text-balance sm:text-5xl"
         >
-          One line to add. One dashboard to run.
+          Your site adds one line of code
         </h2>
-        <p className="mt-4 text-lg">No checkout pages, no crypto, no prices in your code.</p>
 
         <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-[1.25fr_1fr]">
           <div className={`${styles.printed} min-w-0 rounded-2xl bg-card p-4 sm:p-6`}>
-            <h3 className="mb-4 text-xl font-bold">Add it to your code</h3>
+            <h3 className="mb-4 text-xl font-bold">Code</h3>
             <CodeTabs
               label="Show the code for"
               tabs={[
@@ -99,7 +104,7 @@ export function SetupBand() {
                   panel: (
                     <>
                       {websiteCode}
-                      <Caption>Keys come from your dashboard.</Caption>
+                      <Caption>Browsers read free. Agents get a 402 with the price.</Caption>
                     </>
                   ),
                 },
@@ -110,10 +115,10 @@ export function SetupBand() {
                     <>
                       {agentCode}
                       <Caption>
-                        Charged only when the page is delivered. Using Claude? Add the{" "}
-                        <a href={MCP_README_URL} className={linkClass}>
+                        The agent pays only if the page arrives. Or skip the code and add the{" "}
+                        <NewTabLink href={MCP_README_URL} className={linkClass} icon={inlineArrow}>
                           MCP server
-                        </a>
+                        </NewTabLink>
                         .
                       </Caption>
                     </>
@@ -124,11 +129,10 @@ export function SetupBand() {
           </div>
 
           <div className={`${styles.printed} min-w-0 rounded-2xl bg-card p-4 sm:p-6`}>
-            <h3 className="text-xl font-bold">Run it from one dashboard</h3>
-            <table className="mt-4 w-full text-left text-sm">
-              <caption className="mb-2 text-left text-sm text-muted-foreground">
-                Prices on Crema Notes, our demo site
-              </caption>
+            <h3 id="setup-prices" className="text-xl font-bold">
+              Crema Notes prices
+            </h3>
+            <table aria-labelledby="setup-prices" className="mt-4 w-full text-left text-sm">
               <thead>
                 <tr className="border-b-[1.5px] border-foreground">
                   <th scope="col" className="py-2 pr-3 font-semibold">
@@ -138,7 +142,7 @@ export function SetupBand() {
                     Price
                   </th>
                   <th scope="col" className="py-2 font-semibold">
-                    Who pays
+                    Paid by
                   </th>
                 </tr>
               </thead>
@@ -178,11 +182,9 @@ export function SetupBand() {
         </div>
 
         <p className="mt-8 text-base">
-          Open source (MIT).{" "}
-          <a href={REPO_URL} className={linkClass}>
-            Install from GitHub
-          </a>{" "}
-          (not on npm yet).
+          <NewTabLink href={REPO_URL} className={linkClass} icon={inlineArrow}>
+            Install the packages from GitHub
+          </NewTabLink>
         </p>
       </div>
     </section>

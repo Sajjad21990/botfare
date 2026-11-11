@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { NewTabLink } from "@/components/app/external-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -440,13 +441,13 @@ function DisputeDialog({
             <p className="text-xs text-muted-foreground">
               Receipt <span className="font-mono">{dispute.receiptId}</span> · purchased{" "}
               {formatDateTime(dispute.purchasedAt)} ·{" "}
-              <Link
+              <NewTabLink
                 href={verifyHref(dispute.receiptId)}
                 className="font-medium text-foreground underline underline-offset-4"
               >
                 Verify
                 <span className="sr-only"> receipt {dispute.receiptId}</span>
-              </Link>
+              </NewTabLink>
             </p>
 
             {error && (

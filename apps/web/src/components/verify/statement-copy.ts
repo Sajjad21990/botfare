@@ -71,14 +71,15 @@ export const KIND_LABELS: Record<StatementKind, string> = {
 };
 
 export const KIND_SUMMARIES: Record<StatementKind, string> = {
-  payment: "Signed by BotFare at settlement, after the publisher served the response.",
-  delivery: "Signed by BotFare when the publisher attested the exact bytes it delivered.",
-  refund: "Signed by BotFare when the fare was refunded.",
+  payment: "BotFare signed this when it settled the payment, after the site served the page.",
+  delivery: "BotFare signed this when the site reported a hash of the exact bytes it sent.",
+  refund: "BotFare signed this when it refunded the fare.",
 };
 
-export function signalSentence(signal: DetectionSignal | null): string {
-  if (!signal) return "The detection signal was not recorded for this request.";
-  return `${signalLabel(signal)}: ${SIGNAL_DESCRIPTIONS[signal]}`;
+/** Why the request was charged: the detection signal's name and what it means. */
+export function signalCopy(signal: DetectionSignal | null): { label: string; detail: string } {
+  if (!signal) return { label: "Not recorded", detail: "This receipt has no detection signal." };
+  return { label: signalLabel(signal), detail: SIGNAL_DESCRIPTIONS[signal] };
 }
 
 /** One line that says what a statement records, in plain words. */

@@ -3,6 +3,7 @@
 import type { AnswerManifest } from "@botfare/contracts/receipts";
 import { ExternalLink, Sparkles } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
+import { NewTabLink } from "@/components/app/external-link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ResearchCitation } from "@/lib/server/research-events";
 import { formatFare, formatUsd, shortPath } from "./format";
@@ -46,15 +47,13 @@ export function AnswerCard(props: AnswerCardProps) {
                   {citation.n}
                 </span>
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <a
+                  <NewTabLink
                     href={citation.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
                     className="inline-flex items-center gap-1 font-medium underline-offset-4 hover:underline"
                   >
                     <span className="truncate">{citation.title ?? shortPath(citation.url)}</span>
-                    <ExternalLink className="size-3 shrink-0" />
-                  </a>
+                    <ExternalLink aria-hidden className="size-3 shrink-0" />
+                  </NewTabLink>
                   <p className="text-muted-foreground">{citation.claim}</p>
                   <button
                     type="button"
