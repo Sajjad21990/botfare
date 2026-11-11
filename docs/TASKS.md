@@ -17,10 +17,10 @@
 | 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 8 / 8 |
 | 3c. Signed receipts (proof of payment, delivery, sourcing) | Mon 9 | ✅ Done (a day early) | 5 / 5 |
 | 3d. Payout hold and any-model AI | Mon 9 | ✅ Done | 2 / 2 |
-| 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started (repo ready) | 0 / 6 |
+| 4. Deploy to Render | Wed 11 (last build step) | 🔄 Live; webhook and sandbox buyer left | 3 / 6 |
 | 5. Submission | Thu 12 | 🔄 Texts drafted | 2 / 10 |
 
-**Overall: about 77% done** (54 of 70 items). Next: deploy to Render (👤 Blueprint), then record the video and submit.
+**Overall: about 81% done** (57 of 70 items). Live at https://botfare-web.onrender.com. Next: PayPal webhook and sandbox buyer, a top-up and Withdraw on the live app, then the video and submission.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -126,11 +126,11 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 
 | | Task | Notes |
 | --- | --- | --- |
-| ⏳ | 👤 Render: New → Blueprint, connect GitHub, enter secrets | Account and $50 credits ready |
-| ⏳ | Provision the demo site on Render (`pnpm seed --print-secrets` in botfare-web's Shell) | README "Deploy" |
+| ✅ | 👤 Render: New → Blueprint, connect GitHub, enter secrets | 11 Nov: botfare-web, botfare-demo, two crons, Postgres 17 (Oregon); AI on Groq gpt-oss-120b |
+| ✅ | Provision the demo site on Render (`pnpm seed --print-secrets` in botfare-web's Shell) | Plus `pnpm seed:traffic` (148 requests, Fare Court and Advisor story, ledger sums to zero); demo `payments: on` |
 | ⏳ | PayPal sandbox webhook on the live URL; set `PAYPAL_WEBHOOK_ID` | |
-| ⏳ | Daily payouts cron and weekly demo refresh cron live | `botfare-payouts`, `botfare-demo-refresh` (`pnpm seed:traffic --weekly`, Mondays) |
-| ⏳ | Live smoke test: 402 → pay → receipt, top-up, Withdraw now | README "Deploy" step 4 |
+| ✅ | Daily payouts cron and weekly demo refresh cron live | `botfare-payouts`, `botfare-demo-refresh` (`pnpm seed:traffic --weekly`, Mondays); both built |
+| 🔄 | Live smoke test: 402 → pay → receipt, top-up, Withdraw now | 11 Nov: browser reads free, agent gets a 402, a Groq research run paid 8¢ with 2 citations, all 4 signed statements verify against the live JWKS, every persona page loads. 👤 Left: a top-up and Withdraw now in the browser |
 | ⏳ | 👤 Sandbox buyer for judges: a sandbox personal account in `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD` on botfare-web, and in the Devpost test-credentials field | `/judge` shows it; without it the page says to use any sandbox personal account |
 
 ## Phase 5: Submission ⏳

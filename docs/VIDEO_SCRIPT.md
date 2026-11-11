@@ -9,12 +9,12 @@
 
 ## Before recording
 
-1. Use the deployed app (`<BOTFARE_URL>`), or run the stack locally: `pnpm dev:web` plus `pnpm dev:demo`, or the judge Docker stack on :3300.
+1. Use the deployed app (https://botfare-web.onrender.com), or run the stack locally: `pnpm dev:web` plus `pnpm dev:demo`, or the judge Docker stack on :3300.
 2. Use a fresh browser profile at 1440×900 with 125% zoom so text is readable. Turn notifications off.
 3. Run one research run before recording, so models and caches are warm. On Groq's free tier a run takes 1–2 minutes because of rate-limit waits. Record it at normal speed and speed up the waiting parts 4× in the edit; Claude runs finish in under a minute.
 4. Keep these open in tabs:
    - `/judge`
-   - the demo article `<DEMO_PUBLIC_URL>/articles/burr-basics`
+   - the demo article https://botfare-demo.onrender.com/articles/burr-basics
    - a terminal with the curl from `/judge`
    - the PayPal sandbox publisher account (sandbox.paypal.com, signed in by you)
 5. Already recorded as B-roll: the top-up approval and the Payouts batch landing. Use them if the sandbox is slow on the day.

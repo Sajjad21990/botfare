@@ -66,7 +66,7 @@ docker-compose.full.yml + docker/   one-command judge stack (project botfare-jud
 - MCP server: `packages/mcp` (stdio; setup for Claude Desktop/Code in its README); `pnpm test` covers it
 - `pnpm --filter @botfare/web build`: production build of the app
 - `pnpm spike:01`…`spike:05`: Day-0 spikes; results in `docs/SPIKE_RESULTS.md`
-- `render.yaml`: Render Blueprint (botfare-web, botfare-demo, botfare-payouts and botfare-demo-refresh crons, botfare-db); not deployed yet
+- `render.yaml`: Render Blueprint (botfare-web, botfare-demo, botfare-payouts and botfare-demo-refresh crons, botfare-db); deployed 11 Nov: https://botfare-web.onrender.com, https://botfare-demo.onrender.com
 - `pnpm --filter @botfare/web dev` (Next.js on :3000) · `pnpm --filter @botfare/demo dev` (demo publisher)
 - Workspace packages export TypeScript source; Next.js transpiles them (`transpilePackages`), everything else runs on tsx.
 - `apps/web` uses TypeScript 5.9 (Next's type checker); the rest of the repo uses TypeScript 7.

@@ -13,6 +13,8 @@ AI agents read pages and call APIs for free, and the open standard for paying pe
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), November 2026.
 
+**Live demo:** [botfare-web.onrender.com/judge](https://botfare-web.onrender.com/judge) (BotFare) · [botfare-demo.onrender.com](https://botfare-demo.onrender.com) (Crema Notes, the demo publisher). Everything runs in the PayPal sandbox.
+
 **Judges:** open `/judge` on the running app for a two-minute guided tour (publisher, wallet, research agent, and a 402 you can curl), or run the whole stack locally with one Docker command ([below](#run-everything-in-docker)).
 
 ## How BotFare meets the judging criteria
@@ -301,7 +303,7 @@ Everything runs in the PayPal **sandbox only**.
 | `botfare()` publisher middleware, agent SDK (`getOffer`, paid `fetch`, spend cap, wire events) | ✅ Built |
 | Crema Notes demo publisher (articles + brew-ratio API) | ✅ Built |
 | `pnpm seed` + `pnpm e2e`: Phase 1 on real processes and Postgres | ✅ All checks pass |
-| Render Blueprint ([`render.yaml`](render.yaml)): app, demo, daily payouts cron, weekly demo-refresh cron, Postgres | ✅ Written |
+| Render Blueprint ([`render.yaml`](render.yaml)): app, demo, daily payouts cron, weekly demo-refresh cron, Postgres | ✅ Deployed (11 Nov) |
 | Wallet: balance, PayPal JS SDK v6 top-up, agent keys made in the browser, receipts | ✅ Built; a real sandbox top-up ($5.00, PayPal fee $0.66 booked from the capture) credited the wallet |
 | Publisher dashboard: sites, pricing editor, one-time secrets, earnings, Withdraw now, payout history | ✅ Built; a real sandbox Payout ($11.72) reached `SUCCESS` |
 | PayPal webhooks (`/api/paypal/webhook`, verified, deduped) and `pnpm payouts:run` | ✅ Built and tested against a mock PayPal |
@@ -316,7 +318,7 @@ Everything runs in the PayPal **sandbox only**.
 | Signed receipts: payment, delivery and refund statements (Ed25519 JWS), JWKS, public statements endpoint, `/verify`, SDK `verifyReceipt`, MCP `verify_receipt`, research agent sources manifest and Verify sources | ✅ Built; `pnpm e2e` verifies payment, delivery and refund statements against the published keys |
 | Log in with PayPal | ✅ Code done and tested against a mock PayPal; off until the sandbox app has it enabled |
 | One-command Docker stack ([`docker-compose.full.yml`](docker-compose.full.yml)) | ✅ Built and checked |
-| Deploy to Render | ⏳ Next |
+| Deploy to Render | ✅ Live at [botfare-web.onrender.com](https://botfare-web.onrender.com/judge); a paid research run on Groq and its signed receipts checked live |
 
 The full proposal, decisions and day-by-day plan are in [`docs/PLAN.md`](docs/PLAN.md).
 

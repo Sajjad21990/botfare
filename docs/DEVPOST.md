@@ -73,8 +73,8 @@ paypal, paypal-orders, paypal-js-sdk-v6, paypal-payouts, paypal-webhooks, log-in
 
 ## Try it
 
-- **Live app:** `<BOTFARE_URL>/judge`. Fill this in after the deploy.
-- **Demo publisher:** `<DEMO_PUBLIC_URL>`
+- **Live app:** https://botfare-web.onrender.com/judge
+- **Demo publisher:** https://botfare-demo.onrender.com (a browser reads free; `curl -i -H 'x-botfare-agent: 1' https://botfare-demo.onrender.com/articles/burr-basics` gets a 402)
 - **Code:** https://github.com/Sajjad21990/botfare (MIT)
 - **Run locally:** `docker compose -f docker-compose.full.yml -p botfare-judge up --build -d --wait`, then open http://localhost:3300/judge.
 - **Test logins:** the `/judge` page signs you in as the demo publisher or agent owner, with no password. PayPal sandbox buyer for a top-up (fake money): shown on `/judge`.
