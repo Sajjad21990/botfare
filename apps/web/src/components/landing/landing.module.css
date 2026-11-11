@@ -61,6 +61,39 @@
   right: -0.75rem;
 }
 
+/* Notches cut into a printed ticket (.printed): a paper half-circle with an ink edge, centred on
+   the ticket's outer edge (the parent row sits inside the 1.5px border). The right one is clipped
+   4px wider so it also bites through the hard offset shadow. */
+.cut {
+  position: absolute;
+  top: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background-color: var(--section-bg, var(--background));
+  border: 1.5px solid var(--foreground);
+  transform: translateY(-50%);
+}
+
+.cutLeft {
+  left: calc(-0.75rem - 1.5px);
+  clip-path: inset(0 0 0 50%);
+}
+
+.cutRight {
+  right: calc(-0.75rem - 1.5px);
+  clip-path: inset(0 calc(50% - 4px) 0 0);
+}
+
+/* Code on the landing: scrolls inside itself on a phone instead of widening the page. */
+.code {
+  font-family: var(--font-code), ui-monospace, SFMono-Regular, monospace;
+  font-feature-settings: "zero";
+  tab-size: 2;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
 /* The one moment of motion on the page: the fare is stamped paid. */
 .stamp {
   transform: rotate(-8deg);

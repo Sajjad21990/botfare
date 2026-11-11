@@ -1,6 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { formatCents, formatMicros } from "./format";
+import { formatCents, formatMoney, formatMoneyExact } from "./format";
 import { LocalTime } from "./local-time";
 import type { WalletTopUp } from "./types";
 
@@ -20,16 +20,24 @@ export function BalanceCard({
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardDescription>Available balance</CardDescription>
-        <CardTitle className="text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
-          {formatMicros(balanceMicros)}
+        <CardDescription>Wallet balance</CardDescription>
+        <CardTitle
+          className="text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl"
+          title={formatMoneyExact(balanceMicros)}
+        >
+          {formatMoney(balanceMicros)}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-5">
         <dl className="grid grid-cols-2 gap-4 sm:max-w-sm">
           <div>
             <dt className="text-xs text-muted-foreground">Spent today</dt>
-            <dd className="text-lg font-medium tabular-nums">{formatMicros(spendTodayMicros)}</dd>
+            <dd
+              className="text-lg font-medium tabular-nums"
+              title={formatMoneyExact(spendTodayMicros)}
+            >
+              {formatMoney(spendTodayMicros)}
+            </dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">Active agent keys</dt>
@@ -38,8 +46,8 @@ export function BalanceCard({
         </dl>
 
         <p className="rounded-lg bg-muted/60 px-3 py-2.5 text-sm text-muted-foreground">
-          Agents pay each page&apos;s listed price from this balance: the publisher keeps 95%,
-          BotFare 5%. PayPal&apos;s top-up fee is on us, so a $10 top-up is $10.00 to spend.
+          Your AI agents pay each page&apos;s price from this balance: the website keeps 95%,
+          BotFare 5%. BotFare pays PayPal&apos;s top-up fee, so a $5 top-up is $5.00 to spend.
         </p>
 
         <div className="mt-auto">
@@ -47,7 +55,7 @@ export function BalanceCard({
           <h3 className="mb-2 text-xs font-medium text-muted-foreground">Recent top-ups</h3>
           {recent.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              None yet. Add funds with PayPal to get your agents going.
+              None yet. Top up with PayPal to get your AI agents going.
             </p>
           ) : (
             <ul className="space-y-1.5">

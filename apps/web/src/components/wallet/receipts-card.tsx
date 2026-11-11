@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { verifyHref } from "@/components/verify/verify-href";
-import { formatMicros } from "./format";
+import { formatMoney, formatMoneyExact } from "./format";
 import { LocalTime } from "./local-time";
 import type { WalletReceipt } from "./types";
 
@@ -22,7 +22,8 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
       <CardHeader>
         <CardTitle>Receipts</CardTitle>
         <CardDescription>
-          Every fare your agents paid, settled over x402 after the publisher served the response.
+          Every page your AI agents paid for. A page is charged only after the website delivers it,
+          and every receipt is signed so anyone can check it.
           {receipts.length >= limit ? ` Showing the latest ${limit}.` : ""}
         </CardDescription>
       </CardHeader>
@@ -33,10 +34,10 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
               <ReceiptText className="size-5 text-muted-foreground" />
             </div>
             <div className="space-y-1">
-              <p className="font-medium">No paid requests yet</p>
+              <p className="font-medium">No paid pages yet</p>
               <p className="max-w-sm text-sm text-muted-foreground">
-                When one of your agents pays a fare, its receipt shows up here with the site, the
-                page and the price.
+                When one of your AI agents pays for a page, its receipt shows up here with the site,
+                the page and the price.
               </p>
             </div>
           </div>
@@ -46,7 +47,7 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
               <TableRow>
                 <TableHead>Time</TableHead>
                 <TableHead>Site</TableHead>
-                <TableHead>Resource</TableHead>
+                <TableHead>Page</TableHead>
                 <TableHead>Agent</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Status</TableHead>
@@ -75,14 +76,20 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                         ? "text-right tabular-nums text-muted-foreground line-through"
                         : "text-right tabular-nums"
                     }
+                    title={formatMoneyExact(receipt.amountMicros)}
                   >
-                    {formatMicros(receipt.amountMicros)}
+                    {formatMoney(receipt.amountMicros)}
                   </TableCell>
                   <TableCell>
                     {receipt.status === "refunded" ? (
                       <Badge variant="secondary">Refunded</Badge>
                     ) : (
-                      <Badge variant="outline">Settled</Badge>
+                      <Badge
+                        variant="outline"
+                        className="border-success/40 font-semibold text-success"
+                      >
+                        Paid
+                      </Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">

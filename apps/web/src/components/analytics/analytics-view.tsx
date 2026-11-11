@@ -1,7 +1,7 @@
 "use client";
 
 import type { AgStudioMode } from "ag-studio";
-import { Bot, Eye, LayoutDashboard, RefreshCw, Sparkles, Terminal } from "lucide-react";
+import { Bot, Eye, LayoutDashboard, RefreshCw, Sparkles } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -142,18 +142,23 @@ function EmptyState({
           <Bot className="size-6 text-muted-foreground" />
         </div>
         <div className="space-y-1.5">
-          <h2 className="text-lg font-semibold tracking-tight">No paid requests yet</h2>
+          <h2 className="text-lg font-semibold tracking-tight">No paid reads yet</h2>
           <p className="text-sm text-muted-foreground">
             {hasSites
               ? "When an AI agent pays for one of your pages, it shows up here within seconds."
-              : "Add a site and set prices first; paid requests from AI agents then show up here."}
+              : "Add a site and set prices first; paid reads from AI agents then show up here."}
           </p>
         </div>
         <div className="flex w-full items-start gap-3 rounded-lg border bg-muted/40 p-3 text-left text-sm">
-          <Terminal className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <Bot className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <p>
-            Run <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">pnpm e2e</code> or
-            the research agent to generate paid traffic.
+            <Link
+              href="/agent"
+              className="rounded font-medium underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              Run the research agent
+            </Link>{" "}
+            to create some. It pays the demo coffee site, Crema Notes, a few cents a page.
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-2">

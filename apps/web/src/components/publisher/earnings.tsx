@@ -39,7 +39,9 @@ import {
   formatCents,
   formatClearsIn,
   formatCount,
-  formatMicros,
+  formatMoney,
+  formatMoneyExact,
+  formatPrice,
   withdrawableCents,
 } from "./format";
 import { LocalTime } from "./local-time";
@@ -75,9 +77,9 @@ export function EarningsCard({
       : !data.payoutEmail
         ? "Add a PayPal payout email to withdraw."
         : belowMinimum
-          ? `Payouts start at ${formatCents(data.minimumPayoutCents)}. You need ${formatCents(
+          ? `Payouts start at ${formatPrice(data.minimumPayoutCents)}. You need ${formatPrice(
               data.minimumPayoutCents - cents,
-            )} more${clearing ? " available" : ""}.`
+            )} more${clearing ? "; some is still on hold" : ""}.`
           : null;
 
   async function withdraw() {
@@ -107,33 +109,45 @@ export function EarningsCard({
   }
 
   return (
-    <Card className="lg:col-span-2">
+    <Card>
       <CardHeader>
         <CardTitle>Earnings</CardTitle>
         <CardDescription>
-          After BotFare&apos;s 5% fee. Paid out through PayPal Payouts.
+          What AI agents paid you, after BotFare&apos;s 5% fee. Paid out to your PayPal account
+          (sandbox test money).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-6 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">Available to withdraw</div>
-            <div className="text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
-              {formatMicros(data.availableMicros)}
+            <div className="text-xs font-medium text-muted-foreground">Ready to withdraw</div>
+            <div
+              className="text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl"
+              title={formatMoneyExact(data.availableMicros)}
+            >
+              {/* Whole cents, so it matches the Withdraw button; the exact figure is the tooltip. */}
+              {formatMoney(cents * 10_000)}
             </div>
             {clearing && (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Hourglass className="size-3.5 shrink-0" />
                 <span>
-                  <span className="font-medium text-foreground tabular-nums">
-                    {formatMicros(data.clearingMicros)}
+                  <span
+                    className="font-medium text-foreground tabular-nums"
+                    title={formatMoneyExact(data.clearingMicros)}
+                  >
+                    {formatMoney(data.clearingMicros)}
                   </span>{" "}
-                  clearing
+                  on hold for {data.disputeWindowHours} h (dispute window)
                 </span>
               </div>
             )}
           </div>
-          <Stat label="Lifetime earnings" value={formatMicros(data.lifetimeEarningsMicros)} />
+          <Stat
+            label="Earned so far"
+            value={formatMoney(data.lifetimeEarningsMicros)}
+            title={formatMoneyExact(data.lifetimeEarningsMicros)}
+          />
           <Stat label="Paid requests" value={formatCount(data.paidRequests)} />
         </div>
         {clearing && <ClearingNote data={data} />}
@@ -158,8 +172,8 @@ export function EarningsCard({
                 <ArrowUpRight className="mt-px size-3.5 shrink-0" />
                 Sends to {data.payoutEmail}.{" "}
                 {clearing
-                  ? "Clearing fares and sub-cent amounts stay in your balance."
-                  : "Sub-cent amounts stay in your balance."}
+                  ? "Money on hold and fractions of a cent stay in your balance."
+                  : "Fractions of a cent stay in your balance."}
               </>
             )}
           </p>
@@ -175,14 +189,14 @@ function ClearingNote({ data }: { data: PublisherDashboard }) {
     <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
       <Hourglass className="mt-px size-3.5 shrink-0" />
       <span>
-        Fares stay clearing for {data.disputeWindowHours} hours so agents can dispute them, and
-        while a dispute waits for a decision.{" "}
+        New fares are held for {data.disputeWindowHours} hours in case an AI agent disputes them,
+        and for as long as a dispute waits for a decision.{" "}
         {data.nextReleaseAt ? (
           <>
-            More clears <ClearsIn iso={data.nextReleaseAt} />.
+            More is ready <ClearsIn iso={data.nextReleaseAt} />.
           </>
         ) : (
-          "The rest clears once its disputes are decided."
+          "The rest is ready once its disputes are decided."
         )}
       </span>
     </p>
@@ -205,11 +219,13 @@ function ClearsIn({ iso }: { iso: string }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
     <div className="space-y-1 sm:border-l sm:pl-6">
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="text-xl font-medium tabular-nums sm:pt-2">{value}</div>
+      <div className="text-xl font-medium tabular-nums sm:pt-2" title={title}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -329,9 +345,11 @@ const STATUS: Record<PayoutStatusView, { label: string; className: string }> = {
 export function PayoutHistory({
   payouts,
   onSynced,
+  className,
 }: {
   payouts: PayoutView[];
   onSynced: (payouts: PayoutView[]) => void;
+  className?: string;
 }) {
   const [syncing, setSyncing] = useState(false);
   const open = payouts.some(
@@ -359,7 +377,7 @@ export function PayoutHistory({
   }
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader>
         <CardTitle>Payout history</CardTitle>
         <CardDescription>Each withdrawal is a PayPal Payouts batch.</CardDescription>

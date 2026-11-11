@@ -15,7 +15,7 @@ export function SecretReveal({
   botfareUrl: string;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <Alert className="border-amber-500/40 bg-amber-500/5">
         <KeyRound className="text-amber-600 dark:text-amber-400" />
         <AlertTitle>Copy the secret now</AlertTitle>

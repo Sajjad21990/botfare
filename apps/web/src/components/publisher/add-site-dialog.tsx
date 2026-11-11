@@ -15,7 +15,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, errorText } from "./api";
+import { CodeBlock } from "./copy-button";
 import { SecretReveal } from "./secret-reveal";
+import { MIDDLEWARE_SNIPPET } from "./site-card";
 import type { SiteSecretResponse, SiteView } from "./types";
 
 /** Adds a site, then shows its one-time secret with copy buttons. */
@@ -76,13 +78,14 @@ export function AddSiteDialog({
         <Plus />
         Add a site
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         {created ? (
           <>
             <DialogHeader>
               <DialogTitle>{created.site.name} is on BotFare</DialogTitle>
               <DialogDescription>
-                Add these to your server&apos;s environment, then set prices on the site card.
+                Add these to your server&apos;s environment and the line below to your app, then set
+                prices on the site card.
               </DialogDescription>
             </DialogHeader>
             <SecretReveal
@@ -90,6 +93,10 @@ export function AddSiteDialog({
               siteSecret={created.siteSecret}
               botfareUrl={botfareUrl}
             />
+            {/* min-w-0: the long line scrolls inside the block instead of widening the dialog. */}
+            <div className="min-w-0">
+              <CodeBlock label="server.ts" code={MIDDLEWARE_SNIPPET} />
+            </div>
             <DialogFooter>
               <Button onClick={() => setOpen(false)}>I saved the secret</Button>
             </DialogFooter>
@@ -99,7 +106,7 @@ export function AddSiteDialog({
             <DialogHeader>
               <DialogTitle>Add a site</DialogTitle>
               <DialogDescription>
-                Agents pay to read it; humans keep reading free. You set prices next.
+                AI agents pay to read it; people keep reading free. You set prices next.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-1.5">

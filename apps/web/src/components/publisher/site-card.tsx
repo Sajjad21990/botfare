@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookOpen,
   Code2,
   ExternalLink,
   KeyRound,
@@ -27,24 +28,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, errorText } from "./api";
 import { CodeBlock, CopyButton } from "./copy-button";
 import { DetectionPanel } from "./detection-panel";
-import { formatCount, formatMicros } from "./format";
+import { formatCount, formatMoney, formatMoneyExact } from "./format";
 import { PricingEditor } from "./pricing-editor";
 import { SecretReveal } from "./secret-reveal";
 import type { SiteSecretResponse, SiteView } from "./types";
 
-const MIDDLEWARE_SNIPPET = `import express from "express";
-import { botfare } from "@botfare/express";
+const REPO_URL = "https://github.com/Sajjad21990/botfare";
 
-const app = express();
-app.set("trust proxy", true); // behind a proxy or CDN: real client IPs for crawler checks
-app.use(
-  botfare({
-    siteId: process.env.BOTFARE_SITE_ID,
-    siteSecret: process.env.BOTFARE_SITE_SECRET,
-    // Human check: your Turnstile secret (optional with Cloudflare's test site key)
-    turnstileSecret: process.env.TURNSTILE_SECRET_KEY,
-  }),
-);`;
+/** The line the site card's callout shows and copies. */
+const ONE_LINE = "app.use(botfare({ siteId, siteSecret }));";
+
+/**
+ * The working version of that line for an Express app (strict TypeScript). `botfare()` reads
+ * BOTFARE_URL from the environment; see packages/express/src/index.ts.
+ */
+export const MIDDLEWARE_SNIPPET = `import { botfare } from "@botfare/express";
+
+// Before your routes. BOTFARE_URL, BOTFARE_SITE_ID and BOTFARE_SITE_SECRET live in .env
+app.use(botfare({ siteId: process.env.BOTFARE_SITE_ID!, siteSecret: process.env.BOTFARE_SITE_SECRET! }));`;
+
+type SiteTab = "pricing" | "detection" | "integration" | "secret";
 
 /** One site: who it is, its prices, how to install the middleware, and its secret. */
 export function SiteCard({
@@ -57,6 +60,8 @@ export function SiteCard({
   onChange: (site: SiteView) => void;
 }) {
   const host = safeHost(site.origin);
+  // A site nobody has paid yet most likely still needs the middleware: open on the setup steps.
+  const [tab, setTab] = useState<SiteTab>(site.paidRequests === 0 ? "integration" : "pricing");
   return (
     <Card>
       <CardHeader className="gap-3 border-b">
@@ -87,7 +92,12 @@ export function SiteCard({
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">Earned</dt>
-              <dd className="font-medium tabular-nums">{formatMicros(site.earningsMicros)}</dd>
+              <dd
+                className="font-medium tabular-nums"
+                title={formatMoneyExact(site.earningsMicros)}
+              >
+                {formatMoney(site.earningsMicros)}
+              </dd>
             </div>
           </dl>
         </div>
@@ -99,8 +109,9 @@ export function SiteCard({
           <CopyButton value={site.id} label="Copy site ID" className="size-6" />
         </div>
       </CardHeader>
-      <CardContent>
-        <Tabs defaultValue="pricing">
+      <CardContent className="space-y-4">
+        <OneLineCallout onSetupGuide={() => setTab("integration")} />
+        <Tabs value={tab} onValueChange={(value) => setTab(value as SiteTab)}>
           <TabsList
             variant="line"
             className="mb-3 -ml-1.5 max-w-[calc(100%+0.375rem)] justify-start overflow-x-auto"
@@ -140,22 +151,55 @@ export function SiteCard({
   );
 }
 
+/** "Turned on with one line", above the tabs, with a shortcut to the setup steps. */
+function OneLineCallout({ onSetupGuide }: { onSetupGuide: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-ticket px-3 py-2 text-ticket-foreground">
+      <span className="text-sm">Turned on with one line:</span>
+      <span className="flex min-w-0 items-center gap-1">
+        {/* Wraps at its spaces on a phone rather than hiding the line behind an ellipsis. */}
+        <code className="min-w-0 rounded bg-card px-1.5 py-0.5 font-mono text-[13px] break-words">
+          {ONE_LINE}
+        </code>
+        <CopyButton value={ONE_LINE} label="Copy the line" />
+      </span>
+      <Button variant="outline" size="sm" onClick={onSetupGuide} className="sm:ml-auto">
+        <BookOpen />
+        Setup guide
+      </Button>
+    </div>
+  );
+}
+
 function Integration({ site, botfareUrl }: { site: SiteView; botfareUrl: string }) {
   return (
     <ol className="space-y-5">
-      <Step n={1} title="Install the middleware">
-        <CodeBlock code="npm i @botfare/express" />
-        <p className="text-xs text-muted-foreground">
-          In this repository it is the workspace package{" "}
-          <code className="font-mono">packages/express</code>; add{" "}
-          <code className="font-mono">{'"@botfare/express": "workspace:*"'}</code> to your app.
+      <Step n={1} title="Get the package">
+        <p className="text-sm">
+          Not on npm yet.{" "}
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium underline underline-offset-2"
+          >
+            Clone the repo
+          </a>
+          , run <code className="font-mono">pnpm install</code>, and add{" "}
+          <code className="font-mono">{'"@botfare/express": "workspace:*"'}</code> to your
+          app&apos;s dependencies (<code className="font-mono">apps/demo</code> does exactly this).
         </p>
       </Step>
       <Step n={2} title="Add one line to your Express app">
         <CodeBlock label="server.ts" code={MIDDLEWARE_SNIPPET} />
         <p className="text-xs text-muted-foreground">
-          Humans browse free. Agents get an x402 <code className="font-mono">402</code> with your
-          price, pay from their BotFare wallet, and are charged only after your handler succeeds.
+          Behind a proxy or CDN? Add{" "}
+          <code className="font-mono">{'app.set("trust proxy", true)'}</code>. Own Turnstile widget?
+          Set <code className="font-mono">TURNSTILE_SECRET_KEY</code>.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          People read free. AI agents see your price, pay from their BotFare wallet, and are charged
+          only after your page is delivered.
         </p>
       </Step>
       <Step n={3} title="Set the environment">
@@ -164,8 +208,10 @@ function Integration({ site, botfareUrl }: { site: SiteView; botfareUrl: string 
           code={`BOTFARE_URL=${botfareUrl}\nBOTFARE_SITE_ID=${site.id}\nBOTFARE_SITE_SECRET=<your site secret>`}
         />
         <p className="text-xs text-muted-foreground">
-          The secret was shown once when you added the site. Rotate it on the Secret tab if you need
-          a new one.
+          Your secret was shown once when you added the site.{" "}
+          {site.demoLocked
+            ? "Trying the demo? Click Add a site to get your own."
+            : "Lost it? Rotate it on the Secret tab."}
         </p>
       </Step>
     </ol>

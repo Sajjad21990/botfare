@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { api, errorText } from "../api";
 import { formatCount, formatPrice } from "../format";
 import type { SiteView } from "../types";
+import { withoutRevenueClaims } from "./display-text";
 import type { AdvisorApplyResponse, AdvisorRecommendationView } from "./types";
 
 const KIND_LABEL: Record<AdvisorRecommendationView["kind"], string> = {
@@ -41,6 +42,24 @@ const AUDIENCE_LABEL = { agents: "AI agents only", everyone: "everyone" } as con
 export function formatDelta(cents: number): string {
   if (cents === 0) return "±0¢";
   return `${cents > 0 ? "+" : "−"}${formatPrice(Math.abs(cents))}`;
+}
+
+/** A plain headline for when the AI's own one was only a revenue claim. */
+function fallbackHeadline(rec: AdvisorRecommendationView): string {
+  switch (rec.kind) {
+    case "price":
+      return rec.suggestedPriceCents === undefined
+        ? "Review this price"
+        : `Try ${formatPrice(rec.suggestedPriceCents)} instead of ${formatPrice(rec.currentPriceCents)}`;
+    case "audience":
+      return rec.suggestedAudience
+        ? `Charge ${AUDIENCE_LABEL[rec.suggestedAudience]}`
+        : "Review who pays";
+    case "preview":
+      return "Improve the free preview";
+    case "keep":
+      return "Keep this price";
+  }
 }
 
 /** What Apply would change, or null for advice that needs the publisher's own edit. */
@@ -120,6 +139,9 @@ export function RecommendationItem({
   const change = changeOf(rec);
   const delta = rec.projectedWeeklyRevenueDeltaCents;
   const Trend = delta < 0 ? TrendingDown : TrendingUp;
+  // Revenue figures come only from BotFare's estimate, never from the AI's sentences.
+  const headline = withoutRevenueClaims(rec.headline) || fallbackHeadline(rec);
+  const rationale = withoutRevenueClaims(rec.rationale);
 
   async function apply() {
     if (!change) return;
@@ -158,7 +180,7 @@ export function RecommendationItem({
               {rec.pattern}
             </code>
           </div>
-          <p className="font-medium leading-snug">{rec.headline}</p>
+          <p className="font-medium leading-snug">{headline}</p>
         </div>
         {(rec.kind === "price" || rec.kind === "preview") && (
           <div
@@ -170,15 +192,15 @@ export function RecommendationItem({
                   ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
                   : "bg-muted text-muted-foreground",
             )}
-            title="BotFare's estimate from this rule's funnel, not the AI's"
+            title="Worked out by BotFare from this rule's own offers, purchases and declines, not by the AI"
           >
             <Trend className="size-3.5" />
-            {formatDelta(delta)} / week
+            BotFare estimate: {formatDelta(delta)} / week
           </div>
         )}
       </div>
 
-      <p className="text-sm text-muted-foreground">{rec.rationale}</p>
+      {rationale && <p className="text-sm text-muted-foreground">{rationale}</p>}
 
       {rec.previewAdvice && (
         <div className="flex items-start gap-2 rounded-md bg-muted/50 p-2.5 text-sm">
@@ -235,10 +257,9 @@ export function RecommendationItem({
               </div>
               {rec.kind === "price" && (
                 <p className="text-xs text-muted-foreground">
-                  Projected weekly revenue for this rule:{" "}
-                  {formatPrice(rec.projection.currentWeeklyCents)} →{" "}
-                  {formatPrice(rec.projection.projectedWeeklyCents)} ({formatDelta(delta)}). An
-                  estimate from your own funnel; real agents decide.
+                  BotFare estimate for this rule: {formatPrice(rec.projection.currentWeeklyCents)} →{" "}
+                  {formatPrice(rec.projection.projectedWeeklyCents)} a week, {formatDelta(delta)}.
+                  Worked out from your own offers and purchases; real AI agents decide.
                 </p>
               )}
             </div>

@@ -1,28 +1,38 @@
 import Link from "next/link";
 import { NavLinks } from "@/components/app/nav-links";
 import { SignOutButton } from "@/components/app/sign-out-button";
-import { BotFareMark } from "@/components/brand/bot-fare-mark";
+import { BotFareLogo } from "@/components/brand/bot-fare-mark";
 import { requireUser } from "@/lib/server/session";
 
 export const dynamic = "force-dynamic";
 
-/** Shell for every signed-in page: header, navigation, and the signed-in user. */
+/**
+ * Shell for every signed-in page: the logo with a Sandbox chip, the navigation, and the signed-in
+ * user. Below `lg` the navigation gets its own scrollable row, so a phone never scrolls sideways.
+ */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
-          <Link
-            href="/"
-            className="inline-flex shrink-0 items-center gap-2 font-semibold tracking-tight"
-          >
-            <BotFareMark className="size-7" />
-            BotFare
-          </Link>
-          <NavLinks />
-          <div className="ml-auto flex shrink-0 items-center gap-3 text-sm text-muted-foreground">
-            <span className="hidden md:inline">{user.name ?? user.email}</span>
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-3 px-4 sm:px-6 lg:flex-nowrap lg:gap-x-6">
+          <div className="flex h-14 shrink-0 items-center gap-2.5">
+            <Link
+              href="/"
+              className="rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <BotFareLogo />
+            </Link>
+            <span
+              className="rounded-full border border-foreground/25 bg-card px-2 py-0.5 text-[11px] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
+              title="PayPal sandbox: test money only. Nothing real is charged."
+            >
+              Sandbox<span className="sr-only">: PayPal test money only</span>
+            </span>
+          </div>
+          <NavLinks className="order-last -mx-2.5 h-11 w-[calc(100%+1.25rem)] lg:order-none lg:mx-0 lg:h-14 lg:w-auto" />
+          <div className="ml-auto flex h-14 shrink-0 items-center gap-3 text-sm text-muted-foreground">
+            <span className="hidden max-w-48 truncate xl:inline">{user.name ?? user.email}</span>
             <SignOutButton />
           </div>
         </div>

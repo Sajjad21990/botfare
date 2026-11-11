@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, KeyRound, Loader2, Lock } from "lucide-react";
+import { Check, Copy, ExternalLink, KeyRound, Loader2, Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -33,9 +33,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCap, formatMicros } from "./format";
+import { formatCap, formatMoney, formatMoneyExact } from "./format";
 import { LocalTime } from "./local-time";
-import { NewKeyDialog } from "./new-key-dialog";
+import { NewKeyDialog, SnippetBlock } from "./new-key-dialog";
+import { agentUsageSnippet, SDK_SOURCE_URL } from "./snippets";
 import type { WalletAgentKey, WalletSite } from "./types";
 
 /**
@@ -53,7 +54,7 @@ export function AgentKeysCard({ keys, sites }: { keys: WalletAgentKey[]; sites: 
       <CardHeader>
         <CardTitle>Agent keys</CardTitle>
         <CardDescription>
-          One key per agent. BotFare checks its budget and allowed sites on every payment.
+          One key per AI agent. BotFare checks its budget and allowed sites before every payment.
         </CardDescription>
         {visible.length ? (
           <CardAction>
@@ -121,6 +122,7 @@ export function AgentKeysCard({ keys, sites }: { keys: WalletAgentKey[]; sites: 
             </TableBody>
           </Table>
         )}
+        <KeyUsage exampleOrigin={sites[0]?.origin} />
       </CardContent>
     </Card>
   );
@@ -145,18 +147,18 @@ function KeyRow({
       <TableCell className="text-sm tabular-nums">
         <div>
           {key.perRequestMaxCents === null
-            ? "No max"
-            : `${formatCap(key.perRequestMaxCents)} / request`}
+            ? "No per-page limit"
+            : `${formatCap(key.perRequestMaxCents)} a page`}
         </div>
         <div className="text-muted-foreground">
-          {key.dailyCapCents === null ? "No daily cap" : `${formatCap(key.dailyCapCents)} / day`}
+          {key.dailyCapCents === null ? "No daily cap" : `${formatCap(key.dailyCapCents)} a day`}
         </div>
       </TableCell>
       <TableCell>
-        <div className="text-sm tabular-nums">
-          {formatMicros(key.spentTodayMicros)}
+        <div className="text-sm tabular-nums" title={formatMoneyExact(key.spentTodayMicros)}>
+          {formatMoney(key.spentTodayMicros)}
           {capMicros ? (
-            <span className="text-muted-foreground"> of {formatMicros(capMicros)}</span>
+            <span className="text-muted-foreground"> of {formatMoney(capMicros)}</span>
           ) : null}
         </div>
         {capMicros && !revoked ? (
@@ -192,7 +194,7 @@ function KeyRow({
         {revoked ? (
           <Badge variant="secondary">Revoked</Badge>
         ) : (
-          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+          <Badge variant="outline" className="border-success/40 text-success">
             Active
           </Badge>
         )}
@@ -214,6 +216,38 @@ function KeyRow({
         )}
       </TableCell>
     </TableRow>
+  );
+}
+
+/** "How to use a key": the SDK snippet, visible before any key exists. */
+function KeyUsage({ exampleOrigin }: { exampleOrigin: string | undefined }) {
+  return (
+    <section
+      aria-labelledby="how-to-use-a-key"
+      className="mt-6 grid gap-4 border-t pt-5 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+    >
+      <div className="space-y-2">
+        <h3 id="how-to-use-a-key" className="font-heading text-base font-semibold">
+          How to use a key
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Put the key in your AI agent&apos;s <code className="font-mono text-xs">.env</code> and
+          fetch pages through the BotFare SDK. When a page has a price within the key&apos;s limits,
+          the SDK pays it from this wallet, and you are charged only after the page arrives.
+        </p>
+        <a
+          href={SDK_SOURCE_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 rounded text-sm font-medium underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          Install from GitHub (not on npm yet)
+          <ExternalLink aria-hidden className="size-3.5" />
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+      </div>
+      <SnippetBlock title="agent.ts" code={agentUsageSnippet({ exampleOrigin })} />
+    </section>
   );
 }
 

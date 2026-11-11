@@ -1,34 +1,99 @@
-import { FlaskConical } from "lucide-react";
-import { CopyField } from "@/components/publisher/copy-button";
+"use client";
+
+import { Eye, EyeOff, FlaskConical } from "lucide-react";
+import { useState } from "react";
+import { CopyButton } from "@/components/publisher/copy-button";
+import { Button } from "@/components/ui/button";
 
 /**
- * The PayPal sandbox buyer a judge uses to approve a wallet top-up. Shown only when both
- * JUDGE_SANDBOX_BUYER_EMAIL and JUDGE_SANDBOX_BUYER_PASSWORD are set; these are sandbox test
- * credentials (fake money), never a real PayPal account.
+ * The PayPal sandbox buyer a judge uses to approve a wallet top-up (JUDGE_SANDBOX_BUYER_EMAIL and
+ * JUDGE_SANDBOX_BUYER_PASSWORD; sandbox test credentials, never a real PayPal account). The
+ * password stays hidden until Show, and both copy without being shown. Without an account, the
+ * box says any PayPal sandbox personal account works.
  */
-export function SandboxAccount({ email, password }: { email: string; password: string }) {
+export function SandboxAccount({
+  account,
+}: {
+  account: { email: string; password: string } | null;
+}) {
   return (
-    <div className="space-y-3 rounded-lg border border-dashed bg-muted/30 p-3">
-      <div className="flex items-start gap-2 text-sm">
-        <FlaskConical aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <div>
-          <div className="font-medium">PayPal sandbox test account — fake money</div>
-          <p className="text-muted-foreground">
-            Use it in the PayPal window when you top up. Nothing real is charged.
+    <section
+      aria-labelledby="test-account-title"
+      className="rounded-xl border-[1.5px] border-dashed border-foreground/30 bg-card p-4 sm:p-5"
+    >
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-ticket"
+        >
+          <FlaskConical className="size-4" />
+        </span>
+        <div className="min-w-0 space-y-0.5">
+          <h2 id="test-account-title" className="text-base font-semibold">
+            PayPal test account
+          </h2>
+          <p className="text-sm leading-relaxed">
+            {account
+              ? "A sandbox login for the PayPal window. Nothing real is charged."
+              : "Log in to the PayPal window with any PayPal sandbox personal account. Nothing real is charged."}
           </p>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <CopyField label="Email" value={email} />
-        <CopyField label="Password" value={password} />
+      {account && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <EmailField email={account.email} />
+          <PasswordField password={account.password} />
+        </div>
+      )}
+      <p className="mt-3 text-xs text-muted-foreground">
+        Demo accounts are shared with other judges, so prices reset when you sign in.
+      </p>
+    </section>
+  );
+}
+
+const fieldBox = "flex min-h-9 items-center gap-1 rounded-lg border bg-muted/40 py-1 pr-1 pl-3";
+
+function EmailField({ email }: { email: string }) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <div className="text-xs font-medium text-muted-foreground">Email</div>
+      <div className={fieldBox}>
+        <code className="min-w-0 flex-1 truncate font-mono text-[13px]" title={email}>
+          {email}
+        </code>
+        <CopyButton value={email} label="Copy email" />
       </div>
     </div>
   );
 }
 
-/** Both values, or null when either is missing. */
-export function judgeSandboxBuyer(env: NodeJS.ProcessEnv = process.env) {
-  const email = env.JUDGE_SANDBOX_BUYER_EMAIL?.trim();
-  const password = env.JUDGE_SANDBOX_BUYER_PASSWORD?.trim();
-  return email && password ? { email, password } : null;
+function PasswordField({ password }: { password: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <div className="text-xs font-medium text-muted-foreground">Password</div>
+      <div className={fieldBox}>
+        {shown ? (
+          <code className="min-w-0 flex-1 truncate font-mono text-[13px]">{password}</code>
+        ) : (
+          <span className="min-w-0 flex-1 truncate font-mono text-[13px] tracking-widest">
+            <span aria-hidden>••••••••••</span>
+            <span className="sr-only">Hidden</span>
+          </span>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label={shown ? "Hide password" : "Show password"}
+          onClick={() => setShown((s) => !s)}
+        >
+          {shown ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
+          {shown ? "Hide" : "Show"}
+        </Button>
+        <CopyButton value={password} label="Copy password" />
+      </div>
+    </div>
+  );
 }

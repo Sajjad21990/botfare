@@ -9,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCents, formatMicros } from "./format";
+import { formatCents, formatMoney } from "./format";
 import { loadPayPalSdk, type PayPalOneTimePaymentSession, type PayPalSdkError } from "./paypal-sdk";
 import { type CaptureResponse, TOP_UP_CHOICES_CENTS, type TopUpCents } from "./types";
 
@@ -43,7 +43,7 @@ async function createOrder(amountCents: TopUpCents): Promise<{ orderId: string }
 }
 
 /**
- * Add funds with the PayPal JS SDK v6: pick $5, $10 or $20, approve in PayPal, and the server
+ * Top up with the PayPal JS SDK v6: pick $5, $10 or $20, approve in PayPal, and the server
  * captures the order and credits the wallet. `clientId` is null when PAYPAL_CLIENT_ID is unset.
  */
 export function TopUpCard({ clientId }: { clientId: string | null }) {
@@ -79,7 +79,7 @@ export function TopUpCard({ clientId }: { clientId: string | null }) {
           toast.success(`${formatCents(gross)} added to your wallet`, {
             id: TOAST_ID,
             duration: 10_000,
-            description: `Captured ${formatCents(gross)} · PayPal fee ${formatCents(fee)} (paid by BotFare) · net ${formatCents(gross - fee)}. Balance: ${formatMicros(result.walletMicros)}.`,
+            description: `PayPal's ${formatCents(fee)} fee is paid by BotFare, so all ${formatCents(gross)} is yours to spend. Wallet balance: ${formatMoney(result.walletMicros)}.`,
           });
         } else if (result.status === "pending") {
           toast.info("PayPal is still clearing this payment", {
@@ -180,9 +180,9 @@ export function TopUpCard({ clientId }: { clientId: string | null }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Add funds</CardTitle>
+        <CardTitle>Top up</CardTitle>
         <CardDescription>
-          Top up with PayPal. Funds are ready the moment we capture.
+          Pay with PayPal. The money is in your wallet as soon as PayPal confirms the payment.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-5">
@@ -269,7 +269,7 @@ export function TopUpCard({ clientId }: { clientId: string | null }) {
           <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
             <LockKeyhole className="size-3" />
             You pay {formatCents(amount)}, your wallet gets {formatCents(amount)}. PayPal sandbox:
-            no real money moves.
+            test money, nothing real is charged.
           </p>
         </div>
       </CardContent>

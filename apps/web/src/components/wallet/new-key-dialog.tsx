@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { parseDollarsToCents } from "./format";
+import { agentEnvBlock, agentUsageSnippet } from "./snippets";
 import type { WalletAgentKey, WalletSite } from "./types";
 
 type Step =
@@ -41,12 +42,12 @@ function validate(draft: Draft): { error: string } | { perRequest: number; daily
   if (!draft.name.trim()) return { error: "Give the key a name, e.g. the agent it belongs to." };
   const perRequest = parseDollarsToCents(draft.perRequest);
   const dailyCap = parseDollarsToCents(draft.dailyCap);
-  if (perRequest === null) return { error: "Per-request max must be at least $0.01." };
-  if (dailyCap === null) return { error: "Daily cap must be at least $0.01." };
+  if (perRequest === null) return { error: "Max per page must be at least 1¢ ($0.01)." };
+  if (dailyCap === null) return { error: "Daily cap must be at least 1¢ ($0.01)." };
   if (perRequest > MAX_CAP_CENTS || dailyCap > MAX_CAP_CENTS) {
     return { error: "Limits go up to $1,000." };
   }
-  if (perRequest > dailyCap) return { error: "Per-request max cannot exceed the daily cap." };
+  if (perRequest > dailyCap) return { error: "Max per page cannot be more than the daily cap." };
   return { perRequest, dailyCap };
 }
 
@@ -184,7 +185,7 @@ export function NewKeyDialog({
             <div className="grid grid-cols-2 gap-3">
               <MoneyField
                 id={`${ids}-per`}
-                label="Max per request"
+                label="Max per page"
                 value={draft.perRequest}
                 onChange={(perRequest) => setDraft({ ...draft, perRequest })}
               />
@@ -329,19 +330,13 @@ function RevealKey({
   onDone: () => void;
 }) {
   const [copied, copy] = useCopy();
-  const envLine = `BOTFARE_AGENT_KEY=${agentKey}`;
-  const usage = `import { createBotFareAgent } from "@botfare/sdk";
-
-const agent = createBotFareAgent({
-  agentKey: process.env.BOTFARE_AGENT_KEY!,
-  maxPerRequestUsd: ${((perRequestMaxCents ?? 10) / 100).toFixed(2)},
-});
-
-const offer = await agent.getOffer("${exampleOrigin ?? "https://crema-notes.example"}/articles/dialing-in-espresso");
-const { response, receipt } = await agent.fetch(offer!.url);`;
+  // This app's own URL: the SDK sends it to publishers and calls it for disputes and receipts.
+  const botfareUrl = window.location.origin;
+  const env = agentEnvBlock({ agentKey, botfareUrl });
+  const usage = agentUsageSnippet({ maxPerRequestCents: perRequestMaxCents, exampleOrigin });
 
   function download() {
-    const blob = new Blob([`${envLine}\n`], { type: "text/plain" });
+    const blob = new Blob([env], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     const slug = agentName
@@ -358,10 +353,10 @@ const { response, receipt } = await agent.fetch(offer!.url);`;
     <div className="grid min-w-0 gap-4">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <Check className="size-4 text-emerald-600" /> {agentName} is ready
+          <Check className="size-4 text-success" /> {agentName} is ready
         </DialogTitle>
         <DialogDescription>
-          Give this key to the agent. It signs every payment with it.
+          Give this key to your AI agent. It signs every payment with it.
         </DialogDescription>
       </DialogHeader>
 
@@ -391,18 +386,12 @@ const { response, receipt } = await agent.fetch(offer!.url);`;
         </code>
       </div>
 
-      <CodeBlock
+      <SnippetBlock
         title=".env"
-        code={`BOTFARE_AGENT_KEY=bfk_…`}
-        copied={copied === "env"}
-        onCopy={() => copy("env", envLine)}
+        code={agentEnvBlock({ agentKey: "bfk_…", botfareUrl }).trimEnd()}
+        copyText={env}
       />
-      <CodeBlock
-        title="agent.ts"
-        code={usage}
-        copied={copied === "usage"}
-        onCopy={() => copy("usage", usage)}
-      />
+      <SnippetBlock title="agent.ts" code={usage} />
 
       <DialogFooter>
         <Button onClick={onDone}>I saved the key</Button>
@@ -411,22 +400,27 @@ const { response, receipt } = await agent.fetch(offer!.url);`;
   );
 }
 
-function CodeBlock({
+/** A titled code block with a Copy button; `copyText` (default: `code`) is what gets copied. */
+export function SnippetBlock({
   title,
   code,
-  copied,
-  onCopy,
+  copyText,
 }: {
   title: string;
   code: string;
-  copied: boolean;
-  onCopy: () => void;
+  copyText?: string;
 }) {
+  const [copied, copy] = useCopy();
   return (
     <div className="min-w-0 overflow-hidden rounded-lg border">
       <div className="flex items-center justify-between border-b bg-muted/50 px-3 py-1.5">
         <span className="font-mono text-xs text-muted-foreground">{title}</span>
-        <Button variant="ghost" size="icon-xs" onClick={onCopy} aria-label={`Copy ${title}`}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => copy("code", copyText ?? code)}
+          aria-label={copied ? `Copied ${title}` : `Copy ${title}`}
+        >
           {copied ? <Check /> : <Copy />}
         </Button>
       </div>

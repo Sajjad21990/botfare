@@ -98,35 +98,16 @@ export function PublisherView({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <EarningsCard data={data} onPayout={addPayout} />
-        <PayoutEmailCard
-          key={`${data.payoutEmail ?? ""}:${data.payoutEmailOnProfile}`}
-          data={data}
-          onSaved={(payoutEmail, payoutEmailOnProfile) =>
-            setData((current) => ({ ...current, payoutEmail, payoutEmailOnProfile }))
-          }
-        />
-      </div>
+      <EarningsCard data={data} onPayout={addPayout} />
 
-      <PayoutHistory
-        payouts={data.payouts}
-        onSynced={(payouts) => {
-          setData((current) => ({ ...current, payouts }));
-          void reload();
-        }}
-      />
-
-      {data.sites.length > 0 && <FareAdvisorCard sites={data.sites} onApplied={applyFromAdvisor} />}
-
-      <section className="space-y-4">
-        <div className="flex items-end justify-between gap-4">
-          <div className="space-y-1">
-            <h2 className="text-lg font-semibold tracking-tight">Sites</h2>
-            <p className="text-sm text-muted-foreground">
-              Prices reach your middleware within seconds of saving.
-            </p>
-          </div>
+      <section className="space-y-4" aria-labelledby="publisher-sites">
+        <div className="space-y-1">
+          <h2 id="publisher-sites" className="text-lg font-semibold tracking-tight">
+            {data.sites.length > 1 ? "Your sites" : "Your site"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Set your prices here. Changes reach your site within 30 seconds.
+          </p>
         </div>
         {data.sites.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-14 text-center">
@@ -136,8 +117,8 @@ export function PublisherView({
             <div className="space-y-1">
               <p className="font-medium">Add your first site</p>
               <p className="max-w-sm text-sm text-muted-foreground">
-                Register a site, paste one line of middleware, and AI agents start paying their
-                fare. Humans keep reading free.
+                Register a site, add one line to your server, and AI agents start paying their fare.
+                People keep reading free.
               </p>
             </div>
             <AddSiteDialog
@@ -159,6 +140,36 @@ export function PublisherView({
             ))}
           </div>
         )}
+      </section>
+
+      {data.sites.length > 0 && <FareAdvisorCard sites={data.sites} onApplied={applyFromAdvisor} />}
+
+      <section className="space-y-4" aria-labelledby="publisher-payouts">
+        <div className="space-y-1">
+          <h2 id="publisher-payouts" className="text-lg font-semibold tracking-tight">
+            Payouts
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Where your earnings go, and every PayPal payout so far.
+          </p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <PayoutEmailCard
+            key={`${data.payoutEmail ?? ""}:${data.payoutEmailOnProfile}`}
+            data={data}
+            onSaved={(payoutEmail, payoutEmailOnProfile) =>
+              setData((current) => ({ ...current, payoutEmail, payoutEmailOnProfile }))
+            }
+          />
+          <PayoutHistory
+            className="lg:col-span-2"
+            payouts={data.payouts}
+            onSynced={(payouts) => {
+              setData((current) => ({ ...current, payouts }));
+              void reload();
+            }}
+          />
+        </div>
       </section>
     </div>
   );

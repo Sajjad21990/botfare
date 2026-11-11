@@ -15,6 +15,34 @@ export function formatMicros(micros: number): string {
   return micros % MICROS_PER_CENT === 0 ? usd2.format(micros / 1e6) : usd4.format(micros / 1e6);
 }
 
+const MICROS_PER_DOLLAR = 1_000_000;
+
+const usdExact = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+});
+
+/**
+ * A headline amount people read at a glance: "3¢" under a dollar, "$2.04" from a dollar up, "$0.00"
+ * for nothing. Rounds to the cent (a sub-cent amount above zero reads "<1¢"); put
+ * `formatMoneyExact` in a `title` for the exact figure.
+ */
+export function formatMoney(micros: number): string {
+  if (micros === 0) return usd2.format(0);
+  const sign = micros < 0 ? "-" : "";
+  const abs = Math.abs(micros);
+  const cents = Math.round(abs / MICROS_PER_CENT);
+  if (cents >= 100) return `${sign}${usd2.format(cents / 100)}`;
+  return cents === 0 ? `${sign}<1¢` : `${sign}${cents}¢`;
+}
+
+/** The exact amount for a tooltip: "$1.406", "$0.0285", "$2.00". */
+export function formatMoneyExact(micros: number): string {
+  return usdExact.format(micros / MICROS_PER_DOLLAR);
+}
+
 export function formatCents(cents: number): string {
   return usd2.format(cents / 100);
 }

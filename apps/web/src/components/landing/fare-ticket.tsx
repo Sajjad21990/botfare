@@ -1,93 +1,64 @@
-import { ShieldCheckIcon } from "lucide-react";
 import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import styles from "./landing.module.css";
 
-/** The hero's example: one paid request drawn as a transit ticket. Purely illustrative. */
+/** The hero's example: one paid page drawn as a printed ticket. Purely illustrative. */
 export function FareTicket() {
   return (
-    <figure className="mx-auto w-full max-w-sm">
-      <div
-        className={`${styles.ticket} relative overflow-hidden rounded-2xl border shadow-[0_1px_0_0_var(--border),0_24px_48px_-24px_oklch(0.3_0.02_250/0.25)]`}
-      >
-        <div className="space-y-5 px-6 pt-6 pb-7">
+    <figure
+      aria-label="Example ticket: a research agent paid Crema Notes 3¢ for one article"
+      className="mx-auto w-full max-w-sm lg:rotate-2"
+    >
+      <div className={`${styles.ticket} ${styles.printed} relative rounded-2xl`}>
+        <div className="space-y-5 px-6 pt-5 pb-6">
           <div className="flex items-center justify-between text-sm">
-            <span className="inline-flex items-center gap-1.5 font-semibold">
-              <BotFareMark className="size-5" />
+            <span className="inline-flex items-center gap-1.5 font-heading font-extrabold">
+              <BotFareMark className="size-6" />
               BotFare
             </span>
-            <span className="text-muted-foreground">Single fare</span>
+            <span className="font-medium tracking-wide text-muted-foreground uppercase">
+              Single fare
+            </span>
           </div>
 
-          <dl className="grid grid-cols-[4rem_1fr] gap-x-3 gap-y-3 text-sm">
-            <dt className="text-muted-foreground">From</dt>
+          <dl className="grid grid-cols-[3.25rem_1fr] items-baseline gap-x-3 gap-y-3">
+            <dt className="text-sm text-muted-foreground">From</dt>
+            <dd className="text-lg font-semibold">Research agent</dd>
+            <dt className="text-sm text-muted-foreground">To</dt>
             <dd className="min-w-0">
-              <span className="font-medium">Research agent</span>
-              <span className={`${styles.mono} block truncate text-xs text-muted-foreground`}>
-                key ak_3f9c21e8
-              </span>
-            </dd>
-            <dt className="text-muted-foreground">To</dt>
-            <dd className="min-w-0">
-              <span className="font-medium">Crema Notes</span>
-              <span className={`${styles.mono} block truncate text-xs text-muted-foreground`}>
-                GET /articles/burr-basics
+              <span className="block text-lg font-semibold">Crema Notes</span>
+              <span className="block text-sm text-muted-foreground">
+                &ldquo;Burr grinders, explained&rdquo;
               </span>
             </dd>
           </dl>
         </div>
 
         <div className="relative" aria-hidden>
-          <span className={`${styles.notch} ${styles.notchLeft}`} />
-          <span className={`${styles.notch} ${styles.notchRight}`} />
-          <div className="mx-6 border-t-2 border-dashed border-border" />
+          <span className={`${styles.cut} ${styles.cutLeft}`} />
+          <span className={`${styles.cut} ${styles.cutRight}`} />
+          <div className="mx-6 border-t-2 border-dashed border-foreground/35" />
         </div>
 
-        <div className="space-y-4 px-6 pt-6 pb-6">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Fare</p>
-              <p
-                className={`${styles.tabular} text-5xl leading-none font-extrabold tracking-tight`}
-              >
-                $0.03
-              </p>
-            </div>
-            <span
-              className={`${styles.stamp} mb-1 inline-block rounded-md border-[2.5px] border-emerald-700 px-3 py-1 text-xl leading-none font-black text-emerald-700 dark:border-emerald-400 dark:text-emerald-400`}
+        <div className="flex items-end justify-between gap-4 px-6 pt-5 pb-6">
+          <div>
+            <p className="text-sm text-muted-foreground">Fare</p>
+            <p
+              className={`${styles.tabular} font-heading text-6xl leading-none font-extrabold tracking-tight`}
             >
-              Paid
-            </span>
+              3¢
+            </p>
           </div>
-
-          <dl
-            className={`${styles.mono} ${styles.tabular} grid grid-cols-[1fr_auto] gap-y-1 text-xs text-muted-foreground`}
+          <span
+            className={`${styles.stamp} mb-1 inline-block rounded-md border-[3px] border-[#146b3f] px-3 py-1 font-heading text-2xl leading-none font-extrabold tracking-wider text-[#146b3f] uppercase`}
           >
-            <dt>to publisher</dt>
-            <dd className="text-foreground">$0.0285</dd>
-            <dt>BotFare fee</dt>
-            <dd className="text-foreground">$0.0015</dd>
-            <dt>network</dt>
-            <dd>paypal:sandbox</dd>
-            <dt>receipt</dt>
-            <dd>rcpt_9d2e41b7</dd>
-          </dl>
+            Paid
+          </span>
         </div>
 
-        <p className="flex items-center gap-2 border-t border-dashed px-6 py-3 text-xs text-muted-foreground">
-          <ShieldCheckIcon
-            aria-hidden
-            className="size-4 shrink-0 text-emerald-700 dark:text-emerald-400"
-          />
-          <span>
-            Protected by <span className="font-semibold text-foreground">Fare Court</span> for 24
-            hours: delivery digest attested
-          </span>
+        <p className="border-t-[1.5px] border-dashed border-foreground/35 px-6 py-3 text-sm font-medium">
+          Site keeps 95% · Refundable for 24 hours
         </p>
       </div>
-      <figcaption className="mt-4 text-center text-sm text-muted-foreground">
-        One paid request: 3¢ from the agent&apos;s wallet, 95% of it to the publisher, and a receipt
-        the agent can dispute.
-      </figcaption>
     </figure>
   );
 }

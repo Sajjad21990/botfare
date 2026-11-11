@@ -5,7 +5,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "BotFare",
-  description: "Every bot pays its fare. Pay-per-request for AI agents, settled on PayPal.",
+  metadataBase: new URL(
+    process.env.BOTFARE_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000",
+  ),
+  description: "AI agents pay websites a few cents a page through PayPal. People still read free.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
