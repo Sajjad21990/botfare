@@ -7,6 +7,7 @@ import { PaypalMath } from "@/components/landing/paypal-math";
 import { SetupBand } from "@/components/landing/setup-band";
 import { SiteFooter } from "@/components/landing/site-footer";
 import { SiteHeader } from "@/components/landing/site-header";
+import { VerifySection } from "@/components/landing/verify-section";
 
 export const metadata: Metadata = {
   title: "BotFare · Every bot pays its fare",
@@ -21,6 +22,7 @@ export default function Home() {
         <Hero />
         <AiCards />
         <HowSteps />
+        <VerifySection />
         <SetupBand />
         <PaypalMath />
       </main>

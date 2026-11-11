@@ -8,7 +8,7 @@ import { readmeUrl } from "./links";
 import { NewTabLink } from "./new-tab-link";
 
 /* Page anchors, hidden on a phone, where Sign in and the main button are all that fit. Fare Court
-   and Fare Advisor show from md; the rest join at lg, where all five fit on one line. */
+   and Fare Advisor show from md; the rest join at lg, where all six fit on one line. */
 const anchor = `${styles.focusRing} hidden items-center gap-1 rounded-md px-3 py-2 whitespace-nowrap text-muted-foreground hover:text-foreground`;
 const fromMd = `${anchor} md:inline-flex`;
 const fromLg = `${anchor} lg:inline-flex`;
@@ -34,6 +34,9 @@ export function SiteHeader() {
           </a>
           <a href="/#how" className={fromLg}>
             How it works
+          </a>
+          <a href="/#receipts" className={fromLg}>
+            Receipts
           </a>
           <a href="/#setup" className={fromLg}>
             Set up

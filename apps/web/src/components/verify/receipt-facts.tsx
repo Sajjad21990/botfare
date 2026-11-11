@@ -221,20 +221,31 @@ export function MoneySplitBar({ summary }: { summary: ReceiptSummary }) {
           <div className="bg-brand" style={{ width: `${split.publisherShare}%` }} />
           <div className="min-w-[3px] flex-1 border-l-[1.5px] border-foreground bg-foreground" />
         </div>
-        <ul className="flex flex-wrap justify-between gap-x-6 gap-y-1.5 text-sm">
-          <li className="flex items-center gap-2">
-            <span aria-hidden className="size-3 rounded-[3px] border border-foreground bg-brand" />
-            The site
-            <span className={cn(landing.tabular, "font-semibold")}>{split.publisher}</span>
-            <span className="text-muted-foreground">({split.publisherPercent}%)</span>
-          </li>
-          <li className="flex items-center gap-2">
-            <span aria-hidden className="size-3 rounded-[3px] bg-foreground" />
-            BotFare fee
-            <span className={cn(landing.tabular, "font-semibold")}>{split.fee}</span>
-            <span className="text-muted-foreground">({split.feePercent}%)</span>
-          </li>
-        </ul>
+        <dl className="grid grid-cols-2 gap-4 text-sm">
+          <div className="flex min-w-0 flex-col gap-1">
+            <dt className="flex items-center gap-2 text-muted-foreground">
+              <span
+                aria-hidden
+                className="size-3 shrink-0 rounded-[3px] border border-foreground bg-brand"
+              />
+              The site
+            </dt>
+            <dd className={landing.tabular}>
+              <span className="text-base font-semibold">{split.publisher}</span>{" "}
+              <span className="text-muted-foreground">({split.publisherPercent}%)</span>
+            </dd>
+          </div>
+          <div className="flex min-w-0 flex-col items-end gap-1 text-right">
+            <dt className="flex items-center gap-2 text-muted-foreground">
+              BotFare fee
+              <span aria-hidden className="size-3 shrink-0 rounded-[3px] bg-foreground" />
+            </dt>
+            <dd className={landing.tabular}>
+              <span className="text-base font-semibold">{split.fee}</span>{" "}
+              <span className="text-muted-foreground">({split.feePercent}%)</span>
+            </dd>
+          </div>
+        </dl>
         {refund ? (
           <p className="flex items-start gap-2 border-t border-dashed border-foreground/25 pt-3 text-sm">
             <Undo2 aria-hidden className="mt-0.5 size-4 shrink-0 text-stamp" />

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BotFareMark } from "@/components/brand/bot-fare-mark";
+import { VerifyMark } from "@/components/brand/verify-mark";
 import { HowVerifyWorks } from "@/components/verify/how-verify-works";
 import { ReceiptVerifier } from "@/components/verify/receipt-verifier";
 import { isReceiptId } from "@/components/verify/verify-href";
@@ -13,9 +14,10 @@ export const metadata: Metadata = {
 };
 
 /**
- * Public: anyone can check a receipt. The signatures are verified in the viewer's browser. Without
- * ?receipt, the page opens on a real sample receipt from the demo site (lib/server/verify-example),
- * whose banner says the browser checks its signatures.
+ * Public: anyone can check a receipt. The signatures are verified in the viewer's browser. A link
+ * with ?receipt (wallet receipts, disputes, the research agent) is verified on load. Without one,
+ * the input holds a real sample receipt from the demo site (lib/server/verify-example), and nothing
+ * is checked or shown until the viewer presses Verify.
  */
 export default async function VerifyPage({ searchParams }: PageProps<"/verify">) {
   const raw = (await searchParams).receipt;
@@ -52,7 +54,8 @@ export default async function VerifyPage({ searchParams }: PageProps<"/verify">)
 
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-8 px-4 py-10 sm:px-6 sm:py-14">
         <div className="space-y-3">
-          <h1 className="text-4xl leading-[1.05] font-extrabold tracking-[-0.03em] sm:text-5xl">
+          <h1 className="flex items-center gap-3 text-4xl leading-[1.05] font-extrabold tracking-[-0.03em] sm:gap-4 sm:text-5xl">
+            <VerifyMark className="size-10 sm:size-12" />
             Verify a receipt
           </h1>
           <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground">

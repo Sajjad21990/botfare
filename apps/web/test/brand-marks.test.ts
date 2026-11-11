@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { BotFareMark } from "../src/components/brand/bot-fare-mark";
 import { FareAdvisorMark } from "../src/components/brand/fare-advisor-mark";
 import { FareCourtMark } from "../src/components/brand/fare-court-mark";
+import { VerifyMark } from "../src/components/brand/verify-mark";
 
 const render = (mark: typeof BotFareMark, className?: string) =>
   renderToStaticMarkup(createElement(mark, { className }));
@@ -13,6 +14,7 @@ const ticketPath = (html: string) => html.match(/<path d="([^"]+)" fill="#ffd44d
 describe.each([
   ["FareCourtMark", FareCourtMark],
   ["FareAdvisorMark", FareAdvisorMark],
+  ["VerifyMark", VerifyMark],
 ])("%s", (_name, mark) => {
   it("is a decorative 64-grid svg sized like the Admit-bot", () => {
     const html = render(mark);

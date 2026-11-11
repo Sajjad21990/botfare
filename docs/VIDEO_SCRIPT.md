@@ -22,7 +22,7 @@
    - the PayPal sandbox publisher account (sandbox.paypal.com, signed in by you)
 6. The top-up needs the sandbox buyer from `/judge` → **PayPal test account**. Copy the email and password with its copy buttons before recording, and keep the password hidden on camera: don't click **Show** while recording.
 7. Already recorded as B-roll: the top-up approval and the Payouts batch landing. Use them if the sandbox is slow on the day.
-8. Links to other sites and side trips open in a new tab: on the landing **See the code**, **README** and **Verify a signed receipt**; on `/judge` the step buttons and **Charts**. `/judge` stays open as the tour, so switch back to its tab between scenes and close the extra tabs before the next take. **Try it in 2 minutes** stays in the same tab.
+8. Links to other sites and side trips open in a new tab: on the landing **See the code**, **README** and **Check a real receipt**; on `/judge` the step buttons and **Charts**. `/judge` stays open as the tour, so switch back to its tab between scenes and close the extra tabs before the next take. **Try it in 2 minutes** stays in the same tab.
 
 ## Scenes
 

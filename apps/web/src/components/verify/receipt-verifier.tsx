@@ -3,7 +3,15 @@
 import { DEMO_SITE_NAME } from "@botfare/contracts";
 import type { StatementKind } from "@botfare/contracts/receipts";
 import { cn } from "cn";
-import { FileQuestion, Loader2, SearchCheck, ShieldCheck, TriangleAlert } from "lucide-react";
+import {
+  CircleAlert,
+  FileQuestion,
+  Loader2,
+  SearchCheck,
+  ShieldCheck,
+  Ticket,
+  TriangleAlert,
+} from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -32,6 +40,8 @@ const ORDER: Record<StatementKind, number> = { payment: 0, delivery: 1, refund: 
 
 type ErrorKind = "not_found" | "input" | "fetch";
 
+const VERIFY_PATH = "/verify";
+
 type State =
   | { status: "idle" }
   | { status: "checking"; label: string }
@@ -40,28 +50,36 @@ type State =
 
 interface ReceiptVerifierProps {
   initialReceipt: string | null;
-  /** `initialReceipt` is the server's example receipt, not one the link asked for. */
+  /**
+   * `initialReceipt` is the server's sample receipt, not one the link asked for. A sample only
+   * fills the input: nothing is fetched or verified until the viewer presses Verify.
+   */
   example?: boolean;
 }
 
-/** Enter a receipt ID or paste a statement; everything is verified here, in the browser. */
+/**
+ * Enter a receipt ID or paste a statement; everything is verified here, in the browser. A receipt
+ * the link names (?receipt=) is verified on load; the sample waits for Verify.
+ */
 export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVerifierProps) {
+  const sampleId = example ? initialReceipt : null;
   const [input, setInput] = useState(initialReceipt ?? "");
   const [state, setState] = useState<State>({ status: "idle" });
-  const [showExample, setShowExample] = useState(example && initialReceipt !== null);
+  // The result on screen (or being checked) is the sample's.
+  const [showExample, setShowExample] = useState(false);
   const ran = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Only the latest check may write the result; an earlier one still in flight is dropped.
   const latest = useRef(0);
 
-  const lookUp = useCallback(async (receiptId: string, options: { keepUrl?: boolean } = {}) => {
+  const lookUp = useCallback(async (receiptId: string, options: { sample?: boolean } = {}) => {
     const run = ++latest.current;
     const settle = (next: State) => {
       if (run === latest.current) setState(next);
     };
     setState({ status: "checking", label: `Looking up ${receiptId}` });
-    // The example stays at /verify, so a reload shows the newest example.
-    if (!options.keepUrl) window.history.replaceState(null, "", verifyHref(receiptId));
+    // The sample stays at /verify, so a reload shows the newest sample, unverified again.
+    window.history.replaceState(null, "", options.sample ? VERIFY_PATH : verifyHref(receiptId));
     try {
       const [keys, statements] = await Promise.all([
         fetchReceiptKeys(),
@@ -134,10 +152,11 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
   );
 
   const submit = useCallback(
-    (text: string, options: { keepUrl?: boolean } = {}) => {
+    (text: string) => {
       const parsed = parseVerifyInput(text);
       if (parsed.kind === "invalid") {
         latest.current++;
+        setShowExample(false);
         setState({
           status: "error",
           kind: "input",
@@ -146,26 +165,28 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
         });
         return;
       }
-      if (parsed.kind === "receipt") void lookUp(parsed.receiptId, options);
-      else void verifyPasted(parsed.tokens);
+      if (parsed.kind === "receipt") {
+        const sample = parsed.receiptId === sampleId;
+        setShowExample(sample);
+        void lookUp(parsed.receiptId, { sample });
+      } else {
+        setShowExample(false);
+        void verifyPasted(parsed.tokens);
+      }
     },
-    [lookUp, verifyPasted],
+    [lookUp, verifyPasted, sampleId],
   );
 
+  // A receipt the link names is checked at once; the sample waits for Verify.
   useEffect(() => {
-    if (ran.current || !initialReceipt) return;
+    if (ran.current || !initialReceipt || example) return;
     ran.current = true;
-    submit(initialReceipt, { keepUrl: example });
+    submit(initialReceipt);
   }, [initialReceipt, example, submit]);
-
-  function checkYours(text: string) {
-    setShowExample(false);
-    submit(text);
-  }
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    checkYours(input);
+    if (!checking) submit(input);
   }
 
   function checkAnother() {
@@ -173,10 +194,14 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
     setShowExample(false);
     setInput("");
     setState({ status: "idle" });
+    // The address no longer names the receipt that was on screen.
+    window.history.replaceState(null, "", VERIFY_PATH);
     inputRef.current?.focus();
   }
 
   const checking = state.status === "checking";
+  const inputError = state.status === "error" && state.kind === "input" ? state.message : null;
+  const sampleReady = sampleId !== null && state.status === "idle" && input.trim() === sampleId;
   const summary = useMemo(
     () => (state.status === "done" ? summarizeReceipt(state.outcome) : null),
     [state],
@@ -206,30 +231,59 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
             ref={inputRef}
             id="verify-input"
             value={input}
-            onChange={(event) => setInput(event.target.value)}
+            onChange={(event) => {
+              setInput(event.target.value);
+              if (inputError) setState({ status: "idle" });
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                checkYours(input);
+                if (!checking) submit(input);
               }
             }}
             placeholder="rcpt_… or eyJhbGciOiJFZERTQSIs…"
             spellCheck={false}
             autoComplete="off"
+            aria-invalid={inputError ? true : undefined}
+            aria-describedby="verify-input-note"
             className="max-h-48 min-h-10 flex-1 bg-background font-mono text-sm"
           />
-          <Button type="submit" disabled={checking || !input.trim()} className="h-10 px-4">
+          {/* Always pressable unless a check is running; an empty input gets a note, not a dead button.
+              While it runs the button keeps keyboard focus (aria-disabled) and full opacity. */}
+          <Button
+            type="submit"
+            disabled={checking}
+            focusableWhenDisabled
+            className="h-10 px-4 aria-disabled:pointer-events-none sm:w-28"
+          >
             {checking ? (
               <Loader2 className="animate-spin motion-reduce:animate-none" />
             ) : (
               <ShieldCheck />
             )}
-            Verify
+            {checking ? "Checking" : "Verify"}
           </Button>
         </form>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Pasted statements never leave your browser.
-        </p>
+        <div id="verify-input-note" className="mt-2.5 min-h-5">
+          {inputError ? (
+            <p role="alert" className="flex items-start gap-2 text-sm text-stamp">
+              <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+              {inputError}
+            </p>
+          ) : sampleReady ? (
+            <p className="flex items-start gap-2 text-sm leading-relaxed">
+              <Ticket aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <span>
+                This is a real receipt from {DEMO_SITE_NAME}, our demo recipe blog. Press Verify to
+                check it.
+              </span>
+            </p>
+          ) : (
+            <p className="text-xs leading-5 text-muted-foreground">
+              Pasted statements never leave your browser.
+            </p>
+          )}
+        </div>
       </section>
 
       <p role="status" className="sr-only">
@@ -243,7 +297,7 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
       {state.status === "checking" ? (
         <Loading sample={showExample} onCheckAnother={checkAnother} />
       ) : null}
-      {state.status === "error" ? (
+      {state.status === "error" && state.kind !== "input" ? (
         <ErrorPanel kind={state.kind} title={state.title} message={state.message} />
       ) : null}
       {state.status === "done" && summary ? (
@@ -253,9 +307,8 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
           sample={showExample}
           onCheckAnother={checkAnother}
           onLookUp={(receiptId) => {
-            setShowExample(false);
             setInput(receiptId);
-            void lookUp(receiptId);
+            submit(receiptId);
           }}
         />
       ) : null}

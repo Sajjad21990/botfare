@@ -12,8 +12,8 @@ import { type DbHandle, getReceiptKeyring, receiptJwks } from "@botfare/core";
 import { getDbHandle } from "./db";
 
 /**
- * The sample receipt /verify opens with when the link names none, so a visitor sees a real receipt
- * verify without hunting for an ID.
+ * The sample receipt /verify puts in its input when the link names none, so a visitor can verify a
+ * real receipt without hunting for an ID. Nothing is checked until they press Verify.
  *
  * It comes from Saffron & Salt, the seeded demo site: the publisher persona's oldest site named
  * DEMO_SITE_NAME, or, on a database seeded before the rename, its oldest site under a name in

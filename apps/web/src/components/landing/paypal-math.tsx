@@ -55,10 +55,7 @@ export function PaypalMath() {
               </li>
             ))}
           </ul>
-          <p className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:gap-x-8">
-            <NewTabLink href="/verify" className={linkClass}>
-              Verify a signed receipt
-            </NewTabLink>
+          <p className="mt-8">
             <NewTabLink href={readmeUrl("how-a-paid-request-works")} className={linkClass}>
               How a paid request works
             </NewTabLink>
