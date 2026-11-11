@@ -9,7 +9,7 @@
 # "botfare-judge", and host ports 3300/4300, so it never touches the development database of
 # docker-compose.yml (project "botfare", volume pgdata, port 5432).
 #
-# PayPal and Anthropic keys come from the repo's .env when it exists (compose reads it for the
+# PayPal and AI provider keys come from the repo's .env when it exists (compose reads it for the
 # ${...} values below; nothing else from it is used). Browsing, the dashboards and paid agent
 # requests work without them; PayPal top-ups and payouts need PAYPAL_CLIENT_ID/SECRET.
 

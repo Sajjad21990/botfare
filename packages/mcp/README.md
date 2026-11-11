@@ -45,7 +45,7 @@ disputes a large share of its purchases has its disputes reviewed by the publish
 
 What comes back is the outcome: `refunded` (the 3¢ is back in the wallet; with an AI judge this
 takes a few seconds), `denied` (the AI found the page matched its offer), `pending_publisher`
-(the AI was not sure, or the BotFare app has no `ANTHROPIC_API_KEY`: the publisher decides on
+(the AI was not sure, or the BotFare app has no AI provider configured: the publisher decides on
 their Disputes page), or `invalid` (filed after 24 hours, or the bytes do not match the
 publisher's digest). A refund always goes through BotFare's ledger, once per receipt; the tool
 never moves money by itself.

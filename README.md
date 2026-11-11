@@ -15,6 +15,16 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), Nov
 
 **Judges:** open `/judge` on the running app for a two-minute guided tour (publisher, wallet, research agent, and a 402 you can curl), or run the whole stack locally with one Docker command ([below](#run-everything-in-docker)).
 
+## How BotFare meets the judging criteria
+
+| Criterion | What to look at |
+| --- | --- |
+| Technological Implementation (PayPal + AI) | A real x402 plug-in on the official SDK ([`packages/x402-paypal`](packages/x402-paypal), [protocol](docs/PROTOCOL.md)); PayPal Orders v2 with JS SDK v6, Payouts, webhooks and Log in with PayPal ([PayPal APIs used](#paypal-apis-used)); a double-entry ledger ([`packages/core`](packages/core)); AI with policy in code: [Fare Court](apps/web/src/lib/server/fare-court.ts), [Fare Advisor](apps/web/src/lib/server/fare-advisor.ts), the [research agent](#the-research-agent) on any model; [signed receipts](#signed-receipts) |
+| Design | `/judge` tour, a one-line publisher setup, the wallet's PayPal top-up, the research agent's wire inspector and Verify sources, AG Studio analytics in BotFare's theme (`/publisher/analytics`) |
+| Potential Impact | Small publishers and API owners earn from AI traffic through PayPal accounts they already have; one $5 top-up (one $0.66 fee) covers about 166 reads ([fee maths](#why-it-needs-a-ledger)) |
+| Quality of the Idea | x402 for PayPal's 440 million accounts; [AI on every side of the fare](#ai-on-every-side-of-the-fare) for decisions too small for a person |
+| Presentation | The `/judge` tour, the one-command [Docker stack](#run-everything-in-docker), the demo video, and [honest limits](#honest-limits) written down |
+
 ## Why it needs a ledger
 
 A PayPal payment costs at least 49¢ in fees (3.49% + $0.49), and even PayPal's micropayments rate is 4.99% + 9¢. Neither works for a 3¢ article. BotFare batches the PayPal side and settles each request in its own ledger:
@@ -87,7 +97,7 @@ The first signal that charges at the site's level is recorded on the receipt and
 
 ## The research agent
 
-`/agent` (signed in as the agent owner) runs a Claude agent with a BotFare key and a budget of 5¢ to $1.00. It has six tools, and every input is validated with zod; the model never sees the agent key, the wallet or PayPal:
+`/agent` (signed in as the agent owner) runs an AI agent (Claude by default, or any [configured model](#the-research-agent)) with a BotFare key and a budget of 5¢ to $1.00. It has six tools, and every input is validated with zod; the model never sees the agent key, the wallet or PayPal:
 
 | Tool | What it does | Moves money? |
 | --- | --- | --- |
@@ -102,7 +112,7 @@ Hard limits live in code, not in the prompt: 10¢ per page (the 50¢ trap articl
 
 It needs `BOTFARE_AGENT_KEY` (written by `pnpm seed`) and one AI provider; without them the page says what is missing. The tests drive it with scripted models.
 
-**Any model.** x402 doesn't care which model runs the agent, and neither does BotFare. Claude is the default (`ANTHROPIC_API_KEY`, model `ANTHROPIC_MODEL`, default `claude-sonnet-5-5`); any OpenAI-compatible provider works too, each switched on by its key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY` (Grok), `GROQ_API_KEY` (Llama and other open models), `OPENROUTER_API_KEY` (dozens of models, including free ones) or `OLLAMA_BASE_URL` (local models). `/agent` has a model picker that offers each configured provider's default model (or `<P>_MODEL`), its free models and any extra ids in `<P>_MODELS` (for example `OPENROUTER_MODELS`); premium models stay off unless listed there, because judge personas are public. `AI_PROVIDER` picks the default for `AI_PROVIDER` picks the default for Fare Court, Fare Advisor and the analytics assistant. One adapter (`apps/web/src/lib/server/ai/openai-compatible.ts`) translates requests and answers to the Anthropic client shape, so the tool loop, the limits and the zod checks are the same for every model. Free and small models are weaker at tool use: a bad run ends with an error, never with a wrong payment, because every limit is enforced in code. Checked live (9 Nov) on free tiers: on Groq, `openai/gpt-oss-120b` finished research runs with paid citations, judged a stub dispute (refund in 2 s) and produced Fare Advisor recommendations in 4 s, and `gpt-oss-20b` finished research runs; on OpenRouter, `openrouter/free` finished a research run and judged a dispute but was too slow for the Advisor. Free tiers cap tokens per minute (Groq: 8,000), so the adapter waits out a 429 for as long as the provider asks (up to a minute), asks again when a provider rejects a made-up tool call, and non-Claude research runs get 4 minutes instead of 100 seconds.
+**Any model.** x402 doesn't care which model runs the agent, and neither does BotFare. Claude is the default (`ANTHROPIC_API_KEY`, model `ANTHROPIC_MODEL`, default `claude-sonnet-5-5`); any OpenAI-compatible provider works too, each switched on by its key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY` (Grok), `GROQ_API_KEY` (Llama and other open models), `OPENROUTER_API_KEY` (dozens of models, including free ones) or `OLLAMA_BASE_URL` (local models). `/agent` has a model picker that offers each configured provider's default model (or `<P>_MODEL`), its free models and any extra ids in `<P>_MODELS` (for example `OPENROUTER_MODELS`); premium models stay off unless listed there, because judge personas are public. `AI_PROVIDER` picks the default for Fare Court, Fare Advisor and the analytics assistant. One adapter (`apps/web/src/lib/server/ai/openai-compatible.ts`) translates requests and answers to the Anthropic client shape, so the tool loop, the limits and the zod checks are the same for every model. Free and small models are weaker at tool use: a bad run ends with an error, never with a wrong payment, because every limit is enforced in code. Checked live (9 Nov) on free tiers: on Groq, `openai/gpt-oss-120b` finished research runs with paid citations, judged a stub dispute (refund in 2 s) and produced Fare Advisor recommendations in 4 s, and `gpt-oss-20b` finished research runs; on OpenRouter, `openrouter/free` finished a research run and judged a dispute but was too slow for the Advisor. Free tiers cap tokens per minute (Groq: 8,000), so the adapter waits out a 429 for as long as the provider asks (up to a minute), asks again when a provider rejects a made-up tool call, and non-Claude research runs get 4 minutes instead of 100 seconds. Off Claude, each bought page reaches the model as at most 3,000 characters and is shortened to an excerpt once the model has read it, so a run with several purchases stays under a free tier's per-request limit (the agent still disputes with the exact bytes it received); a request that is still too large ends with a clear "pick another model" error.
 
 What it may read: the demo publisher (the site registered at `DEMO_ORIGIN` / `DEMO_PUBLIC_URL`, or `http://localhost:4000` in local development) and, for a user signed in with their own account, that user's own sites. Sites other people register, including through the shared publisher persona, never reach anyone else's run. Every request goes through an outbound guard: redirects are not followed, and in production a host that is, or resolves to, a loopback, private, link-local, CGNAT or IPv4-mapped IPv6 address is refused (the configured demo origin excepted). Page text is extracted in one linear pass, so a hostile page cannot stall the server. Known limit: the address check is a lookup just before each request, so DNS rebinding inside that moment is not caught.
 
@@ -129,7 +139,7 @@ PayPal's Buyer Protection, for purchases too small for a person to dispute.
 4. **Claude compares** the declared offer with the delivered text, treating both as untrusted data, and returns a structured verdict (decision, confidence, category, rationale, evidence), validated with zod.
 5. **Policy decides, in code** (`DISPUTE_POLICY`): a `refund` verdict at 80% or more refunds at once through the ledger's one-refund-per-receipt path; a `deny` at 80% or more closes the dispute; everything else goes to the publisher's **Disputes** page (`/publisher/disputes`) with the AI's reasoning, the declared offer next to the delivered excerpt, and Accept refund / Decline refund. Each key may file 10 disputes a day, and once a key disputes more than a fifth of its purchases in 7 days, its refunds need the publisher.
 
-The demo case: Crema Notes' 3¢ "Grinder maintenance, step by step" has a real preview, and people read it in full, but an agent that pays gets a "Subscribe to keep reading" stub. The research agent disputes it, and with an Anthropic key the 3¢ comes back in seconds; without one the dispute waits for the publisher, who sees the stub next to the promise. The shared demo research key that every judge's run uses gets 200 disputes a day and no dispute-rate rule (other keys keep the policy), so one judge's runs cannot switch instant refunds off for the next.
+The demo case: Crema Notes' 3¢ "Grinder maintenance, step by step" has a real preview, and people read it in full, but an agent that pays gets a "Subscribe to keep reading" stub. The research agent disputes it, and with an AI provider configured (Claude by default) the 3¢ comes back in seconds; without one the dispute waits for the publisher, who sees the stub next to the promise. The shared demo research key that every judge's run uses gets 200 disputes a day and no dispute-rate rule (other keys keep the policy), so one judge's runs cannot switch instant refunds off for the next.
 
 ### Fare Advisor: "Why didn't the bot buy?"
 
@@ -271,12 +281,11 @@ It follows the precedent of Cloudflare's `batch-settlement` scheme (`cloudflare:
 
 | Need | PayPal API | Where |
 | --- | --- | --- |
-| Top up an agent wallet | Orders v2 (`payment_source.paypal.experience_context`), JS SDK v6 | [`packages/paypal`](packages/paypal), wallet page |
-| Book PayPal's fee in the ledger | Capture `seller_receivable_breakdown.paypal_fee` | [`packages/paypal`](packages/paypal) |
-| Pay publishers | Payouts (`sender_batch_id` idempotency, batch and item status) | [`packages/paypal`](packages/paypal) |
-| Keep money state in sync | Webhooks + `verify-webhook-signature` | [`packages/paypal`](packages/paypal) |
-| Refund unused balance | Capture refunds | [`packages/paypal`](packages/paypal) |
-| Verified publisher identity | Log in with PayPal | publisher sign-in |
+| Top up an agent wallet | Orders v2 (`payment_source.paypal.experience_context`), JS SDK v6 | [`client.ts`](packages/paypal/src/client.ts), [create order](apps/web/src/app/api/wallet/topups/route.ts), [wallet button](apps/web/src/components/wallet/top-up-card.tsx) |
+| Book PayPal's fee in the ledger | Capture `seller_receivable_breakdown.paypal_fee` | [capture route](apps/web/src/app/api/wallet/topups/%5BorderId%5D/capture/route.ts), [`client.ts`](packages/paypal/src/client.ts) |
+| Pay publishers | Payouts (`sender_batch_id` idempotency, batch and item status) | [Withdraw now](apps/web/src/app/api/publisher/payouts/route.ts), [daily batch](scripts/payouts.ts), [`client.ts`](packages/paypal/src/client.ts) |
+| Keep money state in sync | Webhooks + `verify-webhook-signature` | [webhook route](apps/web/src/app/api/paypal/webhook/route.ts), [`client.ts`](packages/paypal/src/client.ts) |
+| Verified publisher identity | Log in with PayPal | [start](apps/web/src/app/api/auth/paypal/start/route.ts), [callback](apps/web/src/app/api/auth/paypal/callback/route.ts) |
 
 Everything runs in the PayPal **sandbox only**.
 
@@ -285,25 +294,25 @@ Everything runs in the PayPal **sandbox only**.
 | Piece | State |
 | --- | --- |
 | x402 plug-in (`prepaid` on `paypal:sandbox`) | ✅ Works end to end with the official `@x402/express`, `@x402/fetch` and `x402Facilitator` 2.30.0 ([spec](docs/PROTOCOL.md)) |
-| PayPal client: orders, capture, refunds, Payouts, webhooks | ✅ Built and tested |
+| PayPal client: orders, capture, Payouts, webhooks | ✅ Built and tested |
 | Sandbox spikes: OAuth, $5 top-up, $0.25 Payout, JWS, x402 | ✅ All pass ([results](docs/SPIKE_RESULTS.md)) |
 | Postgres double-entry ledger, `PostgresPrepaidLedger`, refunds | ✅ Built; DB tests cover concurrency, caps, replays and refunds |
 | Facilitator API in the Next.js app (`/api/x402/*`, site config, health) | ✅ Built; site Basic auth |
 | `botfare()` publisher middleware, agent SDK (`getOffer`, paid `fetch`, spend cap, wire events) | ✅ Built |
 | Crema Notes demo publisher (articles + brew-ratio API) | ✅ Built |
 | `pnpm seed` + `pnpm e2e`: Phase 1 on real processes and Postgres | ✅ All checks pass |
-| Render Blueprint ([`render.yaml`](render.yaml)): app, demo, daily payouts cron, Postgres | ✅ Written, not yet deployed |
-| Wallet: balance, PayPal JS SDK v6 top-up, agent keys made in the browser, receipts | ✅ Built; sandbox order creation checked live, approval needs a sandbox buyer login |
+| Render Blueprint ([`render.yaml`](render.yaml)): app, demo, daily payouts cron, weekly demo-refresh cron, Postgres | ✅ Written |
+| Wallet: balance, PayPal JS SDK v6 top-up, agent keys made in the browser, receipts | ✅ Built; a real sandbox top-up ($5.00, PayPal fee $0.66 booked from the capture) credited the wallet |
 | Publisher dashboard: sites, pricing editor, one-time secrets, earnings, Withdraw now, payout history | ✅ Built; a real sandbox Payout ($11.72) reached `SUCCESS` |
 | PayPal webhooks (`/api/paypal/webhook`, verified, deduped) and `pnpm payouts:run` | ✅ Built and tested against a mock PayPal |
 | Publisher analytics in AG Studio, with a Claude assistant | ✅ Built |
 | `pnpm seed:traffic`: ~150 paid requests over 14 days for the dashboards, plus the Fare Court and Fare Advisor story | ✅ Built |
 | Agent detection: signed agents (Web Bot Auth), crawler IP checks, CDN scores, heuristics, Turnstile human check, Bot detection panel, revenue by signal | ✅ Built; `pnpm e2e` checks it on real servers |
-| Research agent (`/agent`): tools, budget and caps, SSE timeline, wire inspector, cited answer | ✅ Built; tested with a scripted model (a live run needs `ANTHROPIC_API_KEY`) |
+| Research agent (`/agent`): tools, budget and caps, SSE timeline, wire inspector, cited answer | ✅ Built; tested with a scripted model and run live on Claude and on Groq's and OpenRouter's free tiers (needs any AI provider key) |
 | MCP server ([`packages/mcp`](packages/mcp/README.md)) and the signed agent API | ✅ Built and tested against an in-process publisher and facilitator |
 | `/judge` tour and judge mode | ✅ Built |
-| Fare Court: declared offers, attested `Content-Digest`, signed disputes, Claude judge with policy in code, publisher Disputes page, SDK/MCP/research agent disputes, the Crema Notes stub case | ✅ Built; `pnpm e2e` checks it on real servers without an AI key (the publisher decides); a live verdict needs `ANTHROPIC_API_KEY` |
-| Fare Advisor: offer telemetry, decline notes, citations, funnel per rule, checked Claude recommendations, Apply, citations in analytics | ✅ Built; `pnpm e2e` checks the funnel and Apply → middleware → next agent buys; live recommendations need `ANTHROPIC_API_KEY` |
+| Fare Court: declared offers, attested `Content-Digest`, signed disputes, Claude judge with policy in code, publisher Disputes page, SDK/MCP/research agent disputes, the Crema Notes stub case | ✅ Built; `pnpm e2e` checks it on real servers without an AI key (the publisher decides); live verdicts checked on Groq's free tier (needs any AI provider key) |
+| Fare Advisor: offer telemetry, decline notes, citations, funnel per rule, checked Claude recommendations, Apply, citations in analytics | ✅ Built; `pnpm e2e` checks the funnel and Apply → middleware → next agent buys; live recommendations need any AI provider key |
 | Signed receipts: payment, delivery and refund statements (Ed25519 JWS), JWKS, public statements endpoint, `/verify`, SDK `verifyReceipt`, MCP `verify_receipt`, research agent sources manifest and Verify sources | ✅ Built; `pnpm e2e` verifies payment, delivery and refund statements against the published keys |
 | Log in with PayPal | ✅ Code done and tested against a mock PayPal; off until the sandbox app has it enabled |
 | One-command Docker stack ([`docker-compose.full.yml`](docker-compose.full.yml)) | ✅ Built and checked |
@@ -316,16 +325,17 @@ The full proposal, decisions and day-by-day plan are in [`docs/PLAN.md`](docs/PL
 ```text
 packages/x402-paypal   the x402 plug-in: client, server and facilitator parts, JWS helpers, ledger port, in-memory ledger
 packages/contracts     types and helpers shared across every HTTP boundary: IDs, site config, pricing rules, agent keys,
-                       detection config and signals, Web Bot Auth signing and verification (./web-bot-auth)
+                       detection config and signals, Web Bot Auth signing and verification (./web-bot-auth),
+                       ./fare (disputes, declines, citations, telemetry), ./receipts (signed statements, verifyStatement)
 packages/core          Drizzle schema and migrations, Postgres double-entry ledger, PostgresPrepaidLedger, services
 packages/express       botfare({ siteId, siteSecret }): one-line publisher middleware on @x402/express, with the
                        agent detection engine (src/detection), the Turnstile human check, the declared offer,
                        proof of delivery (Content-Digest attestation) and offer telemetry
-packages/sdk           createBotFareAgent(): getOffer(), a paying fetch on @x402/fetch, dispute(), decline() and
-                       reportCitations(); signs every request
+packages/sdk           createBotFareAgent(): getOffer(), a paying fetch on @x402/fetch, dispute(), decline(),
+                       reportCitations(), verifyReceipt() and fetchStatements(); signs every request
 packages/paypal        typed PayPal REST client (sandbox only)
 packages/mcp           MCP server for Claude Desktop and Claude Code: get_offer, fetch_paid, decline_offer,
-                       dispute_purchase, wallet_balance, recent_receipts
+                       dispute_purchase, verify_receipt, wallet_balance, recent_receipts
 apps/web               Next.js: landing page, /judge, sign-in (personas, Log in with PayPal), wallet,
                        research agent (/agent), publisher dashboard, Disputes and analytics, Fare Court
                        judge and Fare Advisor, x402 facilitator API (/api/x402/*), agent API (/api/agent/*,
@@ -338,8 +348,8 @@ scripts/payouts.ts     daily PayPal Payouts batch and status sync (a Render cron
 scripts/e2e.ts         end to end: web app + demo + Postgres, payments, detection, Fare Court and Fare Advisor,
                        PASS/FAIL per check
 scripts/spike          Day-0 PayPal and x402 spikes
-docs                   plan, protocol spec, spike results
-render.yaml            Render Blueprint: botfare-web, botfare-demo, botfare-payouts (cron), Postgres 17
+docs                   plan, protocol spec, spike results, task tracker, Devpost text, video script
+render.yaml            Render Blueprint: botfare-web, botfare-demo, botfare-payouts and botfare-demo-refresh (crons), Postgres 17
 docker-compose.full.yml the whole stack for judges (project botfare-judge); docker/ has its scripts and README
 ```
 
@@ -384,7 +394,7 @@ It then checks:
 - Fare Advisor: a decline note and a citation report are recorded, the middleware's offer telemetry reaches BotFare, the advisor returns the funnel per rule with `aiAvailable: false`, and Apply 50¢ → 8¢ on the premium rule shows in the site config, reaches the middleware within 30 seconds, and the 10¢-capped agent then buys it (the price is put back to 50¢ afterwards);
 - the ledger sums to zero.
 
-The web app it starts runs without `ANTHROPIC_API_KEY`, so the required checks cover Fare Court's no-AI path. With a key in `.env`, `E2E_AI=1` keeps it and adds an optional check that the AI judge refunds the stub at once.
+The web app it starts runs with every AI provider key blanked, so the required checks cover Fare Court's no-AI path. With any provider key in `.env`, `E2E_AI=1` keeps the keys and adds an optional check that the AI judge refunds the stub at once.
 
 The human-check step calls Cloudflare's real siteverify with the public test secret, so it needs network access.
 
@@ -425,7 +435,7 @@ One command builds and starts Postgres, a one-shot setup (migrations, seed, two 
 docker compose -f docker-compose.full.yml -p botfare-judge up --build -d --wait
 ```
 
-Then open http://localhost:3300/judge (BotFare) and http://localhost:4300 (Crema Notes). PayPal and Anthropic keys are read from `.env` when present; browsing, the dashboards and paid agent requests work without them. Inside the stack the research agent reaches the demo through `DEMO_INTERNAL_URL` (`http://demo:4000`), since `localhost:4300` is the host's port. Stop with `docker compose -f docker-compose.full.yml -p botfare-judge down` (add `-v` to delete the judge database). Details: [`docker/README.md`](docker/README.md).
+Then open http://localhost:3300/judge (BotFare) and http://localhost:4300 (Crema Notes). PayPal and AI provider keys are read from `.env` when present; browsing, the dashboards and paid agent requests work without them. Inside the stack the research agent reaches the demo through `DEMO_INTERNAL_URL` (`http://demo:4000`), since `localhost:4300` is the host's port. Stop with `docker compose -f docker-compose.full.yml -p botfare-judge down` (add `-v` to delete the judge database). Details: [`docker/README.md`](docker/README.md).
 
 ### Checks
 
@@ -445,16 +455,24 @@ pnpm spike:03           # $0.25 Payouts batch to PUBLISHER_PAYPAL_EMAIL
 
 ## Deploy
 
-[`render.yaml`](render.yaml) is a Render Blueprint for four resources:
+[`render.yaml`](render.yaml) is a Render Blueprint for five resources:
 
 - `botfare-web`: builds the Next.js app and runs `pnpm db:migrate` before each deploy;
 - `botfare-demo`: reaches the app over Render's private network;
 - `botfare-payouts`: a cron job that runs `pnpm payouts:run` at 09:00 UTC every day;
+- `botfare-demo-refresh`: a cron job that runs `pnpm seed:traffic --weekly` on Mondays at 06:00 UTC (demo money only; it shares `botfare-web`'s receipt seed and `BOTFARE_URL`);
 - `botfare-db`: Postgres 17.
 
 Node comes from `.node-version` (24 LTS, which still bundles the Corepack the build commands enable).
 
-Secrets are `sync: false`, so Render asks for them when the Blueprint is first applied. Leave `BOTFARE_SITE_ID` and `BOTFARE_SITE_SECRET` empty at that point: the database does not exist yet, and until they are set the demo runs in free mode (`/health` reports `payments: off`) and charges nothing.
+Secrets are `sync: false`, so Render asks for them when the Blueprint is first applied. Fill in:
+
+- `BOTFARE_URL` = `https://botfare-web.onrender.com` and `DEMO_PUBLIC_URL` = `https://botfare-demo.onrender.com` (the service names give these URLs unless Render adds a suffix; check after the first deploy and fix both if they differ). `BOTFARE_URL` is the `iss` of every signed receipt and has no fallback for signing, and the research agent may read only `DEMO_PUBLIC_URL`'s site, so neither may stay empty.
+- `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `PUBLISHER_PAYPAL_EMAIL` (sandbox).
+- At least one AI provider for `/agent`, Fare Court and the Fare Advisor: `ANTHROPIC_API_KEY`, or a free one such as `GROQ_API_KEY` with `AI_PROVIDER=groq` (see [Any model](#the-research-agent)).
+- Optional: `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD` (a sandbox personal account judges can approve a top-up with).
+
+Leave `BOTFARE_SITE_ID`, `BOTFARE_SITE_SECRET`, `BOTFARE_AGENT_KEY` and `PAYPAL_WEBHOOK_ID` empty for now: the database does not exist yet, and until the site is set the demo runs in free mode (`/health` reports `payments: off`) and charges nothing.
 
 Once the first deploy is live, provision the demo site once. `botfare-db` is reachable only on Render's private network, so run the seed from `botfare-web`'s Shell, where `DATABASE_URL` is already set:
 
@@ -463,8 +481,10 @@ DEMO_ORIGIN=https://<botfare-demo>.onrender.com pnpm seed --print-secrets
 ```
 
 1. Copy the printed `BOTFARE_SITE_ID` and `BOTFARE_SITE_SECRET` into `botfare-demo` > Environment and save; Render redeploys the demo with payments on.
-2. Copy `BOTFARE_AGENT_KEY` into the `.env` of the machine that runs the agent.
+2. Copy `BOTFARE_AGENT_KEY` into `botfare-web` > Environment and save (the research agent on `/agent` pays with it); also put it in a local `.env` if you run the SDK or MCP server against the live app.
 3. Check `https://<botfare-demo>.onrender.com/health` reports payments on, then `curl -i -H 'x-botfare-agent: 1' https://<botfare-demo>.onrender.com/articles/burr-basics` returns a 402.
+4. Smoke test from `/judge`: as the agent owner, top up $5 with a sandbox buyer and run the research agent (paid citations, Verify sources all green); as the publisher, Withdraw now (earnings clear 24 hours after purchase, and the judge persona always has some cleared) and check the payout reaches `SUCCESS`.
+5. Optional: Log in with PayPal ([steps](#judge-mode-and-log-in-with-paypal)) with the return URL `https://<botfare-web>.onrender.com/api/auth/paypal/callback`, then `PAYPAL_LOGIN_ENABLED=true`.
 
 To fill the dashboards, run `pnpm seed:traffic` in the same Shell. The `botfare-demo-refresh` cron then runs `pnpm seed:traffic --weekly` every Monday (one new batch per ISO week, demo money only), so the dashboards and the Fare Advisor's 14-day window keep a story until judging ends; run it by hand from the Render dashboard if a week was missed.
 
@@ -472,11 +492,11 @@ Then point PayPal at the app: in the sandbox app's Webhooks section, add `https:
 
 `botfare-web` generates `BOTFARE_RECEIPT_KEY_SEED`, the seed of BotFare's receipt-signing key, on the first apply, and the `botfare-demo-refresh` cron reads the same value (its demo receipts are signed too). Never edit it in place: to rotate, copy the old value into `BOTFARE_RECEIPT_KEY_SEED_PREVIOUS` first, so receipts signed before keep verifying. Without it (or without `BOTFARE_URL`) payments still settle but carry no signed receipt, and the app logs `[receipts] signing disabled`.
 
-`botfare-web` also takes `BOTFARE_URL` (its public `https://` URL: PayPal return URLs, the agent API's host check, the publisher snippet, the `iss` of signed receipts), `DEMO_PUBLIC_URL` (the demo's URL for `/judge`), optional `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD`, `PAYPAL_LOGIN_ENABLED` and, for the research agent, `BOTFARE_AGENT_KEY` from the seed. Session cookies are `Secure` whenever the request arrived over https, which Render's proxy reports with `X-Forwarded-Proto`.
+`botfare-web` also takes `BOTFARE_URL` (its public `https://` URL: PayPal return URLs, the agent API's host check, the publisher snippet, the `iss` of signed receipts), `DEMO_PUBLIC_URL` (the demo's URL for `/judge`, and the one site the research agent may read), optional `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD`, `PAYPAL_LOGIN_ENABLED` and, for the research agent, `BOTFARE_AGENT_KEY` from the seed. Session cookies are `Secure` whenever the request arrived over https, which Render's proxy reports with `X-Forwarded-Proto`.
 
 Judge mode is public: anyone who opens the app can sign in as a persona. The personas cannot rotate the demo site's secret, change the payout email or revoke the seeded agent keys, and each publisher sign-in restores Crema Notes' prices, the payout email, enough earnings to try Withdraw, and one Fare Court dispute waiting for review (once a judge decides it, the next sign-in plays that case again: the persona's research key buys the stub again with demo money and disputes it, so every judge can try Accept and Decline); the agent owner's wallet is kept at $5.00 of demo money for the shared research key ($10.00 a day). Rerunning `pnpm seed` raises an older demo key's caps in place, keeping its secret. That shared key also gets Fare Court limits for many users (200 disputes a day, no dispute-rate rule), and any publisher sign-in puts back prices a judge changed with the Fare Advisor's Apply. The analytics assistant runs on the server's default AI provider with a server-side prompt, a 512 KB request cap, a per-visitor turn limit and a shared budget (3M input-token equivalents an hour, 15M a day; see `apps/web/src/lib/server/ai-budget.ts`). The Fare Court judge and the Fare Advisor each have their own budget (1M an hour, 5M a day), and the Advisor allows 12 fresh generations per visitor per 10 minutes. Also set a monthly spend limit on every AI provider account whose key is set.
 
-Running the seed again keeps the site secret only if it can see the current one, which the Shell's `.env` holds until the next deploy of `botfare-web`. After a redeploy, pass the values back in (`BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed`), or let it issue a new secret and repeat step 1.
+Running the seed again keeps the site secret only if it can see the current one, which the Shell's `.env` holds until the next deploy of `botfare-web`. After a redeploy, pass the values back in (`BOTFARE_SITE_ID=… BOTFARE_SITE_SECRET=… pnpm seed`; the site's origin comes from `DEMO_ORIGIN`, else `DEMO_PUBLIC_URL`), or let it issue a new secret and repeat step 1.
 
 ## Built with
 

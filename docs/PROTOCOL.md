@@ -246,7 +246,7 @@ BotFare extension: buyer protection for purchases too small for a person to disp
 | --- | --- |
 | `refund`, confidence ≥ 0.8, key within the dispute-rate rule | `refunded`: the ledger's refund for the receipt (idempotency key `refund:<receiptId>`, so one refund per receipt ever) |
 | `deny`, confidence ≥ 0.8 | `denied` |
-| anything else, no verdict (no `ANTHROPIC_API_KEY`, model error, budget), or a refund the publisher's paid-out earnings cannot cover | `pending_publisher`: the publisher accepts (`refunded`) or declines (`rejected_by_publisher`) on the Disputes page or `POST /api/publisher/disputes {disputeId, decision}` |
+| anything else, no verdict (no AI provider configured, model error, budget), or a refund the publisher's paid-out earnings cannot cover | `pending_publisher`: the publisher accepts (`refunded`) or declines (`rejected_by_publisher`) on the Disputes page or `POST /api/publisher/disputes {disputeId, decision}` |
 
 The dispute-rate rule: once a key has 10 or more purchases in 7 days, a confident refund verdict refunds automatically only while (its valid disputes in 7 days + 1) / purchases ≤ 0.2. The shared demo research key (the server's `BOTFARE_AGENT_KEY`, owned by a demo persona) has 200 disputes a day and no rate rule, because every judge's run uses it.
 
@@ -260,7 +260,7 @@ BotFare extension: what agents did with an offer, so publishers can price for AI
 - **Decline notes** (`POST /api/offers/decline`, signed). `{url, priceCents, category, reason}`, where `category` is `too_expensive`, `irrelevant`, `low_quality_preview`, `already_have`, `over_budget` or `other`, and `reason` is one sentence (≤ 300 characters). The URL must be on a registered site's origin (422 otherwise), and `priceCents` must be what one of that site's pricing rules for the path charges now (400 otherwise). One note per key, path (the query string is dropped) and UTC day is kept, and at most three per agent owner, path and day across all the owner's keys (`recorded: false` past either), at most 500 per key per day.
 - **Citations** (`POST /api/citations`, signed). `{answerId (8–64 chars), citations: [{receiptId, claim?}]}`, 1 to 20 per report. Only receipts paid by the key owner count (others come back in `rejected`); a report with the same `answerId` replaces the earlier one.
 
-The publisher reads these per pricing rule and per path at `GET /api/publisher/advisor?siteId=…` (session): offers, paid, declined, cited and disputed with the top reasons, each counted at the rule's current price only (signals at an earlier price are in the rule's `earlier`, and a rule nobody has seen at its new price has `awaitingSignals: true` and gets no AI recommendation), plus Claude's recommendations when `ANTHROPIC_API_KEY` is set (`aiAvailable: false` otherwise). Applying one is a separate, explicit `POST /api/publisher/advisor/apply {siteId, pattern, priceCents?, audience?}`.
+The publisher reads these per pricing rule and per path at `GET /api/publisher/advisor?siteId=…` (session): offers, paid, declined, cited and disputed with the top reasons, each counted at the rule's current price only (signals at an earlier price are in the rule's `earlier`, and a rule nobody has seen at its new price has `awaitingSignals: true` and gets no AI recommendation), plus the AI's recommendations when any AI provider is configured (`aiAvailable: false` otherwise). Applying one is a separate, explicit `POST /api/publisher/advisor/apply {siteId, pattern, priceCents?, audience?}`.
 
 ## Signed receipts
 

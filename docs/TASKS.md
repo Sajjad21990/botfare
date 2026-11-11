@@ -4,7 +4,7 @@
 
 **Deadline:** Thu 12 Nov 2026, 12:00 pm PST (Fri 13 Nov, 1:30 am IST). **Target:** submit by Thu 8 pm IST.
 
-**Last updated:** Mon 9 Nov 2026, 10:50 am IST (Phase 3d: dispute-window payout hold and any-model AI providers, review fixed; 711 unit and DB tests, e2e 30/30) · previously 12:20 am (signed-receipts review: 7 confirmed findings fixed; e2e 30/30)
+**Last updated:** Wed 11 Nov 2026 (final pre-deploy audit: 5 auditors and verifiers; confirmed findings fixed, incl. the Groq 413 on the default question and Verify sources in the Docker stack; Devpost text and video script drafted) · previously Mon 9 Nov, 10:50 am IST (Phase 3d)
 
 ## Overview
 
@@ -17,10 +17,10 @@
 | 3b. Fare Court and Fare Advisor (AI on every side) | Mon 9 | ✅ Done (a day early; live AI verdicts need you) | 8 / 8 |
 | 3c. Signed receipts (proof of payment, delivery, sourcing) | Mon 9 | ✅ Done (a day early) | 5 / 5 |
 | 3d. Payout hold and any-model AI | Mon 9 | ✅ Done | 2 / 2 |
-| 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started | 0 / 5 |
-| 5. Submission | Thu 12 | ⏳ Not started | 0 / 9 |
+| 4. Deploy to Render | Wed 11 (last build step) | ⏳ Not started (repo ready) | 0 / 6 |
+| 5. Submission | Thu 12 | 🔄 Texts drafted | 2 / 10 |
 
-**Overall: about 76% done** (52 of 68 items); ahead of the plan. Next: deploy to Render, then run one live research run, Fare Court verdict and Fare Advisor recommendation with any AI provider key set (`OPENROUTER_API_KEY` gives free models).
+**Overall: about 77% done** (54 of 70 items). Next: deploy to Render (👤 Blueprint), then record the video and submit.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -130,17 +130,19 @@ Deploying is the last build step, by choice. It must happen by Wednesday night s
 | ⏳ | Provision the demo site on Render (`pnpm seed --print-secrets` in botfare-web's Shell) | README "Deploy" |
 | ⏳ | PayPal sandbox webhook on the live URL; set `PAYPAL_WEBHOOK_ID` | |
 | ⏳ | Daily payouts cron and weekly demo refresh cron live | `botfare-payouts`, `botfare-demo-refresh` (`pnpm seed:traffic --weekly`, Mondays) |
-| ⏳ | Live smoke test: 402 → pay → receipt, top-up, Withdraw now | |
+| ⏳ | Live smoke test: 402 → pay → receipt, top-up, Withdraw now | README "Deploy" step 4 |
+| ⏳ | 👤 Sandbox buyer for judges: a sandbox personal account in `JUDGE_SANDBOX_BUYER_EMAIL`/`_PASSWORD` on botfare-web, and in the Devpost test-credentials field | `/judge` shows it; without it the page says to use any sandbox personal account |
 
 ## Phase 5: Submission ⏳
 
 | | Task | Notes |
 | --- | --- | --- |
 | ⏳ | B-roll: top-up and payout landing in PayPal (record as soon as they work) | Insurance against sandbox hiccups |
+| ✅ | Video script with exact clicks | [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md) |
 | ⏳ | 👤 Demo video under 3 minutes, public on YouTube | Close: "Pay the fare, pal." |
-| ⏳ | `docs/DEVPOST.md`: description mapped to the five judging criteria | |
+| ✅ | `docs/DEVPOST.md`: description mapped to the five judging criteria | [`DEVPOST.md`](DEVPOST.md); fill in the live URLs after the deploy |
 | ⏳ | Screenshots: publisher setup, wallet top-up, agent answer with paid citations, Payouts batch | |
-| ⏳ | Final README and architecture diagram check | |
+| 🔄 | Final README and architecture diagram check | Done 11 Nov (judging-criteria section, deploy steps, PayPal APIs linked to code); add the live URL and video link after the deploy |
 | ⏳ | 👤 Make the repo public; MIT license visible | |
 | ⏳ | 👤 Devpost form: Built With, sponsor tools (AG Grid, APIMatic, Render), test credentials | |
 | ⏳ | 👤 APIMatic claim form | |

@@ -54,10 +54,14 @@ Crema Notes is registered as `http://localhost:4300`, the address browsers and a
 use. Inside the `web` container `localhost` is the container itself, so `web` sets
 `DEMO_PUBLIC_URL=http://localhost:4300` and `DEMO_INTERNAL_URL=http://demo:4000`: the research
 agent's requests for the public origin (catalog, offers, paid reads) go to the `demo` service on
-the compose network instead, with `X-Forwarded-Host: localhost:4300` so the demo still verifies the
-agent's request signature for the host it was signed for. Only that exact origin is rewritten, only
-server-side; the model, the page and the receipts keep the public URL
-(`apps/web/src/lib/server/demo-origin.ts`). The demo itself reaches BotFare's facilitator at
+the compose network instead, with `X-Forwarded-Host: localhost:4300` and `X-Forwarded-Proto: http`
+so the demo still verifies the agent's request signature for the host it was signed for. Only that
+exact origin is rewritten, only server-side (`apps/web/src/lib/server/demo-origin.ts`); the model
+and the page keep the public URL. The demo's middleware signs the forwarded origin into the 402 and
+the payment statement (`extra.botfareResource`) because it equals the site's registered origin, so
+signed receipts name `http://localhost:4300/...` and Verify sources matches them; a forwarded host
+that is not the registered origin is ignored (`resourceUrl` in
+`packages/express/src/payment-gate.ts`). The demo itself reaches BotFare's facilitator at
 `http://web:3000`. `setup` runs with `BOTFARE_JUDGE_DOCKER=1`, which drops the seed's "restart the
 demo" hint (the demo starts after setup).
 
@@ -69,7 +73,7 @@ Compose reads the repo's `.env` if there is one, and passes on only these variab
 | --- | --- |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | PayPal top-ups and payouts (sandbox). |
 | `PUBLISHER_PAYPAL_EMAIL` | The sandbox account that receives test Payouts. |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | The analytics assistant, Fare Court, Fare Advisor and the research agent (`/agent`); Claude is the default. |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | The analytics assistant, Fare Court, Fare Advisor and the research agent (`/agent`); Claude is the default when its key is set. Any other provider key below works instead. |
 | `AI_PROVIDER`, `OPENAI_*`, `GEMINI_*`, `XAI_*`, `GROQ_*`, `OPENROUTER_*`, `OLLAMA_*` | Other model providers (key and optional `_MODEL` each). Ollama on the host is `OLLAMA_BASE_URL=http://host.docker.internal:11434/v1`. |
 | `JUDGE_SANDBOX_BUYER_EMAIL`, `JUDGE_SANDBOX_BUYER_PASSWORD` | The PayPal sandbox buyer (fake money) `/judge` shows for approving a top-up. |
 | `PAYPAL_LOGIN_ENABLED` | Log in with PayPal; the sandbox app's return URL must be `http://localhost:3300/api/auth/paypal/callback`. |
