@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { FareAdvisorMark } from "@/components/brand/fare-advisor-mark";
-import { FareCourtMark } from "@/components/brand/fare-court-mark";
+import { FareAdvisorMark } from "../brand/fare-advisor-mark";
+import { FareCourtMark } from "../brand/fare-court-mark";
 import styles from "./landing.module.css";
 
 /** A rubber stamp: a bordered, slightly rotated word in one ink colour. How it works reuses it. */

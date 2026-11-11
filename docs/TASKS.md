@@ -21,7 +21,7 @@
 | 4. Deploy to Render | Wed 11 (last build step) | ✅ Live | 7 / 7 |
 | 5. Submission | Thu 12 | 🔄 Texts, screenshots, public repo | 4 / 10 |
 
-**Overall: about 89% done** (76 of 85 items). Live at https://botfare-web.onrender.com. Next: the video and the Devpost form, then the animated How it works.
+**Overall: about 91% done** (77 of 85 items). Live at https://botfare-web.onrender.com. Next: the video and the Devpost form.
 
 **Legend:** ✅ done · 🔄 in progress · ⏳ pending · 👤 needs you · ⭐ prize-related
 
@@ -152,7 +152,7 @@ Saffron & Salt, a recipe blog, replaces the coffee site Crema Notes. `pnpm seed`
 | ✅ | How it works as an interactive 8-step flow that glides (eased panels, rail fills in, Play), smooth scrolling (Lenis) on public pages, a ticket-yellow highlighter cursor | Reduced motion respected; mouse and trackpad only for the cursor |
 | ✅ | `/verify` as a printed receipt (stamps only after the signature verifies, what was checked, 95/5 bar, timeline, folded details); nothing is checked until you press Verify, with the demo's sample receipt prefilled; a short signed-receipt section on the homepage | Wallet and agent links (`?receipt=`) still verify on load |
 | ✅ | Links to other sites and side trips open in a new tab | `/judge` tour steps too |
-| ⏳ | Animated How it works (four actors: agent, site, BotFare, PayPal; one caption per step) | Prototype approved for after the remaining tasks |
+| ✅ | Animated How it works: one scene with four actors (AI agent, Saffron & Salt, BotFare, PayPal) and what passes between them in 8 steps; a stepper, one caption per step, Prev, Play (about 25 s) and Next; Show the details keeps the exact facts | `components/landing/how-scene.tsx`; actors stack on phones and labels travel down; reduced motion shows each step's end state |
 
 ## Phase 4: Deploy to Render ⏳
 

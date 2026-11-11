@@ -1,0 +1,501 @@
+/* How it works as one animated scene (how-scene.tsx).
+
+   Layout. On a phone the four actors stand in a column and labels travel down the lane beside
+   them; from 48rem up they stand in a row and labels travel across the lane underneath. Either
+   way the lane is exactly as long as the actors' column or row, split into four equal parts, so
+   actor i sits at (i * 25% + 12.5%) along it. A rider spans the whole lane and is translated by a
+   percentage of its own size (the lane's), so its centre lands on an actor:
+   i * 25% - 37.5% from the middle. The label inside a rider sits at the middle of the lane, offset
+   across it by its row. No measuring in script: the server HTML already shows step 1. */
+
+.scene {
+  --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --ink-soft: color-mix(in oklab, var(--foreground) 30%, transparent);
+}
+
+/* The stepper: one stop per step, a dashed track between the first and the last, filled in up to
+   the current stop. */
+.stops {
+  --dot: 1.75rem;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--count), minmax(0, 1fr));
+  margin-bottom: 1.25rem;
+}
+
+.track {
+  position: absolute;
+  top: calc(var(--dot) / 2 - 1px);
+  left: calc(50% / var(--count));
+  right: calc(50% / var(--count));
+  border-top: 2px dashed var(--ink-soft);
+}
+
+.fill {
+  position: absolute;
+  inset: -3px 0 auto;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--foreground);
+  transform: scaleX(var(--progress));
+  transform-origin: left;
+  transition: transform 500ms var(--ease);
+}
+
+.stop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  cursor: pointer;
+  border-radius: 0.5rem;
+  outline: none;
+}
+
+.dot {
+  display: grid;
+  place-items: center;
+  width: var(--dot);
+  height: var(--dot);
+  border: 1.5px solid var(--foreground);
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--foreground);
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  transition:
+    background-color 240ms ease,
+    color 240ms ease,
+    box-shadow 240ms ease,
+    scale 280ms var(--ease);
+}
+
+.stop[data-state="done"] .dot {
+  background: var(--foreground);
+  color: var(--brand);
+}
+
+.stop[data-state="on"] .dot {
+  scale: 1.15;
+  box-shadow: 2px 2px 0 var(--foreground);
+}
+
+.stop:hover .dot {
+  box-shadow: 2px 2px 0 var(--foreground);
+}
+
+.stop:focus-visible .dot {
+  outline: 2px solid var(--foreground);
+  outline-offset: 3px;
+}
+
+.stopLabel {
+  display: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.stop[data-state="on"] .stopLabel {
+  color: var(--foreground);
+}
+
+@media (min-width: 40rem) {
+  .stops {
+    --dot: 2.125rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .dot {
+    font-size: 0.9375rem;
+  }
+
+  .stopLabel {
+    display: block;
+  }
+}
+
+/* The stage: printed like a ticket (ink edge, hard shadow). */
+.stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  padding: 0.75rem 0.75rem 0.75rem 0.25rem;
+  border: 1.5px solid var(--foreground);
+  border-radius: 1.125rem;
+  background: var(--card);
+  box-shadow: 4px 4px 0 var(--foreground);
+  overflow: hidden;
+}
+
+.actors {
+  display: grid;
+  grid-template-rows: repeat(4, 5.75rem);
+}
+
+.actor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 0;
+  text-align: center;
+  transition: opacity 300ms ease;
+}
+
+.actor[data-active="false"] {
+  opacity: 0.45;
+}
+
+.face {
+  display: grid;
+  place-items: center;
+  width: 2.875rem;
+  height: 2.875rem;
+  border: 1.5px solid var(--foreground);
+  border-radius: 0.875rem;
+  background: var(--background);
+  transition:
+    translate 300ms var(--ease),
+    box-shadow 300ms ease,
+    background-color 300ms ease;
+}
+
+.face svg {
+  width: 68%;
+  height: 68%;
+}
+
+.actor[data-active="true"] .face {
+  translate: 0 -2px;
+  background: var(--ticket);
+  box-shadow: 0 3px 0 var(--foreground);
+}
+
+.wordmark {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.name {
+  max-width: 100%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.role {
+  display: none;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: var(--muted-foreground);
+}
+
+.lane {
+  position: relative;
+  min-width: 0;
+}
+
+/* Each actor's lifeline, across the lane: where labels stop. */
+.lifeline {
+  position: absolute;
+  top: calc(var(--i) * 25% + 12.5%);
+  left: 0;
+  right: 0;
+  border-top: 1.5px dashed var(--ink-soft);
+}
+
+.moves {
+  position: absolute;
+  inset: 0;
+}
+
+.rider {
+  --p-from: calc(var(--from) * 25% - 37.5%);
+  --p-via: calc(var(--via) * 25% - 37.5%);
+  --p-to: calc(var(--to) * 25% - 37.5%);
+  --x-from: 0%;
+  --x-via: 0%;
+  --x-to: 0%;
+  --y-from: var(--p-from);
+  --y-via: var(--p-via);
+  --y-to: var(--p-to);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  translate: var(--x-to) var(--y-to);
+}
+
+.token {
+  position: absolute;
+  top: calc(50% + (var(--row) - 1) * 1.875rem);
+  left: 50%;
+  translate: -50% -50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.6rem;
+  border: 1.5px solid var(--foreground);
+  border-radius: 0.55rem;
+  background: #ffffff;
+  box-shadow: 2px 2px 0 var(--foreground);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.token svg {
+  width: 0.9em;
+  height: 0.9em;
+  flex-shrink: 0;
+  stroke-width: 3;
+}
+
+.token[data-tone="yellow"] {
+  background: var(--brand);
+}
+
+.token[data-tone="ink"] {
+  background: var(--foreground);
+  color: var(--brand);
+}
+
+.token[data-tone="green"] {
+  border-color: var(--success);
+  box-shadow: 2px 2px 0 var(--success);
+  color: var(--success);
+}
+
+.token[data-tone="red"] {
+  border-color: var(--stamp);
+  box-shadow: 2px 2px 0 var(--stamp);
+  color: var(--stamp);
+}
+
+.token[data-ghost="true"] {
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.token[data-mono="true"] {
+  font-family: var(--font-code), ui-monospace, SFMono-Regular, monospace;
+  font-weight: 600;
+}
+
+@media (min-width: 48rem) {
+  .stage {
+    grid-template-columns: none;
+    grid-template-rows: auto 10rem;
+    padding: 1.75rem 1.5rem 0.75rem;
+  }
+
+  .actors {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
+
+  .actor {
+    gap: 0.4rem;
+    padding: 0 0.5rem;
+  }
+
+  .face {
+    width: 5rem;
+    height: 5rem;
+    border-radius: 1.375rem;
+  }
+
+  .actor[data-active="true"] .face {
+    translate: 0 -4px;
+    box-shadow: 0 5px 0 var(--foreground);
+  }
+
+  .wordmark {
+    font-size: 1.125rem;
+  }
+
+  .name {
+    margin-top: 0.25rem;
+    font-size: 0.9375rem;
+  }
+
+  .role {
+    display: block;
+  }
+
+  .lane {
+    margin-top: 0.75rem;
+  }
+
+  .lifeline {
+    top: 0;
+    bottom: 0.5rem;
+    left: calc(var(--i) * 25% + 12.5%);
+    right: auto;
+    border-top: 0;
+    border-left: 1.5px dashed var(--ink-soft);
+  }
+
+  .rider {
+    --x-from: var(--p-from);
+    --x-via: var(--p-via);
+    --x-to: var(--p-to);
+    --y-from: 0%;
+    --y-via: 0%;
+    --y-to: 0%;
+  }
+
+  .token {
+    top: calc(var(--row) * 2.875rem + 0.5rem);
+    translate: -50% 0;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.875rem;
+  }
+}
+
+/* Motion. Longhands only: the keyframe names are local to this module, and a shorthand that
+   holds var() may not be rewritten. Durations and delays come from how-scene.tsx. */
+@media (prefers-reduced-motion: no-preference) {
+  .rider[data-kind="fly"],
+  .rider[data-kind="hop"] {
+    animation-duration: var(--dur);
+    animation-delay: var(--delay);
+    animation-timing-function: var(--ease);
+    animation-fill-mode: both;
+  }
+
+  .rider[data-kind="fly"] {
+    animation-name: fly;
+  }
+
+  .rider[data-kind="hop"] {
+    animation-name: hop;
+  }
+
+  .rider[data-kind="pop"] .token {
+    animation-name: pop;
+    animation-duration: var(--dur);
+    animation-delay: var(--delay);
+    animation-timing-function: var(--ease);
+    animation-fill-mode: both;
+  }
+
+  .actor[data-active="true"] .face > * {
+    animation-name: wake;
+    animation-duration: 360ms;
+    animation-timing-function: var(--ease);
+  }
+
+  .captionIn {
+    animation-name: rise;
+    animation-duration: 320ms;
+    animation-timing-function: var(--ease);
+    animation-fill-mode: both;
+  }
+}
+
+@keyframes fly {
+  0% {
+    translate: var(--x-from) var(--y-from);
+    opacity: 0;
+  }
+  12% {
+    translate: var(--x-from) var(--y-from);
+    opacity: 1;
+  }
+  100% {
+    translate: var(--x-to) var(--y-to);
+    opacity: 1;
+  }
+}
+
+@keyframes hop {
+  0% {
+    translate: var(--x-from) var(--y-from);
+    opacity: 0;
+  }
+  7% {
+    translate: var(--x-from) var(--y-from);
+    opacity: 1;
+  }
+  44%,
+  58% {
+    translate: var(--x-via) var(--y-via);
+    opacity: 1;
+  }
+  100% {
+    translate: var(--x-to) var(--y-to);
+    opacity: 1;
+  }
+}
+
+@keyframes pop {
+  0% {
+    scale: 0.4;
+    opacity: 0;
+  }
+  70% {
+    scale: 1.12;
+    opacity: 1;
+  }
+  100% {
+    scale: 1;
+    opacity: 1;
+  }
+}
+
+@keyframes wake {
+  from {
+    scale: 0.85;
+  }
+  to {
+    scale: 1;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    translate: 0 0.375rem;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.iconButton {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1.5px solid var(--foreground);
+  border-radius: 0.5rem;
+  background: var(--card);
+}
+
+.iconButton[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill,
+  .dot,
+  .actor,
+  .face {
+    transition: none;
+  }
+}

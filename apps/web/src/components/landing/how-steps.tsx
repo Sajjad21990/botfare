@@ -1,20 +1,22 @@
 import { DEMO_SITE_NAME, DEMO_SITE_PRICING, type PricingRule } from "@botfare/contracts";
 import { DISPUTE_POLICY } from "@botfare/contracts/fare";
-import { ArrowRightIcon, CheckIcon } from "lucide-react";
+import { ArrowRightIcon, CheckIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { BotFareMark } from "@/components/brand/bot-fare-mark";
-import { FareAdvisorMark } from "@/components/brand/fare-advisor-mark";
-import { FareCourtMark } from "@/components/brand/fare-court-mark";
+import { BotFareMark } from "../brand/bot-fare-mark";
+import { FareAdvisorMark } from "../brand/fare-advisor-mark";
+import { FareCourtMark } from "../brand/fare-court-mark";
 import { Stamp } from "./ai-cards";
-import { type FlowStep, HowFlow } from "./how-flow";
+import { HowScene, type SceneStep } from "./how-scene";
 import styles from "./landing.module.css";
 import { NewTabLink } from "./new-tab-link";
 
-/* One 2¢ recipe from price to payout. The figures are the demo's real ones: prices from
+/* One 2¢ recipe from price to payout, as an animated scene (how-scene.tsx): a one-line caption
+   and what passes between the agent, the site, BotFare and PayPal in each step, with the exact
+   facts under Show the details. The figures are the demo's real ones: prices from
    DEMO_SITE_PRICING, the seeded research key's limits (10¢ a page, $10.00 a day), the dal recipe's
    title and the start of its 402 preview (apps/demo previewFor: the article's lead, not the
-   front-matter excerpt), DISPUTE_POLICY's window, the 95/5 split, and the cookbook
-   decline from the seeded Fare Advisor story. */
+   front-matter excerpt), DISPUTE_POLICY's window and confidence, the 95/5 split, and the
+   cookbook decline from the seeded Fare Advisor story. */
 
 /** Short names for Saffron & Salt's priced paths. */
 const PRICE_LABELS: Record<string, string> = {
@@ -233,10 +235,14 @@ function Suggestion() {
   );
 }
 
-const steps: FlowStep[] = [
+/** The eight steps, exported for the tests (caption length, Play's running time). */
+export const HOW_STEPS: SceneStep[] = [
   {
-    actor: "Site",
-    title: "The site sets its prices.",
+    label: "Price",
+    caption: "The site prices a recipe at 2¢.",
+    note: "People read free. Only AI agents pay.",
+    active: ["site"],
+    moves: [{ label: "Recipe · 2¢", tone: "yellow", to: "site", row: 0 }],
     detail: (
       <>
         <PriceList />
@@ -245,8 +251,11 @@ const steps: FlowStep[] = [
     ),
   },
   {
-    actor: "Agent",
-    title: "An AI agent asks for a page.",
+    label: "Ask",
+    caption: "An AI agent asks for the dal recipe.",
+    note: "BotFare on the site sees an agent, not a person.",
+    active: ["agent", "site"],
+    moves: [{ label: "GET /recipes/…", mono: true, from: "agent", to: "site", row: 0 }],
     detail: (
       <>
         <Wire>
@@ -258,8 +267,11 @@ const steps: FlowStep[] = [
     ),
   },
   {
-    actor: "Site",
-    title: "The site replies 402 Payment Required.",
+    label: "402",
+    caption: "The site answers 402: this page costs 2¢.",
+    note: "The offer and a short preview are free to read.",
+    active: ["site", "agent"],
+    moves: [{ label: "402 · 2¢ · preview", tone: "yellow", from: "site", to: "agent", row: 1 }],
     detail: (
       <>
         <Offer />
@@ -268,8 +280,24 @@ const steps: FlowStep[] = [
     ),
   },
   {
-    actor: "Agent",
-    title: "The agent decides, then pays.",
+    label: "Pay",
+    caption: "The agent signs 2¢. BotFare checks it.",
+    note: "It pays from a wallet topped up with PayPal, 10¢ a page at most.",
+    active: ["agent", "site", "botfare"],
+    moves: [
+      { label: "signed 2¢", tone: "ink", from: "agent", via: "site", to: "botfare", row: 0 },
+      {
+        label: (
+          <>
+            <CheckIcon aria-hidden /> valid
+          </>
+        ),
+        tone: "green",
+        to: "botfare",
+        row: 1,
+        delay: 1850,
+      },
+    ],
     detail: (
       <>
         <Decision />
@@ -281,8 +309,25 @@ const steps: FlowStep[] = [
     ),
   },
   {
-    actor: "BotFare",
-    title: "The page arrives with a signed receipt.",
+    label: "Receipt",
+    caption: "The page arrives with a signed receipt.",
+    note: "The 2¢ is charged only after the page arrives.",
+    active: ["botfare", "site", "agent"],
+    moves: [
+      { label: "Dal recipe", from: "site", to: "agent", row: 0 },
+      {
+        label: (
+          <>
+            PAID <CheckIcon aria-hidden />
+          </>
+        ),
+        tone: "green",
+        from: "botfare",
+        to: "agent",
+        row: 1,
+        delay: 500,
+      },
+    ],
     detail: (
       <>
         <MiniReceipt />
@@ -294,13 +339,57 @@ const steps: FlowStep[] = [
     ),
   },
   {
-    actor: "Agent",
-    title: "Was it what the preview promised?",
+    label: "Check",
+    caption: "Not what the preview promised? Fare Court refunds it.",
+    note: "Clear cases are refunded at once. Close calls go to the site.",
+    active: ["agent", "botfare"],
+    botfareAs: "court",
+    moves: [
+      {
+        label: (
+          <>
+            <CheckIcon aria-hidden /> as promised
+          </>
+        ),
+        tone: "green",
+        to: "agent",
+        row: 0,
+      },
+      {
+        label: (
+          <>
+            <XIcon aria-hidden /> dispute
+          </>
+        ),
+        tone: "red",
+        ghost: true,
+        from: "agent",
+        to: "botfare",
+        row: 1,
+        delay: 700,
+      },
+      {
+        label: "refunded 2¢",
+        tone: "red",
+        ghost: true,
+        from: "botfare",
+        to: "agent",
+        row: 2,
+        delay: 1700,
+      },
+    ],
     detail: <Fork />,
   },
   {
-    actor: "BotFare",
-    title: "The money settles.",
+    label: "Settle",
+    caption: "95% goes to the site, paid out through PayPal.",
+    note: `Earnings clear after the ${DISPUTE_POLICY.windowHours}-hour dispute window.`,
+    active: ["botfare", "site", "paypal"],
+    moves: [
+      { label: "1.9¢ · 95%", tone: "yellow", from: "botfare", to: "site", row: 0 },
+      { label: "0.1¢ · 5%", to: "botfare", row: 1, delay: 300 },
+      { label: "Payout", tone: "ink", from: "botfare", to: "paypal", row: 2, delay: 1100 },
+    ],
     detail: (
       <>
         <Split />
@@ -312,8 +401,26 @@ const steps: FlowStep[] = [
     ),
   },
   {
-    actor: "BotFare",
-    title: "Fare Advisor suggests a new price.",
+    label: "Advise",
+    caption: "Fare Advisor turns skip reasons into a better price.",
+    note: "Nothing changes until the site clicks Apply.",
+    active: ["agent", "botfare", "site"],
+    botfareAs: "advisor",
+    moves: [
+      { label: "skipped: not worth 50¢", from: "agent", to: "botfare", row: 0 },
+      {
+        label: (
+          <>
+            <s className="decoration-stamp decoration-2 opacity-60">50¢</s> 8¢
+          </>
+        ),
+        tone: "yellow",
+        from: "botfare",
+        to: "site",
+        row: 1,
+        delay: 1100,
+      },
+    ],
     detail: (
       <>
         <Suggestion />
@@ -323,22 +430,18 @@ const steps: FlowStep[] = [
   },
 ];
 
-/** How it works: the eight steps of one paid page, on a rail the visitor can open or play. */
+/** How it works: one paid page as an animated scene the visitor can step through or play. */
 export function HowSteps() {
   return (
     <section id="how" aria-labelledby="how-title" className={`${styles.anchor} border-b`}>
-      <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <HowFlow
-          steps={steps}
-          header={
-            <>
-              <h2 id="how-title" className="text-3xl leading-tight font-extrabold sm:text-4xl">
-                How it works
-              </h2>
-              <p className="mt-3 text-lg leading-relaxed">One 2¢ recipe, from price to payout.</p>
-            </>
-          }
-        />
+      <div className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6 sm:py-20">
+        <h2 id="how-title" className="text-3xl leading-tight font-extrabold sm:text-4xl">
+          How it works
+        </h2>
+        <p className="mt-3 mb-8 text-lg leading-relaxed sm:mb-10">
+          One 2¢ recipe, from price to payout.
+        </p>
+        <HowScene steps={HOW_STEPS} siteName={DEMO_SITE_NAME} />
       </div>
     </section>
   );
