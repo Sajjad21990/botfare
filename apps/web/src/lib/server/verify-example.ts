@@ -5,31 +5,38 @@ import {
   DEMO_SITE_NAME,
   DEMO_SITE_PRICING,
   findPricingRule,
+  LEGACY_DEMO_PUBLISHER_EMAILS,
+  LEGACY_DEMO_SITE_NAMES,
 } from "@botfare/contracts";
 import { type DbHandle, getReceiptKeyring, receiptJwks } from "@botfare/core";
 import { getDbHandle } from "./db";
 
 /**
- * The receipt /verify opens with when the link names none, so a visitor sees a real verified
- * receipt without hunting for an ID.
+ * The sample receipt /verify opens with when the link names none, so a visitor sees a real receipt
+ * verify without hunting for an ID.
  *
- * It is the latest clean purchase on Saffron & Salt, the seeded demo site (the oldest site named
- * DEMO_SITE_NAME owned by the publisher persona, as core's judge-mode reset finds it; only the demo
- * server holds its secret, so every receipt on it is a real purchase from apps/demo):
+ * It comes from Saffron & Salt, the seeded demo site: the publisher persona's oldest site named
+ * DEMO_SITE_NAME, or, on a database seeded before the rename, its oldest site under a name in
+ * LEGACY_DEMO_SITE_NAMES (the persona's email may still be one of LEGACY_DEMO_PUBLISHER_EMAILS).
+ * Its receipts are real ledger charges, signed as they settled: agents paying apps/demo (only the
+ * demo server holds the site's secret) and seed:traffic's demo traffic. The receipt must be:
  *
- * - settled, never refunded, no refund statement and no dispute of any status;
- * - a payment and a delivery statement stored, both signed by a key in today's public JWKS, so the
- *   example verifies in the browser;
- * - a resource URL with no query string or fragment (the buyer picks those, and every visitor sees
- *   the example), and not the Fare Court stub recipe (paying agents get a subscribe stub there);
- *   a page (a recipe, technique, meal plan or cookbook chapter) is preferred over the nutrition
- *   API;
- * - a path the demo still prices today, so the example's page link works (receipts from an earlier
- *   demo site, such as Crema Notes' /articles/*, are skipped).
+ * - settled, never refunded, with no refund statement and no dispute of any status;
+ * - signed: its payment statement by a key in today's public JWKS, so it verifies in the browser;
+ * - for a URL with no query string or fragment (the buyer picks those, and every visitor sees the
+ *   sample), and not the Fare Court stub recipe (paying agents get a subscribe stub there);
+ * - for a path the demo still prices today, so the page link works (receipts from an earlier demo
+ *   site, such as Crema Notes' /articles/*, are skipped).
+ *
+ * Two tiers, newest first in each. A fully attested receipt (a delivery statement signed by a
+ * published key too) always wins. Only when there is none does a receipt with a payment statement
+ * and no delivery statement at all qualify: seed:traffic purchases look like that (it attests only
+ * its Fare Court stub purchases, which never qualify). Within a tier a page (a recipe, technique,
+ * meal plan or cookbook chapter) is preferred over the nutrition API.
  *
  * Statements are public already (GET /api/receipts/:id/statements); this returns only an ID. The
  * lookup is cached in memory for EXAMPLE_CACHE_MS and gives up after LOOKUP_TIMEOUT_MS, so /verify
- * stays one cheap render. Any failure means no example: the page then renders as it always did.
+ * stays one cheap render. Any failure means no sample: the page then renders as it always did.
  */
 
 /** apps/demo's FARE_COURT_STUB_PATH: paying agents are served a subscribe stub there. */
@@ -40,21 +47,26 @@ const API_PREFIX = "/api/";
 
 export const EXAMPLE_CACHE_MS = 60_000;
 const LOOKUP_TIMEOUT_MS = 2_000;
-/** Newest qualifying receipts read per lookup; the stub filter runs on these. */
-const CANDIDATES = 100;
+/**
+ * Newest qualifying receipts read per tier; the path filters run on these. Generous, so a backlog
+ * of an earlier demo site's receipts cannot hide the current ones.
+ */
+const CANDIDATES = 500;
 
 type Sql = DbHandle["sql"];
 
 export interface ExampleQuery {
-  /** kids of the public JWKS: both statements must be signed by one of these keys. */
+  /** kids of the public JWKS: every statement the sample has must be signed by one of these keys. */
   kids: readonly string[];
   /** Owner of the demo site (the publisher persona by default; tests use their own user). */
   publisherEmail?: string;
+  /** The owner's earlier emails (LEGACY_DEMO_PUBLISHER_EMAILS by default; tests use their own). */
+  legacyEmails?: readonly string[];
 }
 
 /**
  * The URL's path, or null when it does not parse or carries a query or fragment. Whoever buys
- * chooses the query string, and the example is shown to every visitor, so only plain paths qualify.
+ * chooses the query string, and the sample is shown to every visitor, so only plain paths qualify.
  */
 function plainPathOf(url: string): string | null {
   try {
@@ -66,24 +78,51 @@ function plainPathOf(url: string): string | null {
   }
 }
 
-/** The example receipt's ID, or null when the demo site has no clean, attested purchase. */
-export async function findExampleReceiptId(sql: Sql, query: ExampleQuery): Promise<string | null> {
-  const kids = [...new Set(query.kids)];
-  if (kids.length === 0) return null;
-  const email = query.publisherEmail ?? DEMO_PERSONAS.publisher.email;
+/**
+ * The demo site's ID: a site named DEMO_SITE_NAME before one under a legacy name, the persona's
+ * current email before a legacy one, then the oldest. Null when there is none.
+ */
+async function findDemoSiteId(
+  sql: Sql,
+  email: string,
+  legacyEmails: readonly string[],
+): Promise<string | null> {
+  const [site] = await sql<{ id: string }[]>`
+    select s.id
+    from sites s
+    join users u on u.id = s.owner_user_id
+    where u.email in ${sql([...new Set([email, ...legacyEmails])])}
+      and s.name in ${sql([DEMO_SITE_NAME, ...LEGACY_DEMO_SITE_NAMES])}
+    order by (s.name = ${DEMO_SITE_NAME}) desc, (u.email = ${email}) desc, s.created_at, s.id
+    limit 1
+  `;
+  return site?.id ?? null;
+}
 
+/**
+ * The best receipt of one tier: attested (payment and delivery statements, both signed by a
+ * published key) or paid (a payment statement signed by a published key and no delivery statement,
+ * so nothing on the page fails to verify).
+ */
+async function findInTier(
+  sql: Sql,
+  siteId: string,
+  kids: readonly string[],
+  tier: "attested" | "paid",
+): Promise<string | null> {
+  const delivery =
+    tier === "attested"
+      ? sql`exists (
+          select 1 from receipt_statements d
+          where d.receipt_id = r.id and d.kind = 'delivery' and d.kid in ${sql(kids)}
+        )`
+      : sql`not exists (
+          select 1 from receipt_statements d where d.receipt_id = r.id and d.kind = 'delivery'
+        )`;
   const rows = await sql<{ id: string; resource_url: string }[]>`
-    with demo_site as (
-      select s.id
-      from sites s
-      join users u on u.id = s.owner_user_id
-      where u.email = ${email} and s.name = ${DEMO_SITE_NAME}
-      order by s.created_at, s.id
-      limit 1
-    )
     select r.id, r.resource_url
     from receipts r
-    where r.site_id = (select id from demo_site)
+    where r.site_id = ${siteId}
       and r.status = 'settled'
       and r.refund_transaction_id is null
       and r.resource_url is not null
@@ -91,10 +130,7 @@ export async function findExampleReceiptId(sql: Sql, query: ExampleQuery): Promi
         select 1 from receipt_statements p
         where p.receipt_id = r.id and p.kind = 'payment' and p.kid in ${sql(kids)}
       )
-      and exists (
-        select 1 from receipt_statements d
-        where d.receipt_id = r.id and d.kind = 'delivery' and d.kid in ${sql(kids)}
-      )
+      and ${delivery}
       and not exists (
         select 1 from receipt_statements x where x.receipt_id = r.id and x.kind = 'refund'
       )
@@ -104,16 +140,35 @@ export async function findExampleReceiptId(sql: Sql, query: ExampleQuery): Promi
   `;
 
   const demo = { pricing: DEMO_SITE_PRICING, freePaths: DEMO_SITE_FREE_PATHS };
-  const candidates = rows.filter((row) => {
+  const candidates = rows.flatMap((row) => {
     const path = plainPathOf(row.resource_url);
-    return (
-      path !== null &&
+    return path !== null &&
       path !== FARE_COURT_STUB_PATH &&
       findPricingRule(demo, "GET", path) !== undefined
-    );
+      ? [{ id: row.id, path }]
+      : [];
   });
-  const page = candidates.find((row) => !plainPathOf(row.resource_url)?.startsWith(API_PREFIX));
+  const page = candidates.find((candidate) => !candidate.path.startsWith(API_PREFIX));
   return (page ?? candidates[0])?.id ?? null;
+}
+
+/**
+ * The sample receipt's ID: the best attested purchase on the demo site, else the best purchase
+ * with only a payment statement. Null when the demo site has neither.
+ */
+export async function findExampleReceiptId(sql: Sql, query: ExampleQuery): Promise<string | null> {
+  const kids = [...new Set(query.kids)];
+  if (kids.length === 0) return null;
+  const siteId = await findDemoSiteId(
+    sql,
+    query.publisherEmail ?? DEMO_PERSONAS.publisher.email,
+    query.legacyEmails ?? LEGACY_DEMO_PUBLISHER_EMAILS,
+  );
+  if (!siteId) return null;
+  return (
+    (await findInTier(sql, siteId, kids, "attested")) ??
+    (await findInTier(sql, siteId, kids, "paid"))
+  );
 }
 
 interface CachedExample {
@@ -126,7 +181,7 @@ const globalForExample = globalThis as typeof globalThis & {
   __botfareVerifyExample?: CachedExample;
 };
 
-/** Forgets the cached example (tests). */
+/** Forgets the cached sample (tests). */
 export function resetExampleReceiptCache(): void {
   globalForExample.__botfareVerifyExample = undefined;
 }
@@ -140,7 +195,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
- * The example receipt for /verify (cached for EXAMPLE_CACHE_MS). Null when there is none or the
+ * The sample receipt for /verify (cached for EXAMPLE_CACHE_MS). Null when there is none or the
  * lookup failed; a failure is logged and not cached.
  */
 export async function exampleReceiptId(

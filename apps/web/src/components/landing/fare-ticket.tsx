@@ -32,13 +32,15 @@ export function FareTicket() {
             <dd className="text-lg font-semibold">Research agent</dd>
             <dt className="text-sm text-muted-foreground">Paid to</dt>
             <dd className="min-w-0">
-              <span className="block text-lg font-semibold">Saffron &amp; Salt</span>
+              <span className="block text-lg font-semibold whitespace-nowrap">
+                Saffron &amp; Salt
+              </span>
               <NewTabLink
                 href={DEMO_RECIPE_URL}
                 icon={<ArrowUpRightIcon aria-hidden className="ml-0.5 inline size-3.5" />}
-                className={`${styles.focusRing} ${styles.mono} rounded-sm text-[0.8125rem] break-all underline decoration-foreground/40 underline-offset-4 hover:decoration-foreground`}
+                className={`${styles.focusRing} inline-flex items-center rounded-sm text-sm font-medium whitespace-nowrap underline decoration-foreground/40 underline-offset-4 hover:decoration-foreground`}
               >
-                /recipes/weeknight-red-lentil-dal
+                Lentil dal recipe
               </NewTabLink>
             </dd>
           </dl>
@@ -67,7 +69,8 @@ export function FareTicket() {
         </div>
 
         <p className="border-t-[1.5px] border-dashed border-foreground/35 px-6 py-3 text-sm font-medium">
-          The site keeps 95%. Agents have 24 hours to dispute.
+          <span className="block">The site keeps 95%.</span>{" "}
+          <span className="block">Agents have 24 hours to dispute.</span>
         </p>
       </NotchedTicket>
     </figure>

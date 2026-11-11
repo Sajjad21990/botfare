@@ -1,11 +1,12 @@
 /**
- * /verify's example receipt: the latest clean, attested purchase on the demo site (Saffron & Salt,
- * owned by the publisher persona). Each test uses its own publisher email, so receipts other test
- * files leave in botfare_test never match. `ledger.charge` takes any resource URL, so paths that
- * the real demo would never settle (a bare /api/nutrition) still work as fixtures.
+ * /verify's sample receipt: the latest clean purchase on the demo site (Saffron & Salt, or Crema
+ * Notes before the rename, owned by the publisher persona), attested if any is, else one with only
+ * a payment statement. Each test uses its own publisher email, so receipts other test files leave
+ * in botfare_test never match. `ledger.charge` takes any resource URL, so paths that the real demo
+ * would never settle (a bare /api/nutrition) still work as fixtures.
  */
 import { readdir, readFile } from "node:fs/promises";
-import { DEMO_SITE_NAME } from "@botfare/contracts";
+import { DEMO_SITE_NAME, LEGACY_DEMO_SITE_NAMES } from "@botfare/contracts";
 import { contentDigestSha256 } from "@botfare/contracts/fare";
 import {
   attestReceipt,
@@ -35,6 +36,7 @@ import { makeAgent, useTestDatabase } from "./helpers";
 vi.mock("server-only", () => ({}));
 
 const ORIGIN = "https://saffron-and-salt.example";
+const LEGACY_NAME = LEGACY_DEMO_SITE_NAMES[0] as string;
 const ARTICLE = "<h1>Red lentil dal</h1><p>Rinse the lentils, then simmer for 20 minutes.</p>";
 
 let keyring: ReceiptKeyring;
@@ -65,9 +67,8 @@ function uniqueEmail(): string {
 }
 
 /** A publisher with a site named like the demo site, an agent that pays it, and a fixed clock. */
-async function demoWorld(name = DEMO_SITE_NAME) {
+async function demoWorld(name = DEMO_SITE_NAME, email = uniqueEmail()) {
   const db = getDb();
-  const email = uniqueEmail();
   const publisher = await createUser(db, { email, name: "Verify example publisher" });
   const { site } = await createSite(db, {
     ownerUserId: publisher.id,
@@ -80,9 +81,13 @@ async function demoWorld(name = DEMO_SITE_NAME) {
   let clock = Date.now() - 10 * 60_000;
   const ledger = new PostgresPrepaidLedger(db, { keyring, now: () => new Date(clock) });
 
+  /**
+   * A purchase of `path`: a payment statement, plus a delivery statement unless `attest` is false.
+   * `deliveryKeyring` signs the delivery statement with another key (one not in `kids`).
+   */
   async function buy(
     path: string,
-    options: { attest?: boolean; siteId?: string } = {},
+    options: { attest?: boolean; siteId?: string; deliveryKeyring?: ReceiptKeyring } = {},
   ): Promise<string> {
     const siteId = options.siteId ?? site.id;
     clock += 1_000;
@@ -97,22 +102,44 @@ async function demoWorld(name = DEMO_SITE_NAME) {
     });
     if (!charged.ok) throw new Error(`charge failed: ${charged.message}`);
     if (options.attest ?? true) {
+      const contentDigest = await contentDigestSha256(ARTICLE);
+      if (options.deliveryKeyring) setReceiptKeyring(options.deliveryKeyring);
       const attested = await attestReceipt(db, {
         siteId,
         receiptId: charged.transaction,
         attestation: {
-          contentDigest: await contentDigestSha256(ARTICLE),
+          contentDigest,
           contentLength: ARTICLE.length,
           contentType: "text/html; charset=utf-8",
           status: 200,
         },
-      });
+      }).finally(() => setReceiptKeyring(keyring));
       if (!attested.ok) throw new Error(`attest failed: ${attested.message}`);
     }
     return charged.transaction;
   }
 
-  return { db, email, publisher, site, agent, buy };
+  /** Another site of the same publisher. */
+  async function addSite(siteName: string) {
+    const { site: added } = await createSite(db, {
+      ownerUserId: publisher.id,
+      name: siteName,
+      origin: "https://another.example",
+      pricing: [{ pattern: "/recipes/*", priceCents: 2 }],
+    });
+    return added;
+  }
+
+  return { db, email, publisher, site, agent, buy, addSite };
+}
+
+/** A receipt keyring whose keys are not in `kids`. */
+async function otherKeyring(): Promise<ReceiptKeyring> {
+  return receiptKeyringFromEnv({
+    BOTFARE_RECEIPT_KEY_SEED: "some-other-receipt-seed-0123456789-abcdefgh",
+    BOTFARE_URL: "https://botfare.example",
+    NODE_ENV: "test",
+  });
 }
 
 describe("findExampleReceiptId", () => {
@@ -203,12 +230,8 @@ describe("findExampleReceiptId", () => {
     const { sql } = getDbHandle();
     const world = await demoWorld();
     await world.buy("/recipes/weeknight-red-lentil-dal");
-    const other = await receiptKeyringFromEnv({
-      BOTFARE_RECEIPT_KEY_SEED: "some-other-receipt-seed-0123456789-abcdefgh",
-      BOTFARE_URL: "https://botfare.example",
-      NODE_ENV: "test",
-    });
-    const otherKids = receiptJwks(other).keys.map((jwk) => jwk.kid as string);
+    await world.buy("/recipes/crispy-oven-potatoes", { attest: false });
+    const otherKids = receiptJwks(await otherKeyring()).keys.map((jwk) => jwk.kid as string);
     expect(
       await findExampleReceiptId(sql, { kids: otherKids, publisherEmail: world.email }),
     ).toBeNull();
@@ -232,6 +255,110 @@ describe("findExampleReceiptId", () => {
     const renamed = await demoWorld("Saffron & Salt (copy)");
     await renamed.buy("/recipes/weeknight-red-lentil-dal");
     expect(await findExampleReceiptId(sql, { kids, publisherEmail: renamed.email })).toBeNull();
+  });
+
+  it("finds the demo site under its legacy name and the publisher's legacy email", async () => {
+    const { sql } = getDbHandle();
+    // A database seeded before the rename: Crema Notes, owned by the persona's old email.
+    const legacyEmail = uniqueEmail();
+    const world = await demoWorld(LEGACY_NAME, legacyEmail);
+    const bought = await world.buy("/recipes/weeknight-red-lentil-dal");
+    const query = { kids, publisherEmail: uniqueEmail(), legacyEmails: [legacyEmail] };
+    expect(await findExampleReceiptId(sql, query)).toBe(bought);
+
+    // Without the legacy email, nothing is found.
+    expect(
+      await findExampleReceiptId(sql, { kids, publisherEmail: uniqueEmail(), legacyEmails: [] }),
+    ).toBeNull();
+    // Under the current email, the legacy name is enough.
+    const current = await demoWorld(LEGACY_NAME);
+    const ours = await current.buy("/recipes/crispy-oven-potatoes");
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: current.email })).toBe(ours);
+  });
+
+  it("prefers a site named Saffron & Salt to an older one under the legacy name", async () => {
+    const { sql } = getDbHandle();
+    const world = await demoWorld(LEGACY_NAME);
+    await world.buy("/recipes/weeknight-red-lentil-dal");
+    const renamed = await world.addSite(DEMO_SITE_NAME);
+    const current = await world.buy("/recipes/crispy-oven-potatoes", { siteId: renamed.id });
+    // Newer, but on the legacy site: ignored.
+    await world.buy("/techniques/tempering-spices");
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(current);
+
+    // The current email's site wins over a legacy email's site with the same name.
+    const legacyEmail = uniqueEmail();
+    const legacy = await demoWorld(DEMO_SITE_NAME, legacyEmail);
+    await legacy.buy("/recipes/weeknight-red-lentil-dal");
+    const persona = await demoWorld();
+    const personaReceipt = await persona.buy("/recipes/crispy-oven-potatoes");
+    await legacy.buy("/recipes/one-pan-lemon-chicken-rice");
+    expect(
+      await findExampleReceiptId(sql, {
+        kids,
+        publisherEmail: persona.email,
+        legacyEmails: [legacyEmail],
+      }),
+    ).toBe(personaReceipt);
+  });
+
+  it("skips receipts for paths the demo no longer prices, such as Crema Notes' /articles/*", async () => {
+    const { sql } = getDbHandle();
+    const world = await demoWorld(LEGACY_NAME);
+    await world.buy("/articles/dialing-in-espresso");
+    await world.buy("/articles/milk-steaming", { attest: false });
+    // Free on Saffron & Salt: a section index is never charged.
+    await world.buy("/recipes");
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBeNull();
+
+    const recipe = await world.buy("/recipes/weeknight-red-lentil-dal", { attest: false });
+    await world.buy("/articles/grinder-burrs", { attest: false });
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(recipe);
+
+    const attested = await world.buy("/techniques/tempering-spices");
+    await world.buy("/articles/water-chemistry");
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(attested);
+  });
+
+  it("falls back to a payment-only purchase only when none is attested", async () => {
+    const { sql } = getDbHandle();
+    const world = await demoWorld();
+    // seed:traffic purchases: a payment statement and no delivery statement.
+    await world.buy("/recipes/weeknight-red-lentil-dal", { attest: false });
+    const paid = await world.buy("/techniques/tempering-spices", { attest: false });
+    await world.buy("/api/nutrition", { attest: false });
+    // Newer, but the stub or refunded: skipped in this tier too.
+    await world.buy(FARE_COURT_STUB_PATH, { attest: false });
+    const refunded = await world.buy("/meal-plans/five-weeknight-dinners", { attest: false });
+    expect((await refundReceipt(world.db, { receiptId: refunded, siteId: world.site.id })).ok).toBe(
+      true,
+    );
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(paid);
+
+    // One attested purchase takes over, even an API call.
+    const attested = await world.buy("/api/nutrition");
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(attested);
+  });
+
+  it("prefers an attested purchase to a newer payment-only one", async () => {
+    const { sql } = getDbHandle();
+    const world = await demoWorld();
+    const attested = await world.buy("/recipes/weeknight-red-lentil-dal");
+    await world.buy("/recipes/crispy-oven-potatoes", { attest: false });
+    await world.buy("/cookbook/chapter-one", { attest: false });
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(attested);
+  });
+
+  it("never picks a receipt whose delivery statement would not verify", async () => {
+    const { sql } = getDbHandle();
+    const world = await demoWorld();
+    // Payment signed by a published key, delivery by another: neither tier takes it.
+    await world.buy("/recipes/weeknight-red-lentil-dal", { deliveryKeyring: await otherKeyring() });
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBeNull();
+
+    const paid = await world.buy("/recipes/crispy-oven-potatoes", { attest: false });
+    await world.buy("/techniques/tempering-spices", { deliveryKeyring: await otherKeyring() });
+    expect(await findExampleReceiptId(sql, { kids, publisherEmail: world.email })).toBe(paid);
   });
 
   it("names the same stub recipe as apps/demo", async () => {

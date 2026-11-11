@@ -14,7 +14,8 @@ export const metadata: Metadata = {
 
 /**
  * Public: anyone can check a receipt. The signatures are verified in the viewer's browser. Without
- * ?receipt, the page opens on a real example receipt from the demo site (lib/server/verify-example).
+ * ?receipt, the page opens on a real sample receipt from the demo site (lib/server/verify-example),
+ * whose banner says the browser checks its signatures.
  */
 export default async function VerifyPage({ searchParams }: PageProps<"/verify">) {
   const raw = (await searchParams).receipt;
@@ -54,8 +55,7 @@ export default async function VerifyPage({ searchParams }: PageProps<"/verify">)
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Verify a receipt</h1>
           <p className="max-w-2xl leading-relaxed text-muted-foreground">
             BotFare signs a statement when an agent pays, when the site delivers the page, and when
-            a fare is refunded. Your browser checks each signature against BotFare&apos;s public
-            key.
+            a fare is refunded.
           </p>
         </div>
         <ReceiptVerifier

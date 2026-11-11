@@ -177,7 +177,7 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
     <div className="flex flex-col gap-6">
       {showExample ? (
         <ExampleBanner
-          amount={state.status === "done" ? exampleAmount(state.outcome) : null}
+          outcome={state.status === "done" ? state.outcome : null}
           onCheckAnother={checkAnother}
         />
       ) : null}
@@ -257,7 +257,7 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
   );
 }
 
-/** The verified price of the example's payment statement, e.g. "3¢"; null until it verifies. */
+/** The verified price of the sample's payment statement, e.g. "2¢"; null until it verifies. */
 function exampleAmount(outcome: Outcome): string | null {
   for (const checked of outcome.statements) {
     const { result } = checked;
@@ -272,22 +272,27 @@ function exampleAmount(outcome: Outcome): string | null {
   return null;
 }
 
-/** Says the receipt on screen is the demo's example, with a way to clear it and check your own. */
+/**
+ * Says the receipt on screen is the demo's sample, with a way to clear it and check your own. A
+ * sample without a delivery statement (a seeded purchase) has only its payment signature to check.
+ */
 function ExampleBanner({
-  amount,
+  outcome,
   onCheckAnother,
 }: {
-  amount: string | null;
+  outcome: Outcome | null;
   onCheckAnother: () => void;
 }) {
+  const amount = outcome ? exampleAmount(outcome) : null;
+  const paymentOnly = outcome?.missing.includes("delivery") ?? false;
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-foreground/15 bg-ticket p-4 text-ticket-foreground sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm leading-relaxed">
         <span className="mr-2 inline-block rounded-sm border border-current px-1.5 py-px align-[0.1em] font-mono text-[0.7rem] font-semibold tracking-wider uppercase">
-          Example
+          Sample receipt
         </span>
-        A real {amount ? `${amount} ` : ""}purchase by an agent on Saffron &amp; Salt, our demo
-        recipe blog.
+        A real {amount ? `${amount} ` : ""}purchase on Saffron &amp; Salt, our demo recipe blog.
+        Your browser checks BotFare&apos;s {paymentOnly ? "payment signature" : "signatures"} below.
       </p>
       <Button type="button" variant="outline" className="shrink-0" onClick={onCheckAnother}>
         Check another receipt
