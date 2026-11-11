@@ -61,28 +61,37 @@
   right: -0.75rem;
 }
 
-/* Notches cut into a printed ticket (.printed): a paper half-circle with an ink edge, centred on
-   the ticket's outer edge (the parent row sits inside the 1.5px border). The right one is clipped
-   4px wider so it also bites through the hard offset shadow. */
-.cut {
-  position: absolute;
-  top: 50%;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 9999px;
-  background-color: var(--section-bg, var(--background));
-  border: 1.5px solid var(--foreground);
-  transform: translateY(-50%);
+/* The hero ticket (NotchedTicket): ticket yellow with two real cut-outs on the tear line. Each
+   mask layer covers one half and punches its notch; the holes stay transparent, so the page shows
+   through. --notch-y is measured from the tear line; 11rem is close enough for the first paint. */
+.notched {
+  --notch-r: 0.75rem;
+  --notch-y: 11rem;
+  --muted-foreground: #4a4334;
+  --border: #1c1a1640;
+  background-color: var(--brand);
+  border-radius: 1rem;
+  mask:
+    radial-gradient(
+      circle at 0 var(--notch-y),
+      #0000 var(--notch-r),
+      #000 calc(var(--notch-r) + 0.5px)
+    )
+    left / 51% 100% no-repeat,
+    radial-gradient(
+      circle at 100% var(--notch-y),
+      #0000 var(--notch-r),
+      #000 calc(var(--notch-r) + 0.5px)
+    )
+    right / 51% 100% no-repeat;
 }
 
-.cutLeft {
-  left: calc(-0.75rem - 1.5px);
-  clip-path: inset(0 0 0 50%);
-}
-
-.cutRight {
-  right: calc(-0.75rem - 1.5px);
-  clip-path: inset(0 calc(50% - 4px) 0 0);
+/* The ink edge (1.5px, drawn as four offset copies) and the hard 4px shadow both follow the cut
+   shape, notches included, because drop-shadow traces the masked ticket's alpha. */
+.notchedOutline {
+  filter: drop-shadow(1.5px 0 0 var(--foreground)) drop-shadow(-1.5px 0 0 var(--foreground))
+    drop-shadow(0 1.5px 0 var(--foreground)) drop-shadow(0 -1.5px 0 var(--foreground))
+    drop-shadow(4px 4px 0 var(--foreground));
 }
 
 /* Code on the landing: scrolls inside itself on a phone instead of widening the page. */

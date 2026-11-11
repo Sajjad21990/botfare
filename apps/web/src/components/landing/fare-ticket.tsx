@@ -1,5 +1,6 @@
 import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import styles from "./landing.module.css";
+import { NotchedTicket } from "./notched-ticket";
 
 /** The hero's example: one paid page drawn as a printed ticket. Purely illustrative. */
 export function FareTicket() {
@@ -8,7 +9,7 @@ export function FareTicket() {
       aria-label="Example ticket: a research agent paid Crema Notes 3¢ for one article"
       className="mx-auto w-full max-w-sm lg:rotate-2"
     >
-      <div className={`${styles.ticket} ${styles.printed} relative rounded-2xl`}>
+      <NotchedTicket>
         <div className="space-y-5 px-6 pt-5 pb-6">
           <div className="flex items-center justify-between text-sm">
             <span className="inline-flex items-center gap-1.5 font-heading font-extrabold">
@@ -33,11 +34,11 @@ export function FareTicket() {
           </dl>
         </div>
 
-        <div className="relative" aria-hidden>
-          <span className={`${styles.cut} ${styles.cutLeft}`} />
-          <span className={`${styles.cut} ${styles.cutRight}`} />
-          <div className="mx-6 border-t-2 border-dashed border-foreground/35" />
-        </div>
+        <div
+          aria-hidden
+          data-perforation
+          className="mx-6 border-t-2 border-dashed border-foreground/35"
+        />
 
         <div className="flex items-end justify-between gap-4 px-6 pt-5 pb-6">
           <div>
@@ -58,7 +59,7 @@ export function FareTicket() {
         <p className="border-t-[1.5px] border-dashed border-foreground/35 px-6 py-3 text-sm font-medium">
           Site keeps 95% · Refundable for 24 hours
         </p>
-      </div>
+      </NotchedTicket>
     </figure>
   );
 }
