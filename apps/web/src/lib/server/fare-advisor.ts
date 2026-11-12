@@ -173,7 +173,7 @@ export const ADVISOR_SYSTEM_PROMPT = [
   "Signals per pricing rule: offers (price offers shown to agents), paid (purchases), declined (agents' optional notes on why they did not buy, with a category and a short reason), cited (paid reads that an agent's answer actually used: citations are the new clicks), disputed (claims the page was not what its offer promised). Every count is at the rule's current priceCents only; signals from before a price change are left out.",
   "",
   `Return at most ${MAX_RECOMMENDATIONS} recommendations, the most valuable first, for rules where the evidence supports a change. Return an empty list if nothing is supported.`,
-  "- pattern: exactly one of the rule patterns in the input. currentPriceCents: that rule's priceCents.",
+  '- pattern (required in every recommendation): exactly one of the rule patterns in the input, e.g. "/cookbook/*". currentPriceCents: that rule\'s priceCents.',
   "- kind 'price': set suggestedPriceCents (whole cents, 1 to 10000). kind 'preview': set previewAdvice (how to make the free title and preview show what the page offers). kind 'audience': set suggestedAudience ('agents' or 'everyone'). kind 'keep': the price works; say why (for example, high paid and cited counts).",
   "- evidence: copy offers, paid, declined, cited and disputed exactly from that rule, and topReasons only from that rule's topReasons, with their exact text and counts. Quoted reasons that are not in the input are removed.",
   "- headline: one short sentence that leads with the key numbers, e.g. '0 of 23 agents bought at 50¢; 14 called it a thin listicle'. rationale: two to four plain sentences.",
@@ -451,6 +451,18 @@ export function projectWeeklyRevenue(
  * its own) and preview advice of any length (checked in checkOne).
  */
 const modelRecommendationSchema = advisorRecommendationSchema.extend({
+  // Models write "GET /cookbook/*", "cookbook/*" or a quoted path: keep the path, starting with "/".
+  pattern: z.preprocess(
+    (value) =>
+      typeof value === "string"
+        ? `/${value
+            .trim()
+            .replace(/^["'`]|["'`]$/g, "")
+            .replace(/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|ANY|\*)\s+/i, "")
+            .replace(/^\/+/, "")}`
+        : value,
+    z.string().startsWith("/").optional(),
+  ),
   currentPriceCents: z.unknown().optional(),
   projectedWeeklyRevenueDeltaCents: z.unknown().optional(),
   headline: z.string(),
@@ -479,20 +491,26 @@ const MAX_PREVIEW_ADVICE_CHARS = 400;
  * pattern has rules for several methods, the one whose counts the model copied wins, else the first.
  */
 function ruleFor(rec: ModelRecommendation, inputs: AdvisorInputs): AdvisorRuleStats | undefined {
-  const pattern = rec.pattern.trim();
-  const candidates = rulesForModel(inputs).filter((rule) => rule.pattern === pattern);
-  if (candidates.length <= 1) return candidates[0];
+  const rules = rulesForModel(inputs);
   const copied = rec.evidence;
-  return (
-    candidates.find(
-      (rule) =>
-        copied?.offers === rule.offers &&
-        copied.paid === rule.paid &&
-        copied.declined === rule.declined &&
-        copied.cited === rule.cited &&
-        copied.disputed === rule.disputed,
-    ) ?? candidates[0]
-  );
+  const sameCounts = (rule: AdvisorRuleStats) =>
+    copied?.offers === rule.offers &&
+    copied.paid === rule.paid &&
+    copied.declined === rule.declined &&
+    copied.cited === rule.cited &&
+    copied.disputed === rule.disputed;
+  const pattern = rec.pattern?.trim();
+  if (!pattern) {
+    // Some models leave the pattern out (the JSON schema is not strict). The rule is then the one
+    // and only rule whose counts the model copied, else the only one at the price it quoted.
+    const byCounts = rules.filter(sameCounts);
+    if (byCounts.length === 1) return byCounts[0];
+    const byPrice = rules.filter((rule) => rule.priceCents === rec.currentPriceCents);
+    return byCounts.length === 0 && byPrice.length === 1 ? byPrice[0] : undefined;
+  }
+  const candidates = rules.filter((rule) => rule.pattern === pattern);
+  if (candidates.length <= 1) return candidates[0];
+  return candidates.find(sameCounts) ?? candidates[0];
 }
 
 /**
@@ -524,6 +542,8 @@ function groundedReasons(quoted: unknown[], rule: AdvisorRuleStats): FunnelReaso
 export function checkRecommendations(
   raw: unknown,
   inputs: AdvisorInputs,
+  /** Called with a short reason for each discarded suggestion (for the server log). */
+  onDrop: (reason: string) => void = () => {},
 ): { recommendations: AdvisorRecommendationView[]; dropped: number } {
   const answer = answerSchema.safeParse(raw);
   if (!answer.success) return { recommendations: [], dropped: 0 };
@@ -533,12 +553,14 @@ export function checkRecommendations(
   for (const item of answer.data.recommendations) {
     if (kept.length >= MAX_RECOMMENDATIONS) {
       dropped += 1;
+      onDrop("over the limit");
       continue;
     }
-    const view = checkOne(item, inputs);
+    const view = checkOne(item, inputs, onDrop);
     const dedupe = view ? `${view.pattern} ${view.method} ${view.kind}` : "";
     if (!view || seen.has(dedupe)) {
       dropped += 1;
+      if (view) onDrop("duplicate");
       continue;
     }
     seen.add(dedupe);
@@ -553,12 +575,26 @@ export function checkRecommendations(
  * states a number that is not in the data. An ungrounded headline becomes "" (the dashboard writes
  * a plain one) and ungrounded advice on another kind is removed.
  */
-function checkOne(item: unknown, inputs: AdvisorInputs): AdvisorRecommendationView | null {
+function checkOne(
+  item: unknown,
+  inputs: AdvisorInputs,
+  why: (reason: string) => void = () => {},
+): AdvisorRecommendationView | null {
   const parsed = modelRecommendationSchema.safeParse(item);
-  if (!parsed.success) return null;
+  if (!parsed.success) {
+    why(
+      `shape: ${parsed.error.issues.map((i) => i.path.join(".")).join(",")} (keys ${
+        item && typeof item === "object" ? Object.keys(item).join(",") : typeof item
+      }; pattern ${JSON.stringify((item as { pattern?: unknown } | null)?.pattern)?.slice(0, 60)})`,
+    );
+    return null;
+  }
   const rec = parsed.data;
   const rule = ruleFor(rec, inputs);
-  if (!rule) return null;
+  if (!rule) {
+    why("unknown pattern");
+    return null;
+  }
 
   const view: AdvisorRecommendation = {
     pattern: rule.pattern,
@@ -580,16 +616,23 @@ function checkOne(item: unknown, inputs: AdvisorInputs): AdvisorRecommendationVi
   switch (rec.kind) {
     case "price":
       if (rec.suggestedPriceCents === undefined || rec.suggestedPriceCents === rule.priceCents) {
+        why("no price change");
         return null;
       }
       view.suggestedPriceCents = rec.suggestedPriceCents;
       break;
     case "audience":
-      if (!rec.suggestedAudience || rec.suggestedAudience === rule.audience) return null;
+      if (!rec.suggestedAudience || rec.suggestedAudience === rule.audience) {
+        why("no audience change");
+        return null;
+      }
       view.suggestedAudience = rec.suggestedAudience;
       break;
     case "preview":
-      if (!rec.previewAdvice?.trim()) return null;
+      if (!rec.previewAdvice?.trim()) {
+        why("preview without advice");
+        return null;
+      }
       view.previewAdvice = rec.previewAdvice.trim();
       break;
     case "keep":
@@ -602,10 +645,16 @@ function checkOne(item: unknown, inputs: AdvisorInputs): AdvisorRecommendationVi
   // Prose with a number that is not in the data is never shown.
   const suggested = view.suggestedPriceCents;
   const grounded = (text: string) => numbersAreGrounded(text, rule, inputs.days, suggested);
-  if (!grounded(view.rationale)) return null;
+  if (!grounded(view.rationale)) {
+    why("rationale number not in data");
+    return null;
+  }
   const adviceFits = (text: string) => text.length <= MAX_PREVIEW_ADVICE_CHARS && grounded(text);
   if (view.previewAdvice !== undefined && !adviceFits(view.previewAdvice)) {
-    if (view.kind === "preview") return null;
+    if (view.kind === "preview") {
+      why("preview advice number not in data");
+      return null;
+    }
     delete view.previewAdvice;
   }
   if (view.headline.length > 160 || !grounded(view.headline)) view.headline = "";
@@ -620,6 +669,7 @@ function checkOne(item: unknown, inputs: AdvisorInputs): AdvisorRecommendationVi
     (view.suggestedPriceCents ?? 0) > rule.priceCents &&
     view.projectedWeeklyRevenueDeltaCents <= 0
   ) {
+    why("price raise loses money");
     return null;
   }
   return {
@@ -792,9 +842,12 @@ async function askModel(
   if (!answerSchema.safeParse(raw).success) {
     return fail("Fare Advisor could not read the AI's answer.");
   }
-  const checked = checkRecommendations(raw, inputs);
+  const reasons: string[] = [];
+  const checked = checkRecommendations(raw, inputs, (reason) => reasons.push(reason));
   if (checked.dropped > 0) {
-    console.info(`[advisor] ${inputs.site.id}: dropped ${checked.dropped} unsupported suggestions`);
+    console.info(
+      `[advisor] ${inputs.site.id}: dropped ${checked.dropped} unsupported suggestions (${reasons.join("; ")})`,
+    );
   }
   return { ok: true, text, checked };
 }

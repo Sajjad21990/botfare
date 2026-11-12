@@ -679,3 +679,43 @@ describe("after a price change", () => {
     expect(response?.aiMessage).toMatch(/Prices changed recently/);
   });
 });
+
+describe("Fare Advisor pattern normalising", () => {
+  it("accepts a pattern written with a method, without the slash or in quotes", () => {
+    for (const pattern of [
+      "GET /articles/premium-*",
+      "articles/premium-*",
+      '"/articles/premium-*"',
+    ]) {
+      const { recommendations, dropped } = checkRecommendations(
+        { recommendations: [{ ...honest, pattern }] },
+        inputs,
+      );
+      expect(dropped, pattern).toBe(0);
+      expect(recommendations[0]?.pattern).toBe("/articles/premium-*");
+    }
+  });
+});
+
+describe("Fare Advisor without a pattern", () => {
+  it("finds the rule from the copied counts, and drops it when they fit no single rule", () => {
+    const { pattern: _omit, ...noPattern } = honest;
+    const found = checkRecommendations({ recommendations: [noPattern] }, inputs);
+    expect(found.dropped).toBe(0);
+    expect(found.recommendations[0]?.pattern).toBe("/articles/premium-*");
+    const lost = checkRecommendations(
+      {
+        recommendations: [
+          {
+            ...noPattern,
+            currentPriceCents: 777,
+            evidence: { ...noPattern.evidence, offers: 99_999 },
+          },
+        ],
+      },
+      inputs,
+    );
+    expect(lost.recommendations).toHaveLength(0);
+    expect(lost.dropped).toBe(1);
+  });
+});
