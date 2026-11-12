@@ -46,7 +46,7 @@ export function SandboxAccount({
         </div>
       )}
       <p className="mt-3 text-xs text-muted-foreground">
-        Demo accounts are shared with other judges, so prices reset when you sign in.
+        This PayPal test buyer is shared with other judges and holds only test money.
       </p>
     </section>
   );

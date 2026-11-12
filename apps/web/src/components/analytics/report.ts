@@ -42,7 +42,8 @@ export function toStudioSignalRow<T extends { createdAt: string; day: string }>(
   return { ...row, createdAt, day: localDay(createdAt) };
 }
 
-const USD = { format: "$#,##0.00##" };
+/** Prices are whole cents and the KPI tiles (Revenue, Average price) read best in cents. */
+const USD = { format: "$#,##0.00" };
 
 const fields: AgFieldDefinition[] = [
   {
@@ -426,13 +427,13 @@ export const initialReport: AgReportState<BotFareRegistry> = {
 /** Suggestions shown in the assistant before the first message. */
 export const PROMPT_STARTERS = [
   {
-    label: "Top pages this week",
-    prompt:
-      "Which pages earn the most from AI agents this week? Answer with the top pages and their revenue, then add a bar chart for it on this page.",
-  },
-  {
     label: "Who pays most",
     prompt: "Which agents spend the most on my sites, and how many requests does each make?",
+  },
+  {
+    label: "Top pages this week",
+    prompt:
+      "Which pages earn the most from AI agents this week? Answer with the top pages and their revenue.",
   },
   {
     label: "Revenue trend",

@@ -19,7 +19,7 @@ function S({ children }: { children: ReactNode }) {
 function Code({ children }: { children: ReactNode }) {
   return (
     <pre
-      className={`${styles.code} min-h-[8.5rem] rounded-xl bg-foreground px-4 py-4 text-xs leading-relaxed text-background sm:text-[0.8125rem] lg:text-xs`}
+      className={`${styles.code} rounded-xl break-words whitespace-pre-wrap sm:min-h-[8.5rem] sm:whitespace-pre bg-foreground px-4 py-4 text-xs leading-relaxed text-background sm:text-[0.8125rem] lg:text-xs`}
     >
       <code>{children}</code>
     </pre>

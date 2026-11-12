@@ -51,6 +51,9 @@ export function BalanceCard({
         <p className="rounded-lg bg-muted/60 px-3 py-2.5 text-sm text-muted-foreground">
           Your AI agents pay each page&apos;s price from this balance. The website keeps 95%,
           BotFare 5%.
+          {demoWallet
+            ? " This shared demo wallet goes back to $5.00 for each judge, so see what your agent spent under Spent today and Receipts."
+            : null}
         </p>
 
         <div className="mt-auto">
@@ -59,7 +62,7 @@ export function BalanceCard({
           {recent.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {demoWallet
-                ? "None yet. The demo wallet starts with $5.00 of test money; add more with PayPal."
+                ? "None yet. Add test money with the PayPal button."
                 : "None yet. Top up with PayPal to get your AI agents going."}
             </p>
           ) : (

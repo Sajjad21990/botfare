@@ -377,7 +377,7 @@ export function PayoutHistory({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="pl-(--card-spacing)">Amount</TableHead>
-                    <TableHead>Receiver</TableHead>
+                    <TableHead className="hidden sm:table-cell">Receiver</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>PayPal batch</TableHead>
                     <TableHead className="pr-(--card-spacing) text-right">Time</TableHead>
@@ -391,7 +391,7 @@ export function PayoutHistory({
                         <TableCell className="pl-(--card-spacing) font-medium tabular-nums">
                           {formatCents(payout.amountCents)}
                         </TableCell>
-                        <TableCell className="max-w-48 truncate text-muted-foreground">
+                        <TableCell className="hidden max-w-48 truncate text-muted-foreground sm:table-cell">
                           {payout.receiverEmail}
                         </TableCell>
                         <TableCell>

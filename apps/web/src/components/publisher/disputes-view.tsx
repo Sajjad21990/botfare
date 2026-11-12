@@ -37,7 +37,7 @@ import {
   statusMeta,
 } from "./disputes-format";
 import type { DisputeView, PublisherDecisionResult, PublisherDisputes } from "./disputes-types";
-import { formatDateTime } from "./format";
+import { LocalTime } from "./local-time";
 
 const REFRESH_MS = 15_000;
 
@@ -89,7 +89,7 @@ export function DisputesView({ initial }: { initial: PublisherDisputes }) {
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Publisher
+          Dashboard
         </Link>
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Disputes</h1>
@@ -280,7 +280,9 @@ function DisputeRow({ dispute, onOpen }: { dispute: DisputeView; onOpen: () => v
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-3 text-sm">
-          <span className="text-muted-foreground">{formatDateTime(dispute.createdAt)}</span>
+          <span className="text-muted-foreground">
+            <LocalTime iso={dispute.createdAt} />
+          </span>
           <span className="tabular-nums">{formatFare(dispute.amountCents)}</span>
           <Badge variant={status.variant} title={by ? `Decided ${by}` : undefined}>
             {status.label}
@@ -349,7 +351,7 @@ function DisputeDialog({
               <DialogTitle className="break-all font-mono text-base">{dispute.path}</DialogTitle>
               <DialogDescription>
                 {dispute.siteName} · {formatFare(dispute.amountCents)} paid by{" "}
-                {dispute.agentKeyName} · filed {formatDateTime(dispute.createdAt)}
+                {dispute.agentKeyName} · filed <LocalTime iso={dispute.createdAt} />
               </DialogDescription>
             </DialogHeader>
 
@@ -444,7 +446,7 @@ function DisputeDialog({
 
             <p className="text-xs text-muted-foreground">
               Receipt <span className="font-mono">{dispute.receiptId}</span> · purchased{" "}
-              {formatDateTime(dispute.purchasedAt)} ·{" "}
+              <LocalTime iso={dispute.purchasedAt} /> ·{" "}
               <NewTabLink
                 href={verifyHref(dispute.receiptId)}
                 className="font-medium text-foreground underline underline-offset-4"

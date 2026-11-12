@@ -10,7 +10,9 @@ vi.mock("@botfare/core", async (importOriginal) => ({
 }));
 
 import {
+  ADVISOR_RETRY_PROMPT,
   ADVISOR_SYSTEM_PROMPT,
+  ADVISOR_UNGROUNDED_MESSAGE,
   type AdvisorModelClient,
   type AdvisorModelParams,
   advisorUserPrompt,
@@ -390,6 +392,60 @@ describe("generateRecommendations", () => {
     expect(result.recommendations).toHaveLength(1);
     expect(result.dropped).toBe(1);
     expect(fake.calls[0]?.system).toContain("untrusted text");
+  });
+
+  it("asks once more when every suggestion was dropped, and uses the second answer", async () => {
+    const wrong = { ...honest, evidence: { ...honest.evidence, offers: 230 } };
+    const replies = [
+      JSON.stringify({ recommendations: [wrong] }),
+      JSON.stringify({ recommendations: [honest] }),
+    ];
+    const fake = scripted(async () => message(replies.shift() ?? ""));
+    const result = await generateRecommendations(fake.model, inputs);
+    expect(fake.calls).toHaveLength(2);
+    const retry = fake.calls[1]?.messages ?? [];
+    expect(retry).toHaveLength(3);
+    expect(retry[1]).toMatchObject({ role: "assistant" });
+    expect(retry[2]).toEqual({ role: "user", content: ADVISOR_RETRY_PROMPT });
+    expect(ADVISOR_RETRY_PROMPT).toMatch(/verbatim/);
+    expect(result.status).toBe("ready");
+    expect(result.recommendations).toHaveLength(1);
+    expect(result.dropped).toBe(0);
+  });
+
+  it("does not ask again when some suggestions survive or none were made", async () => {
+    for (const recs of [[honest, { ...honest, pattern: "/nope/*" }], []]) {
+      const fake = scripted(async () => message(JSON.stringify({ recommendations: recs })));
+      const result = await generateRecommendations(fake.model, inputs);
+      expect(fake.calls).toHaveLength(1);
+      expect(result.status).toBe("ready");
+    }
+  });
+
+  it("reports an error, and does not cache it, when the retry is dropped too", async () => {
+    const wrong = { ...honest, evidence: { ...honest.evidence, paid: 1 } };
+    const create = vi.fn<AdvisorModelClient["beta"]["messages"]["create"]>(async () =>
+      message(JSON.stringify({ recommendations: [wrong] })),
+    );
+    const direct = await generateRecommendations(
+      { client: { beta: { messages: { create } } }, model: "claude-sonnet-5-5" },
+      inputs,
+    );
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(direct).toMatchObject({
+      status: "error",
+      recommendations: [],
+      dropped: 1,
+      message: ADVISOR_UNGROUNDED_MESSAGE,
+    });
+
+    create.mockClear();
+    const first = await getAdvisorFromInputs(inputs, create);
+    expect(first).toMatchObject({ aiStatus: "error", aiMessage: ADVISOR_UNGROUNDED_MESSAGE });
+    expect(create).toHaveBeenCalledTimes(2);
+    // Not cached: the next visit asks the model again.
+    await getAdvisorFromInputs(inputs, create);
+    expect(create).toHaveBeenCalledTimes(4);
   });
 
   it("fails soft on a refusal, a cut-off answer, non-JSON and an API error", async () => {

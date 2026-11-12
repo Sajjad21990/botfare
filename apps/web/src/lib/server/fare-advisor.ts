@@ -654,21 +654,28 @@ function visitors(): TurnLimiter {
   return globalForBudget.__botfareAdvisorVisitors;
 }
 
-/** Asks the model and checks its answer. Never throws. */
-export async function generateRecommendations(
+/** Sent when every suggestion in the first answer failed the grounding checks. */
+export const ADVISOR_RETRY_PROMPT = [
+  "BotFare discarded all of your recommendations because their evidence numbers or reasons did not match the input exactly.",
+  "Answer again. Copy offers, paid, declined, cited, disputed and topReasons (reason text and count) verbatim from the rule's numbers in the input,",
+  "and use only numbers that appear in the input in headlines and rationales.",
+].join(" ");
+
+/** Shown when the retry's suggestions were discarded too. */
+export const ADVISOR_UNGROUNDED_MESSAGE =
+  "The AI's suggestions did not match your numbers, so BotFare discarded them.";
+
+type ModelAnswer =
+  | { ok: true; text: string; checked: ReturnType<typeof checkRecommendations> }
+  | { ok: false; message: string };
+
+/** One model call, parsed and checked. Never throws. */
+async function askModel(
   model: AdvisorModel,
   inputs: AdvisorInputs,
-): Promise<AiResult> {
-  const generatedAt = new Date().toISOString();
-  const fail = (message: string): AiResult => ({
-    status: "error",
-    recommendations: [],
-    message,
-    dropped: 0,
-    generatedAt,
-    aiLabel: model.label ?? null,
-  });
-  const params = buildAdvisorParams(model.model, inputs);
+  params: AdvisorModelParams,
+): Promise<ModelAnswer> {
+  const fail = (message: string): ModelAnswer => ({ ok: false, message });
   const reservation = budget().reserve(
     Math.ceil(JSON.stringify(params).length / 3) + MAX_OUTPUT_TOKENS * 5,
   );
@@ -702,9 +709,51 @@ export async function generateRecommendations(
   if (checked.dropped > 0) {
     console.info(`[advisor] ${inputs.site.id}: dropped ${checked.dropped} unsupported suggestions`);
   }
+  return { ok: true, text, checked };
+}
+
+/** The checks dropped every suggestion: nothing usable, though the model did suggest changes. */
+function allDropped(checked: ReturnType<typeof checkRecommendations>): boolean {
+  return checked.recommendations.length === 0 && checked.dropped > 0;
+}
+
+/**
+ * Asks the model and checks its answer. When the checks drop every suggestion, asks once more
+ * with a note to copy the numbers verbatim. Never throws.
+ */
+export async function generateRecommendations(
+  model: AdvisorModel,
+  inputs: AdvisorInputs,
+): Promise<AiResult> {
+  const generatedAt = new Date().toISOString();
+  const fail = (message: string, dropped = 0): AiResult => ({
+    status: "error",
+    recommendations: [],
+    message,
+    dropped,
+    generatedAt,
+    aiLabel: model.label ?? null,
+  });
+  const params = buildAdvisorParams(model.model, inputs);
+  let answer = await askModel(model, inputs, params);
+  if (answer.ok && allDropped(answer.checked)) {
+    const retry: AdvisorModelParams = {
+      ...params,
+      messages: [
+        ...params.messages,
+        { role: "assistant", content: answer.text },
+        { role: "user", content: ADVISOR_RETRY_PROMPT },
+      ],
+    };
+    answer = await askModel(model, inputs, retry);
+  }
+  if (!answer.ok) return fail(answer.message);
+  if (allDropped(answer.checked)) {
+    return fail(ADVISOR_UNGROUNDED_MESSAGE, answer.checked.dropped);
+  }
   return {
     status: "ready",
-    ...checked,
+    ...answer.checked,
     message: null,
     generatedAt,
     aiLabel: model.label ?? null,
@@ -851,6 +900,14 @@ export async function getAdvisor(
     };
     created.promise.then((result) => {
       created.result = result;
+      // An answer whose every suggestion was discarded is not kept: the next visit asks afresh.
+      if (
+        result.status === "error" &&
+        result.dropped > 0 &&
+        cache().get(inputs.site.id) === created
+      ) {
+        cache().delete(inputs.site.id);
+      }
     });
     cache().set(inputs.site.id, created);
     entry = created;

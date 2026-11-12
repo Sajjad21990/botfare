@@ -75,7 +75,7 @@ export function Timeline({ view, selected, onSelect }: TimelineProps) {
           busy ? (
             <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
-              Starting the agent… A run takes 1 to 2 minutes.
+              Starting the agent… A run usually takes under a minute.
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-10 text-center">
@@ -112,7 +112,7 @@ export function Timeline({ view, selected, onSelect }: TimelineProps) {
             {busy ? (
               <li className="flex items-center gap-3 pl-1.5 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
-                Working… A run takes 1 to 2 minutes. Payments appear here as they happen.
+                Working… A run usually takes under a minute. Payments appear here as they happen.
               </li>
             ) : null}
           </ol>

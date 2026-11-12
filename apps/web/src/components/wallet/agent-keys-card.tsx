@@ -106,12 +106,12 @@ export function AgentKeysCard({ keys, sites }: { keys: WalletAgentKey[]; sites: 
             <TableHeader>
               <TableRow>
                 <TableHead>Agent</TableHead>
+                <TableHead className="min-w-28 sm:min-w-36">Spent today</TableHead>
                 <TableHead>Limits</TableHead>
-                <TableHead className="min-w-36">Spent today</TableHead>
-                <TableHead>Sites</TableHead>
+                <TableHead className="hidden sm:table-cell">Sites</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="w-0">
+                <TableHead className="hidden sm:table-cell">Created</TableHead>
+                <TableHead className="hidden w-0 sm:table-cell">
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
@@ -145,16 +145,6 @@ function KeyRow({
         <div className="font-medium text-foreground">{key.name}</div>
         <KeyId id={key.id} />
       </TableCell>
-      <TableCell className="text-sm tabular-nums">
-        <div>
-          {key.perRequestMaxCents === null
-            ? "No per-page limit"
-            : `${formatCap(key.perRequestMaxCents)} a page`}
-        </div>
-        <div className="text-muted-foreground">
-          {key.dailyCapCents === null ? "No daily cap" : `${formatCap(key.dailyCapCents)} a day`}
-        </div>
-      </TableCell>
       <TableCell>
         <div className="text-sm tabular-nums" title={formatMoneyExact(key.spentTodayMicros)}>
           {formatMoney(key.spentTodayMicros)}
@@ -178,7 +168,17 @@ function KeyRow({
           </div>
         ) : null}
       </TableCell>
-      <TableCell>
+      <TableCell className="text-sm tabular-nums">
+        <div>
+          {key.perRequestMaxCents === null
+            ? "No per-page limit"
+            : `${formatCap(key.perRequestMaxCents)} a page`}
+        </div>
+        <div className="text-muted-foreground">
+          {key.dailyCapCents === null ? "No daily cap" : `${formatCap(key.dailyCapCents)} a day`}
+        </div>
+      </TableCell>
+      <TableCell className="hidden sm:table-cell">
         {key.allowedSiteIds === null ? (
           <span className="text-sm text-muted-foreground">Any site</span>
         ) : (
@@ -199,11 +199,17 @@ function KeyRow({
             Active
           </Badge>
         )}
+        {/* Phones hide the action column, so Revoke sits under the status there. */}
+        {revoked || key.demoLocked ? null : (
+          <div className="mt-1 sm:hidden">
+            <RevokeButton agentKey={key} />
+          </div>
+        )}
       </TableCell>
-      <TableCell className="text-sm text-muted-foreground">
+      <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
         <LocalTime iso={key.createdAt} dateOnly />
       </TableCell>
-      <TableCell className="text-right">
+      <TableCell className="hidden text-right sm:table-cell">
         {revoked ? null : key.demoLocked ? (
           <span
             className="inline-flex items-center gap-1 text-xs text-muted-foreground"

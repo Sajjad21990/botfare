@@ -112,7 +112,7 @@ export function SiteCard({
         <Tabs value={tab} onValueChange={(value) => setTab(value as SiteTab)}>
           <TabsList
             variant="line"
-            className="mb-3 -ml-1.5 max-w-[calc(100%+0.375rem)] justify-start overflow-x-auto"
+            className="mb-3 -ml-1.5 max-w-[calc(100%+0.375rem)] justify-start max-sm:h-auto! max-sm:flex-wrap max-sm:gap-y-2 max-sm:[&_[data-slot=tabs-trigger]]:px-1 max-sm:[&_svg]:hidden"
           >
             <TabsTrigger value="pricing">
               <Tags />

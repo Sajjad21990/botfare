@@ -123,7 +123,9 @@ export function ReceiptTicket({
             <dl className="grid grid-cols-[4.25rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2.5">
               <dt className="text-sm text-muted-foreground">Paid to</dt>
               <dd className="min-w-0">
-                <span className="block truncate text-lg leading-snug font-semibold">
+                <span
+                  className={`block text-lg leading-snug font-semibold ${siteName ? "truncate" : "break-all"}`}
+                >
                   {siteName ?? host}
                 </span>
                 {siteName && host ? (

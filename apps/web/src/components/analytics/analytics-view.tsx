@@ -73,7 +73,7 @@ export function AnalyticsView({ initial, ai }: AnalyticsViewProps) {
         </Tabs>
         <p className="hidden text-sm text-muted-foreground md:block">
           {mode === "edit"
-            ? "Drag widgets, add charts from the data panel, or ask the assistant on the right."
+            ? "Ask the assistant on the right about your traffic, pages or agents."
             : "Click a bar to filter every chart. Switch to Ask AI to ask questions about your traffic."}
         </p>
         <div className="ml-auto">
@@ -96,7 +96,7 @@ export function AnalyticsView({ initial, ai }: AnalyticsViewProps) {
           )}
         </div>
       </div>
-      <div className="h-[calc(100dvh-13rem)] min-h-[560px] overflow-hidden rounded-xl border bg-background">
+      <div className="h-[70dvh] overflow-hidden sm:h-[calc(100dvh-13rem)] sm:min-h-[560px] rounded-xl border bg-background">
         <StudioDashboard initial={data} mode={mode} />
       </div>
     </div>

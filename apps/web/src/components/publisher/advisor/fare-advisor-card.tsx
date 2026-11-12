@@ -114,6 +114,12 @@ const NUMBER_COLUMNS: { key: keyof FunnelCounts; label: string }[] = [
   { key: "disputed", label: "Disputed" },
 ];
 
+/** Columns hidden on phones (with Bought), so the rule, offers, paid and cited fit at 375px. */
+const WIDE_ONLY: Partial<Record<keyof FunnelCounts, string>> = {
+  declined: "hidden sm:table-cell",
+  disputed: "hidden sm:table-cell",
+};
+
 function PathRows({ paths }: { paths: PathFunnel[] }) {
   if (paths.length === 0) {
     return (
@@ -163,7 +169,7 @@ function RuleRow({ rule }: { rule: RuleFunnel }) {
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
             aria-controls={id}
-            className="group flex w-full min-w-44 items-start gap-1.5 text-left"
+            className="group flex w-full min-w-36 items-start gap-1.5 text-left sm:min-w-44"
           >
             <ChevronRight
               className={cn(
@@ -191,6 +197,7 @@ function RuleRow({ rule }: { rule: RuleFunnel }) {
             key={column.key}
             className={cn(
               "px-2 py-2.5 text-right text-sm tabular-nums",
+              WIDE_ONLY[column.key],
               column.key === "cited" && "font-medium",
               rule[column.key] === 0 && "text-muted-foreground",
             )}
@@ -198,7 +205,7 @@ function RuleRow({ rule }: { rule: RuleFunnel }) {
             {formatCount(rule[column.key])}
           </td>
         ))}
-        <td className="py-2.5 pl-2 text-right text-sm text-muted-foreground tabular-nums">
+        <td className="hidden py-2.5 pl-2 text-right text-sm text-muted-foreground tabular-nums sm:table-cell">
           {percent(rule.paid, Math.max(rule.offers, rule.paid + rule.declined))}
         </td>
       </tr>
@@ -225,7 +232,7 @@ function RuleRow({ rule }: { rule: RuleFunnel }) {
 function FunnelTable({ rules }: { rules: RuleFunnel[] }) {
   return (
     <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-      <table className="w-full min-w-[640px] text-left">
+      <table className="w-full min-w-0 text-left sm:min-w-[640px]">
         <caption className="sr-only">
           Offers, purchases, declines, citations and disputes per pricing rule
         </caption>
@@ -233,11 +240,14 @@ function FunnelTable({ rules }: { rules: RuleFunnel[] }) {
           <tr className="border-b text-xs text-muted-foreground">
             <th className="py-2 pr-3 font-medium">Pricing rule</th>
             {NUMBER_COLUMNS.map((column) => (
-              <th key={column.key} className="px-2 py-2 text-right font-medium">
+              <th
+                key={column.key}
+                className={cn("px-2 py-2 text-right font-medium", WIDE_ONLY[column.key])}
+              >
                 {column.label}
               </th>
             ))}
-            <th className="py-2 pl-2 text-right font-medium">Bought</th>
+            <th className="hidden py-2 pl-2 text-right font-medium sm:table-cell">Bought</th>
           </tr>
         </thead>
         <tbody>
@@ -297,13 +307,16 @@ function Recommendations({
       </p>
     );
   }
-  if (data.aiStatus === "error") {
+  // Suggestions were made but none matched the numbers: offer a retry, never "nothing to change".
+  const discarded = data.recommendations.length === 0 && data.dropped > 0;
+  if (data.aiStatus === "error" || discarded) {
     return (
       <Alert variant="destructive">
         <AlertCircle />
         <AlertTitle>No recommendations right now</AlertTitle>
         <AlertDescription className="flex flex-wrap items-center gap-2">
-          {data.aiMessage}
+          {data.aiMessage ??
+            "The AI's suggestions did not match your numbers, so BotFare discarded them."}
           <Button size="xs" variant="outline" onClick={onRetry}>
             Try again
           </Button>

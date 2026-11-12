@@ -15,6 +15,7 @@ import {
 } from "ag-studio";
 import { AgStudio, AgStudioProvider, createWidgets } from "ag-studio-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { claudeAdapter } from "./claude-adapter";
 import { setLiveState } from "./live-store";
 import { type BotFareRegistry, EARNINGS_PAYOUT, LIVE_RECEIPTS } from "./registry";
@@ -89,10 +90,10 @@ const widgets = (config: AgWidgetsConfig<AgCoreDefaultRegistry>) =>
     ],
   });
 
-/** Collapse panels the reader does not need; view mode keeps only filters. */
+/** View mode keeps only filters; Ask AI (edit) shows the dashboard, the assistant and filters. */
 const panels: AgPanelConfig = {
   view: { right: ["filters"] },
-  edit: { left: ["data"], right: ["ai", "edit", "filters"] },
+  edit: { right: ["ai", "filters"] },
 };
 
 /** On narrow screens (view mode), stack every widget in one column. */
@@ -234,7 +235,15 @@ export default function StudioDashboard({ initial, mode }: StudioDashboardProps)
 
   return (
     <AgStudioProvider modules={[AgStudioAiModule]} licenseKey={LICENSE_KEY}>
-      <div className="ag-theme-mode h-full w-full" data-ag-theme-mode={themeMode}>
+      {/* On phones, view mode hides the collapsed filters rail so the widgets get the full width.
+          Important (`!`): AG Studio's own CSS is unlayered and would beat a layered utility. */}
+      <div
+        className={cn(
+          "ag-theme-mode h-full w-full",
+          mode === "view" && "max-sm:[&_.ag-studio-root-panel-container-right]:hidden!",
+        )}
+        data-ag-theme-mode={themeMode}
+      >
         <AgStudio<BotFareRegistry>
           ref={studioRef}
           style={style}

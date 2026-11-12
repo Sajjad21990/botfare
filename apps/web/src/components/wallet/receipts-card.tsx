@@ -45,10 +45,10 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Time</TableHead>
                 <TableHead>Page</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Receipt</TableHead>
+                <TableHead>Time</TableHead>
                 <TableHead>Agent</TableHead>
                 <TableHead className="hidden sm:table-cell">Site</TableHead>
                 <TableHead className="hidden sm:table-cell">Status</TableHead>
@@ -57,12 +57,9 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
             <TableBody>
               {receipts.map((receipt) => (
                 <TableRow key={receipt.id}>
-                  <TableCell className="text-muted-foreground">
-                    <LocalTime iso={receipt.createdAt} />
-                  </TableCell>
                   <TableCell>
                     <span
-                      className="block max-w-56 truncate font-mono text-xs"
+                      className="block max-w-36 truncate font-mono text-xs sm:max-w-56"
                       title={receipt.path}
                     >
                       {receipt.path}
@@ -91,6 +88,9 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                         <span className="sr-only"> receipt {receipt.id}</span>
                       </NewTabLink>
                     </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    <LocalTime iso={receipt.createdAt} />
                   </TableCell>
                   <TableCell className="text-muted-foreground">{receipt.agentKeyName}</TableCell>
                   <TableCell className="hidden font-medium sm:table-cell">
