@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -15,7 +15,16 @@ const STATUS_LABEL: Record<RunView["status"], string> = {
 };
 
 /** Live spend against the budget, receipts and tool calls. */
-export function CostMeter({ view, receipts }: { view: RunView; receipts: number }) {
+export function CostMeter({
+  view,
+  receipts,
+  onShowReceipts,
+}: {
+  view: RunView;
+  receipts: number;
+  /** Set when the receipts panel is on the page: the Receipts count scrolls to it. */
+  onShowReceipts?: () => void;
+}) {
   const percent =
     view.budgetCents > 0 ? Math.min(100, (view.spentCents / view.budgetCents) * 100) : 0;
   const remaining = Math.max(0, view.budgetCents - view.spentCents);
@@ -42,7 +51,23 @@ export function CostMeter({ view, receipts }: { view: RunView; receipts: number 
         <Progress value={percent} aria-label="Budget spent" />
         <div className="grid grid-cols-3 gap-2 text-sm">
           <Stat label="Left" value={formatFare(remaining)} />
-          <Stat label="Receipts" value={String(receipts)} />
+          {onShowReceipts && receipts > 0 ? (
+            <button
+              type="button"
+              onClick={onShowReceipts}
+              className="flex flex-col rounded text-left underline-offset-4 hover:underline"
+              title="Check these receipts yourself"
+            >
+              <span className="text-xs text-muted-foreground">Receipts</span>
+              <span className="inline-flex items-center gap-1 font-medium tabular-nums underline decoration-dotted">
+                {receipts}
+                <ShieldCheck aria-hidden className="size-3.5 text-success" />
+                <span className="sr-only">, check them</span>
+              </span>
+            </button>
+          ) : (
+            <Stat label="Receipts" value={String(receipts)} />
+          )}
           <Stat label="Steps" value={`${view.toolCalls}/${view.maxToolCalls}`} />
         </div>
       </CardContent>

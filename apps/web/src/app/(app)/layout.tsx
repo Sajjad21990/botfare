@@ -8,10 +8,12 @@ import { requireUser } from "@/lib/server/session";
 export const dynamic = "force-dynamic";
 
 /**
- * Shell for every signed-in page: the logo with a Sandbox chip, the navigation, and the signed-in
- * user. Below `lg` the navigation gets its own row, which wraps on a phone, so nothing scrolls
- * sideways. A demo persona sees its role ("Agent owner", "Publisher"), and opening the other role's
- * pages (a link, Back, or a typed URL) switches persona, so they never look empty.
+ * Shell for every signed-in page: the logo with a Sandbox chip and the signed-in user on top, then
+ * the navigation on its own row (the two role groups and Verify a receipt), which wraps on a phone,
+ * so nothing scrolls sideways. From sm up the header sticks to the top of the window, so the nav
+ * stays in view on long pages and beside the full-height analytics dashboard. A demo persona sees
+ * its role ("Agent owner", "Publisher"), and opening the other role's pages (a link, Back, or a
+ * typed URL) switches persona, so they never look empty.
  */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
@@ -21,8 +23,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   );
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="border-b">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-3 px-4 sm:px-6 lg:flex-nowrap lg:gap-x-6">
+      <header className="z-40 border-b-[1.5px] border-foreground bg-background sm:sticky sm:top-0">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-x-3 px-4 sm:px-6">
           <div className="flex h-14 shrink-0 items-center gap-2.5">
             <Link
               href="/"
@@ -45,10 +47,6 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               ) : null}
             </div>
           </div>
-          <NavLinks
-            demoPersona={persona}
-            className="order-last -mx-2.5 w-[calc(100%+1.25rem)] pb-1 sm:h-11 sm:pb-0 lg:order-none lg:mx-0 lg:h-14 lg:w-auto"
-          />
           <div className="ml-auto flex h-14 shrink-0 items-center gap-3 text-sm text-muted-foreground">
             {/* From sm up. On a phone the logo, Sandbox chip, role and Sign out do not fit on one row. */}
             <span className="hidden max-w-48 truncate sm:inline">
@@ -56,6 +54,10 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             </span>
             <SignOutButton />
           </div>
+        </div>
+        {/* The nav row, under a dashed tear line like a ticket stub. */}
+        <div className="border-t border-dashed border-foreground/25">
+          <NavLinks demoPersona={persona} className="mx-auto w-full max-w-6xl px-4 py-2 sm:px-6" />
         </div>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>

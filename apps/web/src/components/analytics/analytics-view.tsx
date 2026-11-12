@@ -96,7 +96,7 @@ export function AnalyticsView({ initial, ai }: AnalyticsViewProps) {
           )}
         </div>
       </div>
-      <div className="h-[70dvh] overflow-hidden sm:h-[calc(100dvh-13rem)] sm:min-h-[560px] rounded-xl border bg-background">
+      <div className="h-[70dvh] overflow-hidden sm:h-[calc(100dvh-16rem)] sm:min-h-[560px] rounded-xl border bg-background">
         <StudioDashboard initial={data} mode={mode} />
       </div>
     </div>

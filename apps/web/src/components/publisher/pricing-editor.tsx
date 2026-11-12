@@ -281,9 +281,12 @@ export function PricingEditor({
                           inputMode="numeric"
                           aria-invalid={priceInvalid || undefined}
                           aria-label="Price in cents"
-                          className="h-7 pr-6 text-right font-mono text-xs tabular-nums md:text-xs"
+                          className="h-7 pr-8 text-right font-mono text-xs tabular-nums md:text-xs"
                         />
-                        <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-muted-foreground">
+                        <span
+                          className="pointer-events-none absolute inset-y-px right-px flex w-6 items-center justify-center rounded-r-[calc(var(--radius-lg)-1px)] border-l border-input bg-muted text-xs font-semibold text-foreground"
+                          aria-hidden
+                        >
                           ¢
                         </span>
                       </div>

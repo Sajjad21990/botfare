@@ -4,9 +4,11 @@ import { BotFareMark } from "@/components/brand/bot-fare-mark";
 import { buttonVariants } from "@/components/ui/button";
 import styles from "./landing.module.css";
 
-/* Page anchors, hidden on a phone, where Sign in and the main button are all that fit. Fare Court
-   and Fare Advisor show from md; How it works joins at lg. The footer links the source. */
+/* Page anchors, hidden on a phone, where Sign in and the main button are all that fit. Verify (the
+   receipt checker) shows from sm, Fare Court and Fare Advisor from md; How it works joins at lg.
+   The footer links the source. */
 const anchor = `${styles.focusRing} hidden items-center gap-1 rounded-md px-3 py-2 whitespace-nowrap text-muted-foreground hover:text-foreground`;
+const fromSm = `${anchor} sm:inline-flex`;
 const fromMd = `${anchor} md:inline-flex`;
 const fromLg = `${anchor} lg:inline-flex`;
 
@@ -32,6 +34,9 @@ export function SiteHeader() {
           <a href="/#how" className={fromLg}>
             How it works
           </a>
+          <Link href="/verify" className={fromSm}>
+            Verify
+          </Link>
           <Link
             href="/signin"
             className={`${styles.focusRing} rounded-md px-2 py-2 font-medium whitespace-nowrap hover:bg-muted sm:px-3`}

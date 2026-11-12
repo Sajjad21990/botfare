@@ -1,4 +1,4 @@
-import { ChartColumn, ChevronDown } from "lucide-react";
+import { ArrowUpRight, ChartColumn, ChevronDown, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -9,6 +9,7 @@ import { PersonaStepButton } from "@/components/judge/persona-step-button";
 import { SandboxAccount } from "@/components/judge/sandbox-account";
 import styles from "@/components/landing/landing.module.css";
 import { CodeBlock } from "@/components/publisher/copy-button";
+import { buttonVariants } from "@/components/ui/button";
 import { judgeSandboxBuyer } from "@/lib/server/judge";
 import { cn } from "@/lib/utils";
 
@@ -81,6 +82,13 @@ export default function JudgePage() {
           >
             Ask a cooking question. The agent pays 2¢ to 8¢ for each page worth reading. If a page
             doesn&apos;t match its preview, Fare Court&apos;s AI judge rules on a refund.
+            <span className="mt-2 block font-medium">
+              Then check its receipt yourself on{" "}
+              <NewTabLink href="/verify" icon className={cn(textLink, "inline-flex items-center")}>
+                /verify
+              </NewTabLink>
+              .
+            </span>
           </Step>
           <Step
             n={2}
@@ -120,6 +128,8 @@ export default function JudgePage() {
               : "Top up $5 with the PayPal button and any PayPal sandbox personal account. Your balance updates as soon as PayPal confirms."}
           </Step>
         </ol>
+
+        <VerifyCard />
 
         <SandboxAccount account={buyer} />
 
@@ -227,6 +237,52 @@ function Step({
         <div className="flex flex-col items-center gap-1 px-5 pt-5 pb-5">{action}</div>
       </article>
     </li>
+  );
+}
+
+/**
+ * "Check any receipt": a smaller ticket after the three steps. Its stub says who can use it
+ * (anyone, no sign-in) and its button opens /verify in a new tab, like the step buttons.
+ */
+function VerifyCard() {
+  return (
+    <section
+      aria-labelledby="verify-card-title"
+      className={cn(
+        styles.printed,
+        "grid overflow-hidden rounded-xl bg-card sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-stretch",
+      )}
+    >
+      <div
+        aria-hidden
+        className="flex items-center justify-between gap-3 border-b-2 border-dashed border-foreground/40 bg-brand px-5 py-3 sm:flex-col sm:justify-center sm:border-r-2 sm:border-b-0 sm:px-6"
+      >
+        <ShieldCheck className="size-8" strokeWidth={2.25} />
+        <span className="text-xs font-semibold tracking-[0.14em] uppercase">Anyone</span>
+      </div>
+      <div className="min-w-0 px-5 pt-5 sm:py-5">
+        <h2 id="verify-card-title" className="text-xl font-bold tracking-tight">
+          Check any receipt
+        </h2>
+        <p className="pt-2 leading-relaxed">
+          BotFare signs every payment, delivery and refund, so anyone can check a receipt with its
+          public key. No account needed.
+        </p>
+      </div>
+      <div className="flex items-center px-5 pt-4 pb-5 sm:py-5 sm:pl-0">
+        <NewTabLink
+          href="/verify"
+          className={cn(
+            buttonVariants({ size: "lg", variant: "outline" }),
+            "h-11 w-full border-foreground px-4 text-base sm:w-auto dark:border-foreground",
+          )}
+        >
+          <ShieldCheck aria-hidden data-icon="inline-start" />
+          Verify a receipt
+          <ArrowUpRight aria-hidden data-icon="inline-end" />
+        </NewTabLink>
+      </div>
+    </section>
   );
 }
 

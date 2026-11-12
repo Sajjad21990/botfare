@@ -9,12 +9,14 @@ import {
   type ResearchAvailability,
 } from "@/lib/server/research-events";
 import { AnswerCard } from "./answer-card";
+import { CHECK_RECEIPTS_ID, CheckReceipts, type PaidReceipt } from "./check-receipts";
 import { CostMeter } from "./cost-meter";
 import { defaultChoice, fetchModels, type ModelChoice, type ModelsResponse } from "./model-picker";
 import { QuestionCard, SUGGESTED_QUESTIONS } from "./question-card";
 import { isInspectable } from "./run-state";
 import { Timeline } from "./timeline";
 import { fetchAvailability, useResearchRun } from "./use-research-run";
+import { useVerifySources } from "./verify-sources";
 import { WireInspector } from "./wire-inspector";
 
 /** The research agent demo: ask, watch it buy (or refuse), inspect the wire, read the answer. */
@@ -46,10 +48,17 @@ export function ResearchView() {
   }, []);
 
   const inspectable = useMemo(() => view.entries.filter(isInspectable), [view.entries]);
-  const receipts = useMemo(
-    () => view.entries.filter((entry) => entry.kind === "payment").length,
-    [view.entries],
-  );
+  const paidReceipts = useMemo(() => {
+    const byId = new Map<string, PaidReceipt>();
+    for (const entry of view.entries) {
+      if (entry.kind !== "payment" || byId.has(entry.receiptId)) continue;
+      const { receiptId, url, title, amountCents } = entry;
+      byId.set(receiptId, { receiptId, url, title, amountCents });
+    }
+    return [...byId.values()];
+  }, [view.entries]);
+  const receipts = paidReceipts.length;
+  const verify = useVerifySources(view.answer);
 
   // Follow the latest payment or refusal (or offer, before any) until the viewer picks one.
   useEffect(() => {
@@ -60,11 +69,15 @@ export function ResearchView() {
     setSelected(latest?.toolCallId ?? null);
   }, [follow, inspectable]);
 
-  useEffect(() => {
-    if (view.answer) answerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [view.answer]);
-
   const running = view.status === "running" || view.status === "starting";
+  // After a run that paid for pages, checking its receipts is the next step.
+  const showReceipts = !running && view.status !== "idle" && receipts > 0;
+
+  useEffect(() => {
+    if (view.answer || showReceipts) {
+      answerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [view.answer, showReceipts]);
   const selectedEntry =
     [...inspectable]
       .reverse()
@@ -87,6 +100,12 @@ export function ResearchView() {
         .getElementById("wire-inspector")
         ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
+  }
+
+  function scrollToReceipts() {
+    document
+      .getElementById(CHECK_RECEIPTS_ID)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function run() {
@@ -143,6 +162,7 @@ export function ResearchView() {
           <CostMeter
             view={view.status === "idle" ? { ...view, budgetCents } : view}
             receipts={receipts}
+            onShowReceipts={showReceipts ? scrollToReceipts : undefined}
           />
           {view.status !== "idle" && view.question ? (
             <p className="line-clamp-3 px-1 text-sm text-muted-foreground">
@@ -171,16 +191,22 @@ export function ResearchView() {
 
       <div className="grid items-start gap-6 lg:grid-cols-5">
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-3">
-          {view.answer ? (
-            <div ref={answerRef} className="scroll-mt-6">
-              <AnswerCard
-                answer={view.answer.answer}
-                citations={view.answer.citations}
-                manifest={view.answer.manifest}
-                spentCents={view.spentCents}
-                budgetCents={view.budgetCents}
-                onShowReceipt={showReceipt}
-              />
+          {view.answer || showReceipts ? (
+            <div ref={answerRef} className="flex scroll-mt-6 flex-col gap-6">
+              {showReceipts ? (
+                <CheckReceipts receipts={paidReceipts} verify={view.answer ? verify : null} />
+              ) : null}
+              {view.answer ? (
+                <AnswerCard
+                  answer={view.answer.answer}
+                  citations={view.answer.citations}
+                  manifest={view.answer.manifest}
+                  spentCents={view.spentCents}
+                  budgetCents={view.budgetCents}
+                  onShowReceipt={showReceipt}
+                  verify={verify}
+                />
+              ) : null}
             </div>
           ) : null}
           <Timeline view={view} selected={selected} onSelect={select} />

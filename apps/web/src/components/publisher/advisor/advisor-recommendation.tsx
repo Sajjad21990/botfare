@@ -4,8 +4,11 @@ import {
   ArrowRight,
   Check,
   Eye,
+  Gavel,
   Loader2,
   Quote,
+  ShieldCheck,
+  Tag,
   TrendingDown,
   TrendingUp,
   Users,
@@ -87,40 +90,162 @@ function changeOf(rec: AdvisorRecommendationView) {
   return null;
 }
 
-function Evidence({ rec }: { rec: AdvisorRecommendationView }) {
-  const { evidence } = rec;
-  const items: [string, number][] = [
-    ["offers", evidence.offers],
-    ["paid", evidence.paid],
-    ["declined", evidence.declined],
-    ["cited", evidence.cited],
-    ["disputed", evidence.disputed],
-  ];
+const KIND_ICON = {
+  price: Tag,
+  preview: Eye,
+  audience: Users,
+  keep: ShieldCheck,
+} satisfies Record<AdvisorRecommendationView["kind"], unknown>;
+
+/** The kind of advice as a badge with an icon, so the list scans without reading. */
+function KindBadge({ kind }: { kind: AdvisorRecommendationView["kind"] }) {
+  const Icon = KIND_ICON[kind];
   return (
-    <div className="space-y-2">
-      <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {items.map(([label, value]) => (
-          <div key={label} className="flex items-baseline gap-1">
-            <dd className="font-medium text-foreground tabular-nums">{formatCount(value)}</dd>
-            <dt>{label}</dt>
-          </div>
-        ))}
-      </dl>
-      {evidence.topReasons.length > 0 && (
-        <ul className="space-y-1">
-          {evidence.topReasons.map((reason) => (
-            <li
-              key={reason.reason}
-              className="flex items-start gap-1.5 text-xs text-muted-foreground"
-            >
-              <Quote className="mt-0.5 size-3 shrink-0" />
-              <span className="min-w-0 break-words">
-                {reason.reason}
-                <span className="ml-1 tabular-nums">×{reason.count}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
+    <Badge
+      variant="outline"
+      className={cn(
+        "h-6 gap-1 rounded-md border-[1.5px] px-2 font-semibold",
+        kind === "price" && "border-foreground bg-brand text-brand-foreground",
+        kind === "preview" && "border-foreground bg-ticket text-ticket-foreground",
+        kind === "audience" && "border-foreground bg-secondary text-secondary-foreground",
+        kind === "keep" && "border-success text-success",
+      )}
+    >
+      <Icon aria-hidden />
+      {KIND_LABEL[kind]}
+    </Badge>
+  );
+}
+
+/** "50¢ → 20¢" as a printed ticket: the old price stamped out, the new one big in ink. */
+function PriceTicket({ before, after }: { before: number; after: number }) {
+  return (
+    <div
+      className="inline-flex shrink-0 items-center gap-2 self-start rounded-md border-[1.5px] border-foreground bg-ticket px-3 py-1.5 text-ticket-foreground shadow-[3px_3px_0_var(--foreground)]"
+      role="img"
+      aria-label={`Price from ${formatPrice(before)} to ${formatPrice(after)}`}
+    >
+      <span className="text-base font-semibold tabular-nums text-stamp line-through decoration-stamp decoration-2">
+        {formatPrice(before)}
+      </span>
+      <ArrowRight className="size-4" aria-hidden />
+      <span className="text-3xl leading-none font-bold tracking-tight tabular-nums">
+        {formatPrice(after)}
+      </span>
+    </div>
+  );
+}
+
+/** Offers as the full width, paid and declined as segments; the legend carries the numbers. */
+function EvidenceFunnel({ evidence }: { evidence: AdvisorRecommendationView["evidence"] }) {
+  const top = Math.max(evidence.offers, evidence.paid + evidence.declined, 1);
+  const pct = (n: number) => Math.min(100, (100 * n) / top);
+  const noReply = Math.max(0, evidence.offers - evidence.paid - evidence.declined);
+  const bought =
+    evidence.offers > 0 ? `${Math.round((100 * evidence.paid) / evidence.offers)}% bought` : null;
+  return (
+    <div className="space-y-1.5">
+      <div
+        className="flex h-3 w-full overflow-hidden rounded-full border-[1.5px] border-foreground bg-muted"
+        aria-hidden
+      >
+        <div className="h-full bg-success" style={{ width: `${pct(evidence.paid)}%` }} />
+        <div className="h-full bg-stamp" style={{ width: `${pct(evidence.declined)}%` }} />
+      </div>
+      <ul
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+        aria-label="How agents answered this offer"
+      >
+        <li className="font-medium text-foreground tabular-nums">
+          {formatCount(evidence.offers)} offers
+        </li>
+        <li className="flex items-center gap-1 tabular-nums">
+          <span className="size-2 rounded-full bg-success" aria-hidden />
+          <span className="font-medium text-foreground">{formatCount(evidence.paid)}</span> paid
+        </li>
+        <li className="flex items-center gap-1 tabular-nums">
+          <span className="size-2 rounded-full bg-stamp" aria-hidden />
+          <span className="font-medium text-foreground">{formatCount(evidence.declined)}</span>{" "}
+          declined
+        </li>
+        {noReply > 0 && (
+          <li className="flex items-center gap-1 tabular-nums">
+            <span
+              className="size-2 rounded-full border border-muted-foreground/40 bg-muted"
+              aria-hidden
+            />
+            {formatCount(noReply)} no reply
+          </li>
+        )}
+        {evidence.cited > 0 && (
+          <li>
+            <Badge variant="outline" className="gap-1 font-normal tabular-nums">
+              <Quote aria-hidden />
+              {formatCount(evidence.cited)} cited
+            </Badge>
+          </li>
+        )}
+        {evidence.disputed > 0 && (
+          <li>
+            <Badge variant="destructive" className="gap-1 font-normal tabular-nums">
+              <Gavel aria-hidden />
+              {formatCount(evidence.disputed)} disputed
+            </Badge>
+          </li>
+        )}
+        {bought && <li className="ml-auto tabular-nums">{bought}</li>}
+      </ul>
+    </div>
+  );
+}
+
+/** Decline reasons as bars sized by count, largest first; the text and count stay readable. */
+export function ReasonBars({
+  reasons,
+  label = "Why agents declined",
+}: {
+  reasons: { reason: string; count: number }[];
+  label?: string;
+}) {
+  if (reasons.length === 0) return null;
+  const sorted = [...reasons].sort((a, b) => b.count - a.count);
+  const max = Math.max(...sorted.map((r) => r.count), 1);
+  return (
+    <ol className="space-y-1" aria-label={label}>
+      {sorted.map((reason) => (
+        <li
+          key={reason.reason}
+          className="relative flex items-start gap-2 overflow-hidden rounded-md border px-2 py-1 text-xs"
+        >
+          <span
+            className="absolute inset-y-0 left-0 bg-stamp/12 dark:bg-stamp/25"
+            style={{ width: `${(100 * reason.count) / max}%` }}
+            aria-hidden
+          />
+          <span className="relative min-w-0 flex-1 break-words">{reason.reason}</span>
+          <span className="relative shrink-0 font-semibold tabular-nums">×{reason.count}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** The AI's reasoning, kept quiet: three lines, then More. */
+function Rationale({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 160;
+  return (
+    <div className="text-sm text-muted-foreground">
+      <p className={cn(!open && long && "line-clamp-3")}>{text}</p>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          className="mt-0.5 text-xs font-medium text-foreground underline-offset-2 hover:underline"
+        >
+          {open ? "Less" : "More"}
+        </button>
       )}
     </div>
   );
@@ -172,47 +297,55 @@ export function RecommendationItem({
     }
   }
 
+  const priceChange =
+    rec.kind === "price" && rec.suggestedPriceCents !== undefined
+      ? { before: rec.currentPriceCents, after: rec.suggestedPriceCents }
+      : null;
+
   return (
-    <li className="space-y-3 rounded-lg border p-3 sm:p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0 space-y-1">
+    <li className="space-y-3 rounded-lg border bg-card p-3 sm:p-4">
+      <div className="flex flex-wrap items-start gap-3">
+        {priceChange && <PriceTicket before={priceChange.before} after={priceChange.after} />}
+        <div className="min-w-0 flex-1 basis-48 space-y-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="secondary">{KIND_LABEL[rec.kind]}</Badge>
-            <code className="truncate font-mono text-xs text-muted-foreground">
+            <KindBadge kind={rec.kind} />
+            <code className="min-w-0 truncate font-mono text-xs text-muted-foreground">
               {rec.method !== "GET" && `${rec.method} `}
               {rec.pattern}
             </code>
           </div>
           <p className="font-medium leading-snug">{headline}</p>
+          {(rec.kind === "price" || rec.kind === "preview") && (
+            <div
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium tabular-nums",
+                delta > 0
+                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                  : delta < 0
+                    ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                    : "bg-muted text-muted-foreground",
+              )}
+              title="Worked out by BotFare from this rule's own offers, purchases and declines, not by the AI"
+            >
+              <Trend className="size-3.5" aria-hidden />
+              Estimated change: {formatDelta(delta)} a week
+            </div>
+          )}
         </div>
-        {(rec.kind === "price" || rec.kind === "preview") && (
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium tabular-nums",
-              delta > 0
-                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                : delta < 0
-                  ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                  : "bg-muted text-muted-foreground",
-            )}
-            title="Worked out by BotFare from this rule's own offers, purchases and declines, not by the AI"
-          >
-            <Trend className="size-3.5" />
-            Estimated change: {formatDelta(delta)} a week
-          </div>
-        )}
       </div>
 
-      {rationale && <p className="text-sm text-muted-foreground">{rationale}</p>}
+      <EvidenceFunnel evidence={rec.evidence} />
+
+      <ReasonBars reasons={rec.evidence.topReasons} />
 
       {rec.previewAdvice && (
         <div className="flex items-start gap-2 rounded-md bg-muted/50 p-2.5 text-sm">
-          <Eye className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <Eye className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
           <p>{rec.previewAdvice}</p>
         </div>
       )}
 
-      <Evidence rec={rec} />
+      {rationale && <Rationale text={rationale} />}
 
       <div className="flex flex-wrap items-center gap-3 border-t pt-3">
         {change ? (

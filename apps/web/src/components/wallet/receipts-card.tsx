@@ -1,6 +1,7 @@
 import { ReceiptText, ShieldCheck } from "lucide-react";
 import { NewTabLink } from "@/components/app/external-link";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -11,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { verifyHref } from "@/components/verify/verify-href";
+import { cn } from "@/lib/utils";
 import { formatMoney, formatMoneyExact } from "./format";
 import { LocalTime } from "./local-time";
 import type { WalletReceipt } from "./types";
@@ -80,7 +82,10 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                       <span className="hidden font-mono sm:inline">{receipt.id}</span>
                       <NewTabLink
                         href={verifyHref(receipt.id)}
-                        className="inline-flex items-center gap-1 rounded py-2 font-medium text-foreground underline-offset-4 hover:underline"
+                        className={cn(
+                          buttonVariants({ variant: "outline", size: "sm" }),
+                          "border-foreground/60 font-semibold text-foreground dark:border-foreground/60",
+                        )}
                         title="Check BotFare's signed statements for this receipt"
                       >
                         <ShieldCheck aria-hidden className="size-3.5" />

@@ -7,7 +7,7 @@ import { NewTabLink } from "@/components/app/external-link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ResearchCitation } from "@/lib/server/research-events";
 import { formatFare, formatUsd, shortPath } from "./format";
-import { VerifySources } from "./verify-sources";
+import { VerifySources, type VerifySourcesCheck } from "./verify-sources";
 
 interface AnswerCardProps {
   answer: string;
@@ -18,6 +18,8 @@ interface AnswerCardProps {
   manifest?: AnswerManifest | null;
   /** Shows the citation's payment in Payment details. */
   onShowReceipt: (receiptId: string) => void;
+  /** The Verify sources check, shared with the "Check the receipts yourself" panel. */
+  verify: VerifySourcesCheck;
 }
 
 /** The final answer with numbered citations, each tied to a receipt from this run. */
@@ -72,7 +74,11 @@ export function AnswerCard(props: AnswerCardProps) {
             ))}
           </ol>
         ) : null}
-        <VerifySources citations={props.citations} manifest={props.manifest} />
+        <VerifySources
+          citations={props.citations}
+          manifest={props.manifest}
+          verify={props.verify}
+        />
       </CardContent>
     </Card>
   );

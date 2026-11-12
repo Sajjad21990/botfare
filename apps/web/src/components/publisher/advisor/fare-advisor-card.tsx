@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { api, errorText } from "../api";
 import { formatCount, formatPrice } from "../format";
 import type { SiteView } from "../types";
-import { RecommendationItem } from "./advisor-recommendation";
+import { ReasonBars, RecommendationItem } from "./advisor-recommendation";
 import { DECLINE_CATEGORY_LABEL } from "./labels";
 import type { AdvisorResponse, FunnelCounts, FunnelDetail, PathFunnel, RuleFunnel } from "./types";
 
@@ -45,11 +45,33 @@ function advisorUrl(siteId: string, mode: "funnel" | "ai" | "refresh"): string {
 
 // --- Funnel ---------------------------------------------------------------------------------------
 
-function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Kpi({
+  label,
+  value,
+  hint,
+  progress,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  /** 0 to 1: a small bar under the value (the hint says the same in words). */
+  progress?: number;
+}) {
   return (
     <div className="min-w-0 space-y-0.5 rounded-lg bg-muted/50 px-3 py-2.5">
       <div className="truncate text-xs text-muted-foreground">{label}</div>
       <div className="text-xl font-semibold tracking-tight tabular-nums">{value}</div>
+      {progress !== undefined && (
+        <div
+          className="my-1 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10"
+          aria-hidden
+        >
+          <div
+            className="h-full rounded-full bg-success"
+            style={{ width: `${Math.max(0, Math.min(100, progress * 100))}%` }}
+          />
+        </div>
+      )}
       {hint && <div className="line-clamp-2 text-xs text-muted-foreground">{hint}</div>}
     </div>
   );
@@ -92,16 +114,7 @@ function Reasons({ detail }: { detail: FunnelDetail }) {
           </Badge>
         ))}
       </div>
-      <ul className="space-y-1">
-        {detail.topReasons.map((reason) => (
-          <li key={reason.reason} className="flex items-start gap-2 text-xs">
-            <span className="w-6 shrink-0 text-right font-medium tabular-nums">
-              {reason.count}×
-            </span>
-            <span className="min-w-0 break-words text-muted-foreground">{reason.reason}</span>
-          </li>
-        ))}
-      </ul>
+      <ReasonBars reasons={detail.topReasons} />
     </div>
   );
 }
@@ -484,6 +497,7 @@ export function FareAdvisorCard({
               <Kpi
                 label="Paid"
                 value={formatCount(totals.paid)}
+                progress={totals.paid / Math.max(totals.offers, totals.paid + totals.declined, 1)}
                 hint={`${percent(totals.paid, Math.max(totals.offers, totals.paid + totals.declined))} of offers`}
               />
               <Kpi label="Declined" value={formatCount(totals.declined)} hint="with a reason" />

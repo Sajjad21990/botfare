@@ -7,7 +7,7 @@ import {
   type SourceCheck,
 } from "@botfare/contracts/receipts";
 import { ExternalLink, Loader2, ShieldCheck, ShieldX } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NewTabLink } from "@/components/app/external-link";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,13 +20,14 @@ import type { ResearchCitation } from "@/lib/server/research-events";
 import { cn } from "@/lib/utils";
 import { shortPath } from "./format";
 
-interface VerifySourcesProps {
+/** What an answer gives the check: its citations and its sources manifest. */
+export interface SourcesToVerify {
   citations: ResearchCitation[];
   /** The answer's sources manifest (signed statements + digests of the bytes the agent read). */
   manifest?: AnswerManifest | null;
 }
 
-interface Row {
+export interface Row {
   n: number | null;
   title: string;
   check: SourceCheck;
@@ -38,78 +39,142 @@ type State =
   | { status: "done"; rows: Row[] }
   | { status: "error"; message: string };
 
-/**
- * "This answer paid for its sources, and you can verify every one": checks each citation in the
- * browser against BotFare's public keys (paid, delivered, bytes match).
- */
-export function VerifySources({ citations, manifest }: VerifySourcesProps) {
-  const [state, setState] = useState<State>({ status: "idle" });
+export interface VerifySourcesCheck {
+  state: State;
+  /** Runs the check; resolves true when it finished (passed or not), false on an error. */
+  run: () => Promise<boolean>;
+  /** False when the answer has nothing to check (no citations, no manifest sources). */
+  available: boolean;
+}
 
-  async function run() {
+/**
+ * The Verify sources check for one answer, shared by the "Check the receipts yourself" panel and
+ * the Verify sources section. Resets when the answer changes (a new run).
+ */
+export function useVerifySources(answer: SourcesToVerify | null): VerifySourcesCheck {
+  const [state, setState] = useState<State>({ status: "idle" });
+  const [checkedAnswer, setCheckedAnswer] = useState(answer);
+  if (checkedAnswer !== answer) {
+    setCheckedAnswer(answer);
+    setState({ status: "idle" });
+  }
+  // A check that finishes after a new run started must not show its rows on the new answer.
+  const current = useRef(answer);
+  useEffect(() => {
+    current.current = answer;
+  }, [answer]);
+
+  const run = useCallback(async () => {
+    if (!answer) return false;
     setState({ status: "checking" });
     try {
       const keys = await fetchReceiptKeys();
       const rows = await Promise.all(
-        sourcesToCheck(citations, manifest).map(async ({ n, title, source, receiptId, url }) => {
-          const resolved = await withLatestStatements(source, receiptId, url);
-          const check: SourceCheck = resolved
-            ? await checkAnswerSource(resolved, keys)
-            : {
-                receiptId,
-                url,
-                paid: { ok: false, message: "BotFare has no signed payment for this receipt" },
-                delivered: { ok: false, message: "No delivery statement" },
-                bytesMatch: { ok: false, message: "No digest of the read bytes" },
-              };
-          return { n, title, check };
-        }),
+        sourcesToCheck(answer.citations, answer.manifest).map(
+          async ({ n, title, source, receiptId, url }) => {
+            const resolved = await withLatestStatements(source, receiptId, url);
+            const check: SourceCheck = resolved
+              ? await checkAnswerSource(resolved, keys)
+              : {
+                  receiptId,
+                  url,
+                  paid: { ok: false, message: "BotFare has no signed payment for this receipt" },
+                  delivered: { ok: false, message: "No delivery statement" },
+                  bytesMatch: { ok: false, message: "No digest of the read bytes" },
+                };
+            return { n, title, check };
+          },
+        ),
       );
+      if (current.current !== answer) return false;
       setState({ status: "done", rows });
+      return true;
     } catch (err) {
+      if (current.current !== answer) return false;
       setState({
         status: "error",
         message: err instanceof VerifyFetchError ? err.message : "Verification failed. Try again.",
       });
+      return false;
     }
-  }
+  }, [answer]);
+
+  const available = Boolean(answer?.citations.length || answer?.manifest?.sources.length);
+  return { state, run, available };
+}
+
+/** "3 of 3 sources verified", in green when every source passed. */
+export function VerifySummary({
+  rows,
+  className,
+  live = true,
+}: {
+  rows: Row[];
+  className?: string;
+  /** False for a second copy on the page, so screen readers announce the result once. */
+  live?: boolean;
+}) {
+  const verified = rows.filter(isVerified).length;
+  const paidOnly = rows.filter((row) => row.check.paid.ok && !isVerified(row)).length;
+  return (
+    <p
+      role={live ? "status" : undefined}
+      className={cn(
+        "text-sm font-medium",
+        verified === rows.length
+          ? "text-emerald-800 dark:text-emerald-300"
+          : "text-amber-800 dark:text-amber-300",
+        className,
+      )}
+    >
+      {verified} of {rows.length} {rows.length === 1 ? "source" : "sources"} verified
+      {paidOnly > 0 ? (
+        <span className="font-normal text-muted-foreground">
+          {" "}
+          · {paidOnly} paid, not fully verified
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
+/** Where the per-source results render (the panel scrolls here after a check). */
+export const VERIFY_SOURCES_ID = "verify-sources";
+
+interface VerifySourcesProps extends SourcesToVerify {
+  verify: VerifySourcesCheck;
+}
+
+/**
+ * "This answer paid for its sources, and you can verify every one": checks each citation in the
+ * browser against BotFare's public keys (paid, delivered, bytes match).
+ */
+export function VerifySources({ citations, manifest, verify }: VerifySourcesProps) {
+  const { state, run } = verify;
 
   if (citations.length === 0 && !manifest?.sources.length) return null;
 
   const rows = state.status === "done" ? state.rows : [];
-  const verified = rows.filter(isVerified).length;
-  const paidOnly = rows.filter((row) => row.check.paid.ok && !isVerified(row)).length;
 
   return (
-    <section aria-label="Verify sources" className="flex flex-col gap-3 border-t pt-4">
+    <section
+      id={VERIFY_SOURCES_ID}
+      aria-label="Verify sources"
+      className="flex scroll-mt-6 flex-col gap-3 border-t pt-4"
+    >
       <div className="flex flex-wrap items-center gap-3">
         <Button
           type="button"
           variant="outline"
           size="sm"
-          onClick={run}
+          onClick={() => void run()}
           disabled={state.status === "checking"}
         >
           {state.status === "checking" ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
           {state.status === "done" ? "Verify again" : "Verify sources"}
         </Button>
         {state.status === "done" ? (
-          <p
-            role="status"
-            className={cn(
-              "text-sm font-medium",
-              verified === rows.length
-                ? "text-emerald-800 dark:text-emerald-300"
-                : "text-amber-800 dark:text-amber-300",
-            )}
-          >
-            {verified} of {rows.length} {rows.length === 1 ? "source" : "sources"} verified
-            {paidOnly > 0 ? (
-              <span className="font-normal text-muted-foreground">
-                {" "}
-                · {paidOnly} paid, not fully verified
-              </span>
-            ) : null}
-          </p>
+          <VerifySummary rows={rows} />
         ) : (
           <p className="text-xs text-muted-foreground">
             Checks, in your browser with BotFare&apos;s public key, that each source was paid,

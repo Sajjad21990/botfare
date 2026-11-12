@@ -18,12 +18,48 @@ describe("signed-in nav for the demo personas", () => {
     );
   });
 
-  it("wraps the nav on a phone instead of scrolling it sideways", () => {
+  it("wraps the nav instead of scrolling it sideways", () => {
     const nav = src("components/app/nav-links.tsx");
-    expect(nav).toContain("flex-wrap");
-    expect(nav).toContain("gap-x-4 gap-y-1 sm:flex-nowrap");
+    expect(nav).toContain("flex min-w-0 flex-wrap");
+    expect(nav).not.toContain("overflow-x-auto");
+    expect(nav).not.toContain("flex-nowrap");
+  });
+
+  it("keeps the nav in view: its own row in a header that sticks to the top from sm up", () => {
     const layout = src("app/(app)/layout.tsx");
-    expect(layout).not.toMatch(/order-last[^"]* h-11/);
+    expect(layout).toMatch(
+      /<header className="[^"]*\bz-40\b[^"]*bg-background[^"]*sm:sticky sm:top-0/,
+    );
+    expect(layout).toMatch(/border-t border-dashed[^"]*">\s*<NavLinks/);
+  });
+
+  it("marks the current page with a filled ticket-yellow pill and labels each group on desktop", () => {
+    const nav = src("components/app/nav-links.tsx");
+    expect(nav).toContain("text-[0.95rem] font-medium");
+    expect(nav).toMatch(
+      /active\s*\?\s*"[^"]*border-brand-foreground bg-brand text-brand-foreground/,
+    );
+    expect(nav).toContain('short: "Agent owner"');
+    expect(nav).toContain('short: "Website owner"');
+    expect(nav).toMatch(/hidden [^"]*uppercase lg:inline"/);
+  });
+
+  it("links Verify a receipt after both groups, without switching persona", () => {
+    const nav = src("components/app/nav-links.tsx");
+    expect(nav).toContain("<ShieldCheck");
+    const verify = nav.indexOf('href="/verify"');
+    expect(verify).toBeGreaterThan(nav.indexOf("GROUPS.map("));
+    // A plain Link: no onClick, so no POST to /api/session/persona.
+    const tag = nav.slice(nav.lastIndexOf("<Link", verify), nav.indexOf(">", verify));
+    expect(tag).not.toContain("onClick");
+    expect(nav.slice(verify)).toContain("Verify a receipt");
+  });
+
+  it("links Verify in the landing header before Sign in, from sm up", () => {
+    const header = src("components/landing/site-header.tsx");
+    expect(header).toMatch(/<Link href="\/verify" className=\{fromSm\}>\s*Verify\s*<\/Link>/);
+    expect(header.indexOf('href="/verify"')).toBeLessThan(header.indexOf('href="/signin"'));
+    expect(header).toContain("Try it in 2 minutes");
   });
 
   it("switches persona on the other group's links, and only for a demo persona", () => {

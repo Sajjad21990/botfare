@@ -35,7 +35,7 @@ describe("landing links", () => {
       }
       for (const [, href] of source.matchAll(/<Link\s[^>]*?href="([^"]*)"/g)) {
         expect(
-          ["/", "/judge", "/signin", "/privacy", "/terms"],
+          ["/", "/judge", "/signin", "/verify", "/privacy", "/terms"],
           `${name}: <Link ${href}>`,
         ).toContain(href);
       }

@@ -1,6 +1,7 @@
 "use client";
 
 import { DEMO_PERSONAS, type DemoPersona } from "@botfare/contracts";
+import { ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Fragment, type MouseEvent, useEffect, useRef } from "react";
@@ -10,10 +11,12 @@ import { cn } from "@/lib/utils";
  * Top-level sections of the signed-in app, grouped by who uses them: agent owners, then
  * publishers. Grouped, never hidden: one PayPal login can be both. Each group names the demo
  * persona that owns it, so a judge signed in as one persona switches on the other group's links.
+ * `label` names the group for screen readers; `short` is the small label shown before it on desktop.
  */
 const GROUPS = [
   {
     label: "For AI agent owners",
+    short: "Agent owner",
     persona: "agentOwner",
     links: [
       { href: "/wallet", label: "Wallet" },
@@ -22,6 +25,7 @@ const GROUPS = [
   },
   {
     label: "For websites",
+    short: "Website owner",
     persona: "publisher",
     links: [
       { href: "/publisher", label: "Dashboard" },
@@ -119,8 +123,8 @@ export function NavLinks({
     <nav
       aria-label="Main"
       className={cn(
-        // Below sm the two groups wrap onto their own lines, so a phone never scrolls sideways.
-        "flex min-w-0 flex-wrap items-stretch gap-x-4 gap-y-1 sm:flex-nowrap sm:gap-x-0 sm:overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        // Wraps instead of scrolling sideways: on a phone each group and the Verify chip get a line.
+        "flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 sm:gap-x-1",
         className,
       )}
     >
@@ -129,11 +133,22 @@ export function NavLinks({
           {index > 0 ? (
             <span
               aria-hidden
-              className="hidden h-4 w-px shrink-0 self-center bg-border sm:mx-2 sm:block"
+              className="hidden h-5 w-px shrink-0 bg-foreground/20 sm:mx-2 sm:block"
             />
           ) : null}
+          {/* min-w-0 + flex-wrap: on the narrowest phones (320px) a group wraps inside itself too. */}
           {/* biome-ignore lint/a11y/useSemanticElements: a labelled group of links, not a form fieldset */}
-          <div role="group" aria-label={group.label} className="flex shrink-0 items-stretch">
+          <div
+            role="group"
+            aria-label={group.label}
+            className="flex min-w-0 flex-wrap items-center gap-1"
+          >
+            <span
+              aria-hidden
+              className="mr-1 hidden text-[11px] leading-4 font-semibold tracking-wider whitespace-nowrap text-muted-foreground uppercase lg:inline"
+            >
+              {group.short}
+            </span>
             {group.links.map((link) => {
               const active = isActive(link.href, pathname);
               const switches = demoPersona !== undefined && demoPersona !== group.persona;
@@ -149,23 +164,27 @@ export function NavLinks({
                     switches ? (event) => switchPersona(event, group.persona, link.href) : undefined
                   }
                   className={cn(
-                    "relative inline-flex h-9 shrink-0 items-center rounded-md px-2.5 text-sm whitespace-nowrap transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:h-auto sm:px-3",
-                    active ? "font-medium text-foreground" : "text-muted-foreground",
+                    "inline-flex h-9 shrink-0 items-center rounded-full border-[1.5px] px-3 text-[0.95rem] font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    active
+                      ? "border-brand-foreground bg-brand text-brand-foreground shadow-[2px_2px_0_var(--brand-foreground)]"
+                      : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
                   {link.label}
-                  {active ? (
-                    <span
-                      aria-hidden
-                      className="absolute inset-x-2 bottom-0 h-[3px] rounded-t-sm bg-brand sm:inset-x-2.5"
-                    />
-                  ) : null}
                 </Link>
               );
             })}
           </div>
         </Fragment>
       ))}
+      {/* A plain link to the public receipt checker: it belongs to no role, so it never switches persona. */}
+      <Link
+        href="/verify"
+        className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border-[1.5px] border-foreground px-3 text-[0.95rem] font-medium whitespace-nowrap text-foreground transition-colors outline-none hover:bg-ticket hover:text-ticket-foreground focus-visible:ring-3 focus-visible:ring-ring/50 sm:ml-auto"
+      >
+        <ShieldCheck aria-hidden className="size-4 text-success" />
+        Verify a receipt
+      </Link>
     </nav>
   );
 }
