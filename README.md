@@ -9,7 +9,7 @@ BotFare lets websites charge AI agents a few cents a page through PayPal, while 
 - Live app: [botfare-web.onrender.com/judge](https://botfare-web.onrender.com/judge). Three steps, no sign-up, PayPal sandbox test money.
 - Demo website: [botfare-demo.onrender.com](https://botfare-demo.onrender.com), Saffron & Salt, a made-up recipe blog.
 - Check any receipt: [botfare-web.onrender.com/verify](https://botfare-web.onrender.com/verify).
-- Video: (link added after upload)
+- Video (2:58): [youtu.be/Opl81NyyIvw](https://youtu.be/Opl81NyyIvw)
 
 ![BotFare landing page](docs/screenshots/01-landing-hero.png)
 

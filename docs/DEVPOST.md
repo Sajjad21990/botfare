@@ -76,7 +76,7 @@ AI agents now read the web for people, and small publishers lose the clicks that
 | Design | `/judge` tour, one-line setup, PayPal top-up, Payment details and Check the receipts yourself on `/agent`, AG Studio analytics |
 | Potential Impact | Publishers earn from AI traffic through PayPal accounts they already have |
 | Quality of the Idea | x402 for PayPal's 440 million accounts, with AI making decisions too small for a person |
-| Presentation | `/judge`, the video, a short README and money landing in a PayPal sandbox account |
+| Presentation | `/judge`, the [video](https://youtu.be/Opl81NyyIvw), a short README and money landing in a PayPal sandbox account |
 
 ## Built With
 
