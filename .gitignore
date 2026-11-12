@@ -10,3 +10,6 @@ coverage/
 .env.*
 !.env.example
 next-env.d.ts
+
+# Demo video renders (large; uploaded to YouTube)
+video/
