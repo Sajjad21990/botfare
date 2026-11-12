@@ -6,13 +6,13 @@
 - Only fictional names (Saffron & Salt).
 - No third-party logos, apart from PayPal's own sandbox pages showing the payment.
 - No copyrighted music. An AI voiceover is fine.
-- Say "AI agent" in the voiceover ("bot" only in the tagline). Say "AI", not a model name: the live site runs Groq's `openai/gpt-oss-120b`.
+- Say "AI agent" in the voiceover ("bot" only in the tagline). Say "AI", not a model name: the live site runs OpenAI's `gpt-5-mini`.
 
 ## Before recording
 
 1. Use the deployed app (https://botfare-web.onrender.com), or run the stack locally: `pnpm dev:web` plus `pnpm dev:demo`, or the judge Docker stack on :3300.
 2. Use a fresh browser profile at 1440×900 with 125% zoom so text is readable. Turn notifications off.
-3. Run one research run before recording, so models and caches are warm. On the live site the agent runs on Groq's free tier, where a run takes 1–2 minutes because of rate-limit waits. Record it at normal speed and speed up the waiting parts 4× in the edit.
+3. Run one research run before recording, so models and caches are warm. On the live site a run takes about 20 seconds on OpenAI's `gpt-5-mini`; record it at normal speed.
 4. Record the sourdough run as its own clip before the main take: `/judge` → step 1 → **Run the agent**, pick the suggested question **How do I start a sourdough starter?** and press **Run**. The agent pays 2¢ for the sourdough starter page, gets a "Subscribe to keep reading" stub, disputes it, and the dispute turns **Refunded** a few seconds later. Speed up the waits 4×. The Fare Court scene cuts to the end of this clip.
 5. Keep these open in tabs:
    - the landing page `/`, scrolled to the top
@@ -51,7 +51,7 @@
   - the landing hero, the **Fare Court** and **Fare Advisor** cards under it, and the **Set up** band;
   - the publisher dashboard with the one-line callout;
   - wallet top-up;
-  - the agent's answer with the wire inspector;
+  - the agent's answer with Payment details and the Check the receipts yourself panel;
   - the sourdough dispute marked **Refunded**;
   - AG Studio analytics;
   - the Payouts batch;

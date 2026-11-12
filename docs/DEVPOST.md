@@ -26,7 +26,7 @@ BotFare is pay-per-request for AI agents, settled on **PayPal**:
 - **x402:** a real plug-in for the official `@x402/*` 2.30.0 SDK (scheme `prepaid`, network `paypal:sandbox`) with client, server and facilitator parts, used by `@x402/express`, `@x402/fetch` and `x402Facilitator`. Settlement happens only after the publisher's handler succeeds.
 - **PayPal:** Orders v2 with JS SDK v6 and `experience_context`. The capture's PayPal fee is booked in the ledger. Payouts use `sender_batch_id` idempotency, webhooks are verified, and publishers can Log in with PayPal. All in the sandbox.
 - **Ledger:** Postgres, double-entry, integer micro-dollars, one transaction per fare (wallet −2¢, publisher +1.9¢, BotFare +0.1¢).
-- **AI:** Claude by default; one adapter also runs OpenAI, Gemini, Grok, Groq, OpenRouter and Ollama models, and the live demo runs Groq's `openai/gpt-oss-120b`. Every model answer is zod-validated, and the money moves only in code.
+- **AI:** Claude by default; one adapter also runs OpenAI, Gemini, Grok, Groq, OpenRouter and Ollama models, and the live demo runs OpenAI's `gpt-5-mini` (a research run takes about 20 seconds). Every model answer is zod-validated, and the money moves only in code.
 - Next.js, Express, Drizzle, AG Studio analytics (custom widgets, theme, AI assistant), an MCP server, Render, and **Claude Code** with the PayPal and APIMatic plugins.
 
 ## Challenges we ran into
@@ -62,14 +62,14 @@ Micropayments failed less on technology than on the cost of deciding (Szabo, 199
 | Criterion | Where to look |
 | --- | --- |
 | Technological Implementation (PayPal + AI) | x402 plug-in on the official SDK (`packages/x402-paypal`), the PayPal client (`packages/paypal`), the double-entry ledger (`packages/core`), Fare Court and Fare Advisor with policy in code, signed receipts |
-| Design | A ticket-booth look (Admit-bot logo, paper, ink and ticket yellow), 60-second publisher setup, wallet with PayPal top-up, the wire inspector on `/agent`, AG Studio analytics in the BotFare theme |
+| Design | A ticket-booth look (Admit-bot logo, paper, ink and ticket yellow), 60-second publisher setup, wallet with PayPal top-up, Payment details (the decoded x402 messages) and a Check the receipts yourself panel on `/agent`, AG Studio analytics in the BotFare theme |
 | Potential Impact | Small publishers and API owners earn from AI traffic through the PayPal accounts they already have; agents pay cents, not 49¢ fees |
 | Quality of the Idea | x402 for PayPal's 440 million accounts; AI on the decisions too small for a person |
 | Presentation | `/judge` (try it in 2 minutes), the video, a 60-second README intro with a quick start, and the money landing in a PayPal sandbox account |
 
 ## Built With
 
-paypal, paypal-orders, paypal-js-sdk-v6, paypal-payouts, paypal-webhooks, log-in-with-paypal, x402, anthropic, claude, claude-code, groq, ag-grid, ag-studio, apimatic, render, next.js, react, express, typescript, postgresql, drizzle, docker, mcp
+paypal, paypal-orders, paypal-js-sdk-v6, paypal-payouts, paypal-webhooks, log-in-with-paypal, x402, anthropic, claude, claude-code, openai, ag-grid, ag-studio, apimatic, render, next.js, react, express, typescript, postgresql, drizzle, docker, mcp
 
 ## Try it
 

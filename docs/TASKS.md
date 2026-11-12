@@ -70,7 +70,7 @@
 | ✅ | Demo traffic (~150 paid requests over 14 days), real sandbox Withdraw now, docs, Render cron | `pnpm seed:traffic`; $11.72 Payout batch VLJ8N6ZZVWKQE reached SUCCESS; `botfare-payouts` cron |
 | ✅ | Phase 2 review and fixes: 7 of 8 findings confirmed and fixed (duplicate-batch double payout, UNCLAIMED handling, judge mode so shared personas can't break the demo, AI route limits, traffic rerun) | 227 tests, e2e 9/9; every route exercised over HTTP; app font and phone header fixed |
 | ✅ | 👤 Approve one wallet top-up in the browser with the sandbox agent-owner account | Done: order 9LL18551JF351230G, capture 4UK59144XL504881G, $5.00 gross, $0.66 PayPal fee, wallet credited |
-| ⏳ | 👤 Optional: AG Studio 45-day trial key in `.env` as `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` | Removes the watermark |
+| ✅ | 👤 AG Studio 45-day trial key as `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` (local `.env` and Render) | 12 Nov: no watermark, no licence errors, local and live |
 
 ## Phase 3: Agent detection, AI and polish 🔄 (8 / 9)
 
