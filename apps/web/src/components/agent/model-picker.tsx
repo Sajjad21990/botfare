@@ -69,6 +69,13 @@ export function initialChoice(models: ModelsResponse): ModelChoice | null {
   return first ? { provider: first.provider, model: first.default } : null;
 }
 
+/** The server's default model (AI_PROVIDER and its model), else the first provider's default. */
+export function defaultChoice(models: ModelsResponse): ModelChoice | null {
+  if (isOffered(models, models.default)) return models.default;
+  const first = models.providers[0];
+  return first ? { provider: first.provider, model: first.default } : null;
+}
+
 export function rememberChoice(choice: ModelChoice): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(choice));

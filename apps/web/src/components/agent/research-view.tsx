@@ -10,14 +10,7 @@ import {
 } from "@/lib/server/research-events";
 import { AnswerCard } from "./answer-card";
 import { CostMeter } from "./cost-meter";
-import {
-  fetchModels,
-  initialChoice,
-  type ModelChoice,
-  ModelPicker,
-  type ModelsResponse,
-  rememberChoice,
-} from "./model-picker";
+import { defaultChoice, fetchModels, type ModelChoice, type ModelsResponse } from "./model-picker";
 import { QuestionCard, SUGGESTED_QUESTIONS } from "./question-card";
 import { isInspectable } from "./run-state";
 import { Timeline } from "./timeline";
@@ -44,7 +37,8 @@ export function ResearchView() {
     fetchModels().then((result) => {
       if (!live) return;
       setModels(result);
-      setChoice(initialChoice(result));
+      // The demo runs on the server's default model (OpenAI on the live site); no picker.
+      setChoice(defaultChoice(result));
     });
     return () => {
       live = false;
@@ -101,11 +95,6 @@ export function ResearchView() {
     void start(question.trim(), budgetCents, choice);
   }
 
-  function choose(next: ModelChoice) {
-    setChoice(next);
-    rememberChoice(next);
-  }
-
   const unavailable = availability && !availability.available ? availability : null;
   const providerLabel = (id: string | null) =>
     models?.providers.find((p) => p.provider === id)?.label ?? id;
@@ -147,16 +136,7 @@ export function ResearchView() {
             disabled={!availability || Boolean(unavailable)}
             onRun={run}
             onStop={stop}
-            modelPicker={
-              models && models.providers.length > 0 && choice && !unavailable ? (
-                <ModelPicker
-                  providers={models.providers}
-                  value={choice}
-                  onChange={choose}
-                  disabled={running}
-                />
-              ) : null
-            }
+            modelLabel={choice ? `${providerLabel(choice.provider)} · ${choice.model}` : undefined}
           />
         </div>
         <div className="flex flex-col gap-4 lg:col-span-2">

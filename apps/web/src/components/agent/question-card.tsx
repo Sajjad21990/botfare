@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Play, Square } from "lucide-react";
-import { type FormEvent, type ReactNode, useId } from "react";
+import { type FormEvent, useId } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -29,11 +29,14 @@ interface QuestionCardProps {
   disabled: boolean;
   onRun: () => void;
   onStop: () => void;
-  /** The provider and model picker, when the server offers a choice. */
-  modelPicker?: ReactNode;
+  /** The AI model the run uses, e.g. "OpenAI · gpt-5-mini". */
+  modelLabel?: string;
 }
 
-/** The question, a few suggestions, the budget slider and Run / Stop. */
+/**
+ * The question with Run right under it (the one thing to do on this page), the budget beside Run,
+ * the limits and model in one line, then a few other questions to try.
+ */
 export function QuestionCard(props: QuestionCardProps) {
   const questionId = useId();
   const budgetId = useId();
@@ -43,6 +46,8 @@ export function QuestionCard(props: QuestionCardProps) {
     event.preventDefault();
     if (canRun) props.onRun();
   }
+
+  const others = SUGGESTED_QUESTIONS.filter((q) => q !== props.question);
 
   return (
     <Card>
@@ -57,7 +62,7 @@ export function QuestionCard(props: QuestionCardProps) {
               id={questionId}
               value={props.question}
               maxLength={MAX_QUESTION_CHARS}
-              rows={3}
+              rows={2}
               placeholder="Ask a cooking question the sites on BotFare can answer"
               disabled={props.running}
               onChange={(event) => props.onQuestionChange(event.target.value)}
@@ -65,35 +70,35 @@ export function QuestionCard(props: QuestionCardProps) {
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit(event);
               }}
             />
-            <div className="flex flex-wrap gap-2">
-              {SUGGESTED_QUESTIONS.filter((q) => q !== props.question).map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  disabled={props.running}
-                  onClick={() => props.onQuestionChange(suggestion)}
-                  className="rounded-full border px-3 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
           </div>
 
-          {props.modelPicker ? (
-            <details className="text-sm">
-              <summary className="cursor-pointer text-xs text-muted-foreground">
-                Change the AI model
-              </summary>
-              <div className="mt-2">{props.modelPicker}</div>
-            </details>
-          ) : null}
-
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-            <div className="flex flex-1 flex-col gap-2">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            {props.running ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={props.onStop}
+                className="h-11 px-6 text-base sm:w-auto"
+              >
+                <Square />
+                Stop
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                size="lg"
+                disabled={!canRun}
+                className="h-11 px-6 text-base sm:w-auto"
+              >
+                {props.disabled ? <Loader2 className="animate-spin" /> : <Play />}
+                Run the agent
+              </Button>
+            )}
+            <div className="flex flex-1 flex-col gap-1.5">
               <div className="flex items-baseline justify-between gap-2">
-                <Label htmlFor={budgetId}>Budget</Label>
-                <span className="text-sm font-medium tabular-nums">
+                <Label htmlFor={budgetId}>Budget for this run</Label>
+                <span className="text-sm font-semibold tabular-nums">
                   {formatFare(props.budgetCents)}
                 </span>
               </div>
@@ -108,22 +113,29 @@ export function QuestionCard(props: QuestionCardProps) {
                 onChange={(event) => props.onBudgetChange(Number(event.target.value))}
                 className="w-full accent-primary disabled:opacity-50"
               />
-              <p className="text-xs text-muted-foreground">
-                The wallet also caps any single page at {formatFare(props.maxPerRequestCents)}.
-              </p>
             </div>
-            {props.running ? (
-              <Button type="button" variant="outline" size="lg" onClick={props.onStop}>
-                <Square />
-                Stop
-              </Button>
-            ) : (
-              <Button type="submit" size="lg" disabled={!canRun}>
-                {props.disabled ? <Loader2 className="animate-spin" /> : <Play />}
-                Run
-              </Button>
-            )}
           </div>
+          <p className="text-xs text-muted-foreground">
+            At most {formatFare(props.maxPerRequestCents)} a page, paid from the demo wallet.
+            {props.modelLabel ? ` AI model: ${props.modelLabel}.` : null}
+          </p>
+
+          {others.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+              <span className="text-xs text-muted-foreground">Or try</span>
+              {others.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  disabled={props.running}
+                  onClick={() => props.onQuestionChange(suggestion)}
+                  className="rounded-full border px-3 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </form>
       </CardContent>
     </Card>
