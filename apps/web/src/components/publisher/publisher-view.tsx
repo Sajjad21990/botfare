@@ -77,7 +77,7 @@ export function PublisherView({
     <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Publisher</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
             Price your pages for AI agents and get paid through PayPal.
           </p>
@@ -99,6 +99,8 @@ export function PublisherView({
       </div>
 
       <EarningsCard data={data} onPayout={addPayout} />
+
+      {data.sites.length > 0 && <FareAdvisorCard sites={data.sites} onApplied={applyFromAdvisor} />}
 
       <section className="space-y-4" aria-labelledby="publisher-sites">
         <div className="space-y-1">
@@ -141,8 +143,6 @@ export function PublisherView({
           </div>
         )}
       </section>
-
-      {data.sites.length > 0 && <FareAdvisorCard sites={data.sites} onApplied={applyFromAdvisor} />}
 
       <section className="space-y-4" aria-labelledby="publisher-payouts">
         <div className="space-y-1">

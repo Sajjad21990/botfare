@@ -46,12 +46,12 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>
-                <TableHead>Site</TableHead>
                 <TableHead>Page</TableHead>
-                <TableHead>Agent</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead>Receipt</TableHead>
+                <TableHead>Agent</TableHead>
+                <TableHead className="hidden sm:table-cell">Site</TableHead>
+                <TableHead className="hidden sm:table-cell">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -60,7 +60,6 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                   <TableCell className="text-muted-foreground">
                     <LocalTime iso={receipt.createdAt} />
                   </TableCell>
-                  <TableCell className="font-medium">{receipt.siteName}</TableCell>
                   <TableCell>
                     <span
                       className="block max-w-56 truncate font-mono text-xs"
@@ -69,7 +68,6 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                       {receipt.path}
                     </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{receipt.agentKeyName}</TableCell>
                   <TableCell
                     className={
                       receipt.status === "refunded"
@@ -80,7 +78,25 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                   >
                     {formatMoney(receipt.amountMicros)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <span className="flex items-center gap-2">
+                      <span className="hidden font-mono sm:inline">{receipt.id}</span>
+                      <NewTabLink
+                        href={verifyHref(receipt.id)}
+                        className="inline-flex items-center gap-1 rounded py-2 font-medium text-foreground underline-offset-4 hover:underline"
+                        title="Check BotFare's signed statements for this receipt"
+                      >
+                        <ShieldCheck aria-hidden className="size-3.5" />
+                        Verify
+                        <span className="sr-only"> receipt {receipt.id}</span>
+                      </NewTabLink>
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{receipt.agentKeyName}</TableCell>
+                  <TableCell className="hidden font-medium sm:table-cell">
+                    {receipt.siteName}
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
                     {receipt.status === "refunded" ? (
                       <Badge variant="secondary">Refunded</Badge>
                     ) : (
@@ -91,20 +107,6 @@ export function ReceiptsCard({ receipts, limit }: { receipts: WalletReceipt[]; l
                         Paid
                       </Badge>
                     )}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    <span className="flex items-center gap-2">
-                      <span className="font-mono">{receipt.id}</span>
-                      <NewTabLink
-                        href={verifyHref(receipt.id)}
-                        className="inline-flex items-center gap-1 rounded font-medium text-foreground underline-offset-4 hover:underline"
-                        title="Check BotFare's signed statements for this receipt"
-                      >
-                        <ShieldCheck aria-hidden className="size-3.5" />
-                        Verify
-                        <span className="sr-only"> receipt {receipt.id}</span>
-                      </NewTabLink>
-                    </span>
                   </TableCell>
                 </TableRow>
               ))}

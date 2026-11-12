@@ -9,6 +9,7 @@ import { PersonaStepButton } from "@/components/judge/persona-step-button";
 import { SandboxAccount } from "@/components/judge/sandbox-account";
 import styles from "@/components/landing/landing.module.css";
 import { CodeBlock } from "@/components/publisher/copy-button";
+import { judgeSandboxBuyer } from "@/lib/server/judge";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -21,17 +22,6 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 const REPO_URL = "https://github.com/Sajjad21990/botfare";
-
-/**
- * The PayPal sandbox buyer a judge uses to approve a wallet top-up: both
- * JUDGE_SANDBOX_BUYER_EMAIL and JUDGE_SANDBOX_BUYER_PASSWORD, or null when either is missing.
- * These are sandbox test credentials (test money), never a real PayPal account.
- */
-function judgeSandboxBuyer(env: NodeJS.ProcessEnv = process.env) {
-  const email = env.JUDGE_SANDBOX_BUYER_EMAIL?.trim();
-  const password = env.JUDGE_SANDBOX_BUYER_PASSWORD?.trim();
-  return email && password ? { email, password } : null;
-}
 
 const textLink = `${styles.focusRing} rounded-sm font-medium text-foreground underline underline-offset-4`;
 
@@ -126,8 +116,8 @@ export default function JudgePage() {
             }
           >
             {buyer
-              ? "Top up $5 with the PayPal button and the test account below. Then give an agent a key with a daily cap."
-              : "Top up $5 with the PayPal button and any PayPal sandbox personal account. Then give an agent a key with a daily cap."}
+              ? "Top up $5 with the PayPal button and the test account below. Your balance updates as soon as PayPal confirms."
+              : "Top up $5 with the PayPal button and any PayPal sandbox personal account. Your balance updates as soon as PayPal confirms."}
           </Step>
         </ol>
 

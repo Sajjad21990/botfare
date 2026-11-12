@@ -1,7 +1,7 @@
 "use client";
 
 import type { AgWidgetDataResponse, AgWidgetField, AgWidgetParams } from "ag-studio";
-import { ArrowUpRight, Radio, Wallet } from "lucide-react";
+import { Radio, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { timeAgo, usd, useLiveState, useNow } from "./live-store";
 import type { EarningsWidgetState, LiveReceiptsWidgetState } from "./registry";
@@ -226,9 +226,9 @@ export function EarningsWidget(params: AgWidgetParams<EarningsWidgetState>) {
         aside={timeAgo(live.lastSyncAt, now)}
       />
       <div className="flex min-h-0 flex-1 flex-col justify-center gap-0.5 px-1">
-        <span className={`text-xs ${subtle}`}>Earnings balance</span>
+        <span className={`text-xs ${subtle}`}>Balance (incl. on hold)</span>
         <span className={`truncate text-3xl font-semibold tracking-tight tabular-nums ${text}`}>
-          {usd(live.earningsUsd, 4)}
+          {usd(live.earningsUsd, 2)}
         </span>
         <span className={`line-clamp-1 text-xs ${subtle}`}>
           Fares clear for PayPal Payouts after 24 hours
@@ -238,13 +238,13 @@ export function EarningsWidget(params: AgWidgetParams<EarningsWidgetState>) {
         <div className="min-w-0">
           <dt className={`truncate ${subtle}`}>Earned in view</dt>
           <dd className={`mt-0.5 truncate text-sm font-medium tabular-nums ${text}`}>
-            {view ? usd(view.earned, 4) : "–"}
+            {view ? usd(view.earned, 2) : "–"}
           </dd>
         </div>
         <div className="min-w-0">
           <dt className={`truncate ${subtle}`}>Fees (5%)</dt>
           <dd className={`mt-0.5 truncate text-sm font-medium tabular-nums ${text}`}>
-            {view ? usd(view.fees, 4) : "–"}
+            {view ? usd(view.fees, 2) : "–"}
           </dd>
         </div>
       </dl>
@@ -252,8 +252,7 @@ export function EarningsWidget(params: AgWidgetParams<EarningsWidgetState>) {
         href="/publisher"
         className="mx-1 inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--ag-accent-color)] px-3 text-sm font-medium whitespace-nowrap text-[color:var(--ag-background-color)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ag-accent-color)]"
       >
-        Withdraw with PayPal
-        <ArrowUpRight className="size-4" />
+        Withdraw on Dashboard
       </a>
     </div>
   );

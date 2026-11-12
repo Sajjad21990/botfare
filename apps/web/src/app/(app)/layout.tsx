@@ -1,3 +1,4 @@
+import { DEMO_PERSONAS, type DemoPersona } from "@botfare/contracts";
 import Link from "next/link";
 import { NavLinks } from "@/components/app/nav-links";
 import { SignOutButton } from "@/components/app/sign-out-button";
@@ -9,9 +10,15 @@ export const dynamic = "force-dynamic";
 /**
  * Shell for every signed-in page: the logo with a Sandbox chip, the navigation, and the signed-in
  * user. Below `lg` the navigation gets its own scrollable row, so a phone never scrolls sideways.
+ * A demo persona sees its role ("Agent owner", "Publisher"), and a link in the other role's group
+ * switches persona, so the other role's pages never look empty.
  */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
+  const email = user.email.trim().toLowerCase();
+  const persona = (Object.keys(DEMO_PERSONAS) as DemoPersona[]).find(
+    (p) => DEMO_PERSONAS[p].email === email,
+  );
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b">
@@ -30,9 +37,15 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               Sandbox<span className="sr-only">: PayPal test money only</span>
             </span>
           </div>
-          <NavLinks className="order-last -mx-2.5 h-11 w-[calc(100%+1.25rem)] lg:order-none lg:mx-0 lg:h-14 lg:w-auto" />
+          <NavLinks
+            demoPersona={persona}
+            className="order-last -mx-2.5 h-11 w-[calc(100%+1.25rem)] lg:order-none lg:mx-0 lg:h-14 lg:w-auto"
+          />
           <div className="ml-auto flex h-14 shrink-0 items-center gap-3 text-sm text-muted-foreground">
-            <span className="hidden max-w-48 truncate xl:inline">{user.name ?? user.email}</span>
+            {/* From sm up. On a phone the logo, Sandbox chip, role and Sign out do not fit on one row. */}
+            <span className="hidden max-w-48 truncate sm:inline">
+              {persona ? DEMO_PERSONAS[persona].label : (user.name ?? user.email)}
+            </span>
             <SignOutButton />
           </div>
         </div>

@@ -12,7 +12,8 @@ describe("homepage receipts section", () => {
     expect(section).toMatch(/<section id="receipts" aria-labelledby="receipts-title"/);
     expect(section).toContain("styles.anchor");
     expect(src("app/page.tsx")).toMatch(/<HowSteps \/>\s*<VerifySection \/>/);
-    expect(src("components/landing/site-header.tsx")).toContain('href="/#receipts"');
+    // The header keeps only Fare Court, Fare Advisor and How it works next to the main button.
+    expect(src("components/landing/site-header.tsx")).not.toContain('href="/#receipts"');
   });
 
   it("links to /verify once, in a new tab", () => {

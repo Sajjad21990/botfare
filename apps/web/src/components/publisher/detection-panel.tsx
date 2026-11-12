@@ -18,7 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { api, errorText } from "./api";
 import { DETECTION_LEVELS, SIGNAL_DESCRIPTIONS, signalLabel } from "./detection-copy";
-import { formatCount, formatMicros } from "./format";
+import { formatCount, formatMoney, formatMoneyExact } from "./format";
 import type { DetectionResponse, SiteView } from "./types";
 
 const HEADER_RE = /^[A-Za-z0-9-]+$/;
@@ -493,8 +493,11 @@ function SignalRevenue({ rows }: { rows: DetectionResponse["revenueBySignal"] | 
             </span>
             <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
               {formatCount(row.paidRequests)} paid ·{" "}
-              <span className="font-medium text-foreground">
-                {formatMicros(row.earningsMicros)}
+              <span
+                className="font-medium text-foreground"
+                title={formatMoneyExact(row.earningsMicros)}
+              >
+                {formatMoney(row.earningsMicros)}
               </span>
             </span>
           </div>

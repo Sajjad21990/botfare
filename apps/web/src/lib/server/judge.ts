@@ -20,6 +20,20 @@ export function isJudge(user: Pick<User, "email">): boolean {
   return isDemoPersonaEmail(user.email);
 }
 
+/**
+ * The PayPal sandbox buyer a judge uses to approve a wallet top-up: both
+ * JUDGE_SANDBOX_BUYER_EMAIL and JUDGE_SANDBOX_BUYER_PASSWORD, or null when either is missing.
+ * These are sandbox test credentials (test money), never a real PayPal account. Shown on /judge
+ * and, for the demo personas only, on the wallet.
+ */
+export function judgeSandboxBuyer(
+  env: Record<string, string | undefined> = process.env,
+): { email: string; password: string } | null {
+  const email = env.JUDGE_SANDBOX_BUYER_EMAIL?.trim();
+  const password = env.JUDGE_SANDBOX_BUYER_PASSWORD?.trim();
+  return email && password ? { email, password } : null;
+}
+
 /** 403 for an action the shared demo accounts may not take. */
 export function judgeModeRefusal(message: string): Response {
   return jsonError(403, "judge_mode", `${message} This is turned off in judge mode.`);

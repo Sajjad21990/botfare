@@ -16,7 +16,7 @@ interface AnswerCardProps {
   budgetCents: number;
   /** The answer event's sources manifest, for "Verify sources" (optional until the agent sends it). */
   manifest?: AnswerManifest | null;
-  /** Shows the citation's payment in the wire inspector. */
+  /** Shows the citation's payment in Payment details. */
   onShowReceipt: (receiptId: string) => void;
 }
 
@@ -59,7 +59,7 @@ export function AnswerCard(props: AnswerCardProps) {
                     type="button"
                     onClick={() => props.onShowReceipt(citation.receiptId)}
                     className="flex w-fit flex-wrap items-center gap-x-2 rounded text-left text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                    title="Show this payment in the wire inspector"
+                    title="Show this payment's details"
                   >
                     <span className="font-mono">{citation.receiptId}</span>
                     <span>·</span>

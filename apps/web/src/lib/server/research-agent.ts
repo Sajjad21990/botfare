@@ -178,13 +178,21 @@ export function describeModelError(error: unknown): { code: string; message: str
     return { code: "ai_auth", message: "The AI provider rejected the API key." };
   }
   if (error instanceof Anthropic.RateLimitError) {
-    return { code: "ai_rate_limited", message: "The model is busy. Try again in a moment." };
+    return {
+      code: "ai_rate_limited",
+      message:
+        "The AI model hit its rate limit, so the run stopped. Pages it already paid for keep their receipts. Press Run to try again.",
+    };
   }
   if (error instanceof Anthropic.BadRequestError) {
     return { code: "ai_bad_request", message: "The model could not process this request." };
   }
   if (error instanceof Anthropic.APIError) {
-    return { code: "ai_upstream", message: "The AI service is unavailable. Try again shortly." };
+    return {
+      code: "ai_upstream",
+      message:
+        "The AI service is unavailable right now. Pages already paid for keep their receipts. Press Run to try again.",
+    };
   }
   return { code: "agent_error", message: "The research agent failed unexpectedly." };
 }

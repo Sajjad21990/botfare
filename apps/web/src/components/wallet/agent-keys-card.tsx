@@ -220,32 +220,32 @@ function KeyRow({
   );
 }
 
-/** "How to use a key": the SDK snippet, visible before any key exists. */
+/** The SDK snippet for using a key in your own agent, in a disclosure that starts closed. */
 function KeyUsage({ exampleOrigin }: { exampleOrigin: string | undefined }) {
   return (
-    <section
-      aria-labelledby="how-to-use-a-key"
-      className="mt-6 grid gap-4 border-t pt-5 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
-    >
-      <div className="space-y-2">
-        <h3 id="how-to-use-a-key" className="font-heading text-base font-semibold">
-          How to use a key
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          Put the key in your AI agent&apos;s <code className="font-mono text-xs">.env</code> and
-          fetch pages through the BotFare SDK. When a page has a price within the key&apos;s limits,
-          the SDK pays it from this wallet, and you are charged only after the page arrives.
-        </p>
-        <NewTabLink
-          href={SDK_SOURCE_URL}
-          className="inline-flex items-center gap-1 rounded text-sm font-medium underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          Install the SDK from GitHub
-          <ExternalLink aria-hidden className="size-3.5" />
-        </NewTabLink>
+    <details className="mt-6 border-t pt-5">
+      <summary className="cursor-pointer text-sm font-medium">
+        For developers: use a key in your own agent
+      </summary>
+      <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Put the key in your AI agent&apos;s <code className="font-mono text-xs">.env</code> and
+            fetch pages through the BotFare SDK. When a page has a price within the key&apos;s
+            limits, the SDK pays it from this wallet, and you are charged only after the page
+            arrives.
+          </p>
+          <NewTabLink
+            href={SDK_SOURCE_URL}
+            className="inline-flex items-center gap-1 rounded text-sm font-medium underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Install the SDK from GitHub
+            <ExternalLink aria-hidden className="size-3.5" />
+          </NewTabLink>
+        </div>
+        <SnippetBlock title="agent.ts" code={agentUsageSnippet({ exampleOrigin })} />
       </div>
-      <SnippetBlock title="agent.ts" code={agentUsageSnippet({ exampleOrigin })} />
-    </section>
+    </details>
   );
 }
 

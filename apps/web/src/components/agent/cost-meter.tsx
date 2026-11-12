@@ -43,7 +43,7 @@ export function CostMeter({ view, receipts }: { view: RunView; receipts: number 
         <div className="grid grid-cols-3 gap-2 text-sm">
           <Stat label="Left" value={formatFare(remaining)} />
           <Stat label="Receipts" value={String(receipts)} />
-          <Stat label="Tool calls" value={`${view.toolCalls}/${view.maxToolCalls}`} />
+          <Stat label="Steps" value={`${view.toolCalls}/${view.maxToolCalls}`} />
         </div>
       </CardContent>
     </Card>

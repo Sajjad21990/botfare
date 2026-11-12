@@ -206,12 +206,12 @@ function PolicyStrip() {
     {
       icon: FileCheck2,
       title: "Proof of delivery",
-      text: "Your middleware attests a digest of every paid response. A dispute only counts if the agent's copy matches it, so you see exactly what you served.",
+      text: "BotFare records exactly what your site sent, so every dispute is judged on the real page.",
     },
     {
       icon: Bot,
       title: "AI decides confident cases",
-      text: "The AI judge (Claude by default) compares what you declared with what you delivered. At 80% confidence or more it refunds or closes the dispute instantly.",
+      text: "The AI judge compares what you promised with what you sent. If it is at least 80% sure, it refunds or closes the dispute at once.",
     },
     {
       icon: UserCheck,
@@ -249,7 +249,7 @@ function EmptyState({ filter, hasAny }: { filter: Filter; hasAny: boolean }) {
         <p className="font-medium">{reviewDone ? "Nothing to review" : "No disputes yet"}</p>
         <p className="max-w-sm text-sm text-muted-foreground">
           {reviewDone
-            ? "Every dispute on your sites has been decided. New ones the AI is unsure about show up here."
+            ? "Every dispute has been decided. Open the All tab to see how the AI judge ruled."
             : "When an agent says a paid page was not what your offer promised, the dispute and the AI's reasoning appear here."}
         </p>
       </div>
@@ -397,46 +397,50 @@ function DisputeDialog({
                 </div>
               ) : (
                 <p className="text-muted-foreground">
-                  No AI verdict for this dispute. Compare the offer with what was delivered below.
+                  No AI verdict for this dispute. Open Show the full text to compare the offer with
+                  the page.
                 </p>
               )}
             </Section>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2 rounded-lg border p-3">
-                <p className="text-xs font-medium text-muted-foreground">Declared offer</p>
-                {dispute.declaredOffer ? (
-                  <div className="space-y-1 text-sm">
-                    <p className="font-medium">{dispute.declaredOffer.title}</p>
-                    {dispute.declaredOffer.preview && (
-                      <p className="text-muted-foreground">{dispute.declaredOffer.preview}</p>
-                    )}
-                    {dispute.declaredOffer.wordCount !== undefined && (
-                      <p className="text-xs text-muted-foreground">
-                        About {dispute.declaredOffer.wordCount} words
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    This purchase carried no declared offer.
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2 rounded-lg border p-3">
-                <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                  Delivered
-                  {dispute.contentDigestOk && (
-                    <span className="inline-flex items-center gap-0.5 text-emerald-700 dark:text-emerald-400">
-                      <ShieldCheck className="size-3" /> matches your attested digest
-                    </span>
+            <details>
+              <summary className="cursor-pointer text-sm font-medium">Show the full text</summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2 rounded-lg border p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Declared offer</p>
+                  {dispute.declaredOffer ? (
+                    <div className="space-y-1 text-sm">
+                      <p className="font-medium">{dispute.declaredOffer.title}</p>
+                      {dispute.declaredOffer.preview && (
+                        <p className="text-muted-foreground">{dispute.declaredOffer.preview}</p>
+                      )}
+                      {dispute.declaredOffer.wordCount !== undefined && (
+                        <p className="text-xs text-muted-foreground">
+                          About {dispute.declaredOffer.wordCount} words
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      This purchase carried no declared offer.
+                    </p>
                   )}
-                </p>
-                <p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-sm text-muted-foreground">
-                  {dispute.deliveredExcerpt?.trim() || "(empty)"}
-                </p>
+                </div>
+                <div className="space-y-2 rounded-lg border p-3">
+                  <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                    Delivered
+                    {dispute.contentDigestOk && (
+                      <span className="inline-flex items-center gap-0.5 text-emerald-700 dark:text-emerald-400">
+                        <ShieldCheck className="size-3" /> same page your site sent
+                      </span>
+                    )}
+                  </p>
+                  <p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-sm text-muted-foreground">
+                    {dispute.deliveredExcerpt?.trim() || "(empty)"}
+                  </p>
+                </div>
               </div>
-            </div>
+            </details>
 
             <p className="text-xs text-muted-foreground">
               Receipt <span className="font-mono">{dispute.receiptId}</span> · purchased{" "}

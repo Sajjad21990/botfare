@@ -195,7 +195,7 @@ export function RecommendationItem({
             title="Worked out by BotFare from this rule's own offers, purchases and declines, not by the AI"
           >
             <Trend className="size-3.5" />
-            BotFare estimate: {formatDelta(delta)} / week
+            Estimated change: {formatDelta(delta)} a week
           </div>
         )}
       </div>

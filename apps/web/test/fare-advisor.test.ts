@@ -206,6 +206,30 @@ describe("checkRecommendations", () => {
     expect(result.recommendations[1]?.projectedWeeklyRevenueDeltaCents).toBe(0);
   });
 
+  it("drops a price raise that BotFare's own estimate says loses money, and keeps one that gains", () => {
+    const raise = (r: AdvisorRuleStats) => ({
+      pattern: "/articles/*",
+      kind: "price",
+      currentPriceCents: 3,
+      suggestedPriceCents: 6,
+      headline: "5 of 12 agents paid at 3¢",
+      rationale: "This page sells, so it can hold a higher price.",
+      evidence: evidenceOf(r),
+      projectedWeeklyRevenueDeltaCents: 10,
+      confidence: 0.6,
+    });
+    const gains = checkRecommendations({ recommendations: [raise(articles)] }, inputs);
+    expect(gains.dropped).toBe(0);
+    expect(gains.recommendations[0]?.projectedWeeklyRevenueDeltaCents).toBeGreaterThan(0);
+
+    const uncited = { ...articles, cited: 0 };
+    const loses = checkRecommendations(
+      { recommendations: [raise(uncited)] },
+      { ...inputs, rules: [premium, uncited] },
+    );
+    expect(loses).toEqual({ recommendations: [], dropped: 1 });
+  });
+
   it("drops shapes the contract rejects, duplicates, and anything past six", () => {
     const many = Array.from({ length: 8 }, (_, i) => ({
       ...honest,

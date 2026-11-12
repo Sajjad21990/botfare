@@ -211,7 +211,7 @@ export function TopUpCard({ clientId }: { clientId: string | null }) {
           })}
         </div>
 
-        <div className="mt-auto space-y-3">
+        <div className="space-y-3">
           {!clientId ? (
             <Alert>
               <AlertCircle />

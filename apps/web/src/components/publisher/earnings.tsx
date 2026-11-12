@@ -11,7 +11,7 @@ import {
   Mail,
   RefreshCw,
 } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,6 @@ import { cn } from "@/lib/utils";
 import { ApiError, api, errorText } from "./api";
 import {
   formatCents,
-  formatClearsIn,
   formatCount,
   formatMoney,
   formatMoneyExact,
@@ -150,7 +149,6 @@ export function EarningsCard({
           />
           <Stat label="Paid requests" value={formatCount(data.paidRequests)} />
         </div>
-        {clearing && <ClearingNote data={data} />}
         <div className="flex flex-col gap-3 rounded-lg bg-muted/50 p-3 sm:flex-row sm:items-center">
           <Button
             size="lg"
@@ -180,42 +178,6 @@ export function EarningsCard({
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-/** Why some earnings cannot be withdrawn yet, and when the next ones clear. */
-function ClearingNote({ data }: { data: PublisherDashboard }) {
-  return (
-    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-      <Hourglass className="mt-px size-3.5 shrink-0" />
-      <span>
-        New fares are held for {data.disputeWindowHours} hours in case an AI agent disputes them,
-        and for as long as a dispute waits for a decision.{" "}
-        {data.nextReleaseAt ? (
-          <>
-            More is ready <ClearsIn iso={data.nextReleaseAt} />.
-          </>
-        ) : (
-          "The rest is ready once its disputes are decided."
-        )}
-      </span>
-    </p>
-  );
-}
-
-/** "in 3 h 20 min", rendered after mount (and every minute) so server and browser agree. */
-function ClearsIn({ iso }: { iso: string }) {
-  const [text, setText] = useState<string | null>(null);
-  useEffect(() => {
-    const update = () => setText(formatClearsIn(iso, Date.now()));
-    update();
-    const id = setInterval(update, 60_000);
-    return () => clearInterval(id);
-  }, [iso]);
-  return (
-    <time dateTime={iso} title={iso} className="font-medium text-foreground tabular-nums">
-      {text ?? "soon"}
-    </time>
   );
 }
 
@@ -406,8 +368,8 @@ export function PayoutHistory({
           <>
             {open && (
               <p className="mb-3 text-xs text-muted-foreground">
-                Some payouts are still open. PayPal reports the result by webhook; Refresh status
-                asks it directly.
+                PayPal is still processing this payout. Sandbox payouts can take a while; press
+                Refresh status to check now.
               </p>
             )}
             <div className="-mx-(--card-spacing) overflow-x-auto">

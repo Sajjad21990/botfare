@@ -20,7 +20,7 @@ import type {
 import { jsonError } from "./http";
 
 /** How many recent receipts the wallet page shows. */
-export const WALLET_RECEIPT_LIMIT = 50;
+export const WALLET_RECEIPT_LIMIT = 10;
 
 /** Every publisher site by name, for the allowed-sites picker and receipt labels. */
 export async function listSiteDirectory(db: Db): Promise<WalletSite[]> {

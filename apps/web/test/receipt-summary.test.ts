@@ -129,7 +129,8 @@ describe("summarizeReceipt", () => {
       BEFORE_WINDOW_ENDS,
     );
     expect(summary.trusted).toBe(true);
-    expect(verdictText(summary)).toBe("All 2 signatures are valid.");
+    expect(verdictText(summary)).toBe("Both signatures are valid.");
+    expect(check(summary, "signed")?.detail).toBe("Both signatures are valid");
     expect(summary.checks.map((c) => [c.id, c.state])).toEqual([
       ["signed", "pass"],
       ["payment", "pass"],

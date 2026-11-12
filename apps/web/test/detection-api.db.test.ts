@@ -192,12 +192,12 @@ describe("PUT /api/publisher/sites/[siteId]/detection", () => {
       ],
     });
 
-    // Analytics rows carry the signal in words; unknown values read "Not recorded".
+    // Analytics rows carry the signal in words; unknown values read "Demo history (before detection)".
     const rows = await listPublisherReceiptRows(getDb(), publisher.owner.id);
     expect(rows.map((row) => row.detectionSignal).sort()).toEqual([
       "Automation signals",
       "Automation signals",
-      "Not recorded",
+      "Demo history (before detection)",
     ]);
   });
 

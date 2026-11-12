@@ -255,7 +255,7 @@ export const HOW_STEPS: SceneStep[] = [
     caption: "An AI agent asks for the dal recipe.",
     note: "BotFare on the site sees an agent, not a person.",
     active: ["agent", "site"],
-    moves: [{ label: "GET /recipes/…", mono: true, from: "agent", to: "site", row: 0 }],
+    moves: [{ label: "Asks for the dal recipe", from: "agent", to: "site", row: 0 }],
     detail: (
       <>
         <Wire>
@@ -267,11 +267,11 @@ export const HOW_STEPS: SceneStep[] = [
     ),
   },
   {
-    label: "402",
-    caption: "The site answers 402: this page costs 2¢.",
+    label: "Quote",
+    caption: "The site answers with a price: this page costs 2¢.",
     note: "The offer and a short preview are free to read.",
     active: ["site", "agent"],
-    moves: [{ label: "402 · 2¢ · preview", tone: "yellow", from: "site", to: "agent", row: 1 }],
+    moves: [{ label: "Price: 2¢ + preview", tone: "yellow", from: "site", to: "agent", row: 1 }],
     detail: (
       <>
         <Offer />

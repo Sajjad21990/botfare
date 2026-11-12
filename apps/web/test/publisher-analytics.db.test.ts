@@ -68,7 +68,7 @@ describe("publisher analytics receipts", () => {
       feeUsd: 0.0025,
       earningsUsd: 0.0475,
       status: "settled",
-      detectionSignal: "Not recorded",
+      detectionSignal: "Demo history (before detection)",
     });
 
     const bobRows = await listPublisherReceiptRows(db, bob.owner.id);

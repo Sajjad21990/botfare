@@ -218,10 +218,9 @@ export function ReceiptVerifier({ initialReceipt, example = false }: ReceiptVeri
           Check a receipt
         </h2>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-          Paste a receipt ID such as{" "}
-          <span className="font-mono whitespace-nowrap">rcpt_9d2e41b7c03a5f18</span>, a /verify
-          link, or the signed statements from an x402{" "}
-          <span className="font-mono whitespace-nowrap">PAYMENT-RESPONSE</span>.
+          Paste a receipt number such as{" "}
+          <span className="font-mono whitespace-nowrap">rcpt_9d2e41b7c03a5f18</span>, or a receipt
+          link.
         </p>
         <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start">
           <Label htmlFor="verify-input" className="sr-only">

@@ -10,11 +10,14 @@ export function BalanceCard({
   spendTodayMicros,
   activeKeys,
   topups,
+  demoWallet = false,
 }: {
   balanceMicros: number;
   spendTodayMicros: number;
   activeKeys: number;
   topups: WalletTopUp[];
+  /** The agent-owner demo persona, whose wallet is kept at $5.00 of test money. */
+  demoWallet?: boolean;
 }) {
   const recent = topups.slice(0, 3);
   return (
@@ -46,8 +49,8 @@ export function BalanceCard({
         </dl>
 
         <p className="rounded-lg bg-muted/60 px-3 py-2.5 text-sm text-muted-foreground">
-          Your AI agents pay each page&apos;s price from this balance: the website keeps 95%,
-          BotFare 5%. BotFare pays PayPal&apos;s top-up fee, so a $5 top-up is $5.00 to spend.
+          Your AI agents pay each page&apos;s price from this balance. The website keeps 95%,
+          BotFare 5%.
         </p>
 
         <div className="mt-auto">
@@ -55,7 +58,9 @@ export function BalanceCard({
           <h3 className="mb-2 text-xs font-medium text-muted-foreground">Recent top-ups</h3>
           {recent.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              None yet. Top up with PayPal to get your AI agents going.
+              {demoWallet
+                ? "None yet. The demo wallet starts with $5.00 of test money; add more with PayPal."
+                : "None yet. Top up with PayPal to get your AI agents going."}
             </p>
           ) : (
             <ul className="space-y-1.5">

@@ -5,7 +5,7 @@
 import type { DetectionLevel, DetectionSignal } from "@botfare/contracts";
 
 /** Shown for receipts settled before signals were recorded, or by older middleware. */
-export const UNRECORDED_SIGNAL_LABEL = "Not recorded";
+export const UNRECORDED_SIGNAL_LABEL = "Demo history (before detection)";
 
 export const SIGNAL_LABELS: Record<DetectionSignal, string> = {
   "agent-header": "Agent header",

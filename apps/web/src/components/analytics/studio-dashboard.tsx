@@ -78,7 +78,7 @@ const widgets = (config: AgWidgetsConfig<AgCoreDefaultRegistry>) =>
         minSize: { width: 240, height: 220 },
         ai: {
           description:
-            "The publisher's withdrawable earnings balance, what the filtered view earned and paid in fees, and a button to withdraw with PayPal.",
+            "The publisher's earnings balance (including fares still on hold), what the filtered view earned and paid in fees, and a link to withdraw on the Dashboard.",
           usage: "Use when the user asks about their balance or getting paid. It needs no fields.",
         },
       },

@@ -111,7 +111,11 @@ export async function POST(request: Request): Promise<Response> {
 
   const visitorKey = `${auth.user.id}:${clientIp(request)}`;
   if (limits.active.has(visitorKey)) {
-    return jsonError(409, "run_in_progress", "A research run is already in progress.");
+    return jsonError(
+      409,
+      "run_in_progress",
+      "Another run on this demo account is still going (maybe in another tab). Try again in a minute.",
+    );
   }
   if (!limits.runs.allow(visitorKey)) {
     return jsonError(429, "rate_limited", "Too many research runs. Wait a few minutes.");

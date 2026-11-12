@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  BookOpen,
   Code2,
   ExternalLink,
   KeyRound,
@@ -109,7 +108,7 @@ export function SiteCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <OneLineCallout onSetupGuide={() => setTab("integration")} />
+        <OneLineCallout />
         <Tabs value={tab} onValueChange={(value) => setTab(value as SiteTab)}>
           <TabsList
             variant="line"
@@ -150,8 +149,8 @@ export function SiteCard({
   );
 }
 
-/** "Turned on with one line", above the tabs, with a shortcut to the setup steps. */
-function OneLineCallout({ onSetupGuide }: { onSetupGuide: () => void }) {
+/** "Turned on with one line", above the tabs. */
+function OneLineCallout() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-ticket px-3 py-2 text-ticket-foreground">
       <span className="text-sm">Turned on with one line:</span>
@@ -162,10 +161,6 @@ function OneLineCallout({ onSetupGuide }: { onSetupGuide: () => void }) {
         </code>
         <CopyButton value={ONE_LINE} label="Copy the line" />
       </span>
-      <Button variant="outline" size="sm" onClick={onSetupGuide} className="sm:ml-auto">
-        <BookOpen />
-        Setup guide
-      </Button>
     </div>
   );
 }

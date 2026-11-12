@@ -1,9 +1,11 @@
 "use client";
 
 import { ArrowDown, Cable } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { isReceiptId, verifyHref } from "@/components/verify/verify-href";
 import { cn } from "@/lib/utils";
 import { centsFromAmount, formatFare, shortPath } from "./format";
 import type { TimelineEntry, WireTrace } from "./run-state";
@@ -26,21 +28,21 @@ export function WireInspector({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Cable className="size-4" />
-          Wire inspector
+          Payment details
         </CardTitle>
         <CardDescription>
           {entry ? (
             <span className="font-mono text-xs">{shortPath(entry.url)}</span>
           ) : (
-            "The x402 headers behind a payment, decoded."
+            "The three messages behind a payment (x402), decoded."
           )}
         </CardDescription>
       </CardHeader>
       <CardContent>
         {!entry ? (
           <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-            When the agent reads an offer or pays a fare, select it in the timeline to see
-            PAYMENT-REQUIRED, PAYMENT-SIGNATURE and PAYMENT-RESPONSE.
+            When the agent reads an offer or pays for a page, click it in the timeline to see its
+            price quote, signed payment and receipt.
           </p>
         ) : (
           <div className="flex flex-col gap-2">
@@ -136,11 +138,22 @@ function text(value: unknown): string {
   return value === undefined || value === null ? "—" : String(value);
 }
 
+/** A receipt ID links to /verify, where anyone can check it. */
+function receiptLink(value: unknown): ReactNode {
+  const id = text(value);
+  if (!isReceiptId(id)) return id;
+  return (
+    <Link href={verifyHref(id)} target="_blank" className="underline" title="Verify this receipt">
+      {id}
+    </Link>
+  );
+}
+
 function RequiredStep({ trace }: { trace: WireTrace | null }) {
   const required = trace?.required;
   if (!required) {
     return (
-      <Step label="PAYMENT-REQUIRED" status="No 402" tone="missing">
+      <Step label="1 · Price quote (PAYMENT-REQUIRED)" status="No 402" tone="missing">
         <p className="text-xs text-muted-foreground">The page did not ask for payment.</p>
       </Step>
     );
@@ -151,15 +164,10 @@ function RequiredStep({ trace }: { trace: WireTrace | null }) {
   const cents = centsFromAmount(accept.amount);
   const resource = record(decoded.resource);
   return (
-    <Step label="PAYMENT-REQUIRED" status="402" tone="done">
+    <Step label="1 · Price quote (PAYMENT-REQUIRED)" status="402" tone="done">
       <Fields
         rows={[
-          [
-            "price",
-            cents !== null
-              ? `${formatFare(cents)} (amount "${text(accept.amount)}")`
-              : text(accept.amount),
-          ],
+          ["price", cents !== null ? formatFare(cents) : text(accept.amount)],
           ["scheme", `${text(accept.scheme)} on ${text(accept.network)}`],
           ["asset", text(accept.asset)],
           ["payTo", text(accept.payTo)],
@@ -178,7 +186,7 @@ function SignatureStep({ trace, entry }: { trace: WireTrace | null; entry: Inspe
     const refused = entry.kind === "refusal";
     return (
       <Step
-        label="PAYMENT-SIGNATURE"
+        label="2 · Signed payment (PAYMENT-SIGNATURE)"
         status={refused ? "Not signed" : entry.kind === "offer" ? "Not sent" : "—"}
         tone={refused ? "refused" : "missing"}
       >
@@ -200,7 +208,7 @@ function SignatureStep({ trace, entry }: { trace: WireTrace | null; entry: Inspe
   const iat = typeof claims.iat === "number" ? claims.iat : null;
   const exp = typeof claims.exp === "number" ? claims.exp : null;
   return (
-    <Step label="PAYMENT-SIGNATURE" status="Ed25519 JWS" tone="done">
+    <Step label="2 · Signed payment (PAYMENT-SIGNATURE)" status="Ed25519 JWS" tone="done">
       <Fields
         rows={[
           ["alg / typ", `${text(jws.alg)} / ${text(jws.typ)}`],
@@ -225,7 +233,7 @@ function ResponseStep({ trace, entry }: { trace: WireTrace | null; entry: Inspec
   if (!response) {
     return (
       <Step
-        label="PAYMENT-RESPONSE"
+        label="3 · Receipt (PAYMENT-RESPONSE)"
         status={entry.kind === "refusal" ? "No charge" : "—"}
         tone={entry.kind === "refusal" ? "refused" : "missing"}
       >
@@ -239,13 +247,13 @@ function ResponseStep({ trace, entry }: { trace: WireTrace | null; entry: Inspec
   const success = decoded.success === true;
   return (
     <Step
-      label="PAYMENT-RESPONSE"
+      label="3 · Receipt (PAYMENT-RESPONSE)"
       status={success ? "Settled" : "Failed"}
       tone={success ? "done" : "refused"}
     >
       <Fields
         rows={[
-          ["receipt", text(decoded.transaction)],
+          ["receipt", receiptLink(decoded.transaction)],
           ["network", text(decoded.network)],
           ["payer", text(decoded.payer)],
           ...(success ? [] : ([["reason", text(decoded.errorReason)]] as [string, ReactNode][])),

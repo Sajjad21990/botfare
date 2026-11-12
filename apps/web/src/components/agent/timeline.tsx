@@ -61,21 +61,21 @@ interface TimelineProps {
 /** What the agent did, in order: notes, catalogs, offers, decisions, refusals and payments. */
 export function Timeline({ view, selected, onSelect }: TimelineProps) {
   const busy = view.status === "running" || view.status === "starting";
+  const shown = view.entries.filter((e) => !(e.kind === "note" && e.source === "thinking"));
   return (
     <Card>
       <CardHeader>
         <CardTitle>Timeline</CardTitle>
         <CardDescription>
-          Offers are free to read. Select an offer, payment or refusal to inspect its x402
-          handshake. Paid pages that are not what they promised are disputed in Fare Court.
+          What the agent did, step by step. Click a payment to see the messages behind it.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {view.entries.length === 0 ? (
+        {shown.length === 0 ? (
           busy ? (
             <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
-              Starting the agent…
+              Starting the agent… A run takes 1 to 2 minutes.
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-10 text-center">
@@ -93,9 +93,9 @@ export function Timeline({ view, selected, onSelect }: TimelineProps) {
           )
         ) : (
           <ol className="flex flex-col">
-            {view.entries.map((entry, index) => (
+            {shown.map((entry, index) => (
               <li key={entry.id} className="relative flex gap-3 pb-4 last:pb-0">
-                {index < view.entries.length - 1 ? (
+                {index < shown.length - 1 ? (
                   <span
                     aria-hidden
                     className="absolute top-8 bottom-0 left-[15px] w-px bg-border"
@@ -112,7 +112,7 @@ export function Timeline({ view, selected, onSelect }: TimelineProps) {
             {busy ? (
               <li className="flex items-center gap-3 pl-1.5 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
-                Working…
+                Working… A run takes 1 to 2 minutes. Payments appear here as they happen.
               </li>
             ) : null}
           </ol>

@@ -295,7 +295,7 @@ export const initialReport: AgReportState<BotFareRegistry> = {
         revenueToday: {
           type: "value",
           dataMapping: { value: [sum("earningsUsd")] },
-          format: title("Revenue today"),
+          format: title("Revenue"),
         },
         paidRequests: {
           type: "value",
@@ -392,11 +392,9 @@ export const initialReport: AgReportState<BotFareRegistry> = {
           dataMapping: {
             cols: [
               { id: field("createdAt") },
-              { id: field("siteName") },
               { id: field("path") },
               { id: field("agentName") },
               { id: field("amountUsd") },
-              { id: field("feeUsd") },
               { id: field("earningsUsd") },
               { id: field("detectionSignal") },
               { id: field("status") },
@@ -420,16 +418,6 @@ export const initialReport: AgReportState<BotFareRegistry> = {
         live: { xTrack: 16, yTrack: 45, xSpan: 8, ySpan: 24 },
         citedVsPaid: { xTrack: 0, yTrack: 69, xSpan: 12, ySpan: 19 },
         whyNotBought: { xTrack: 12, yTrack: 69, xSpan: 12, ySpan: 19 },
-      },
-      filter: {
-        widget: {
-          revenueToday: [
-            {
-              field: { id: field("createdAt") },
-              model: { operator: "inRelativeRange", value: { type: "this", unit: "day" } },
-            },
-          ],
-        },
       },
     },
   ],

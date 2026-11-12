@@ -167,7 +167,9 @@ export function summarizeReceipt(outcome: ReceiptOutcome, now: Date = new Date()
           : trusted
             ? total === 1
               ? "The signature is valid"
-              : `All ${total} signatures are valid`
+              : total === 2
+                ? "Both signatures are valid"
+                : `All ${total} signatures are valid`
             : `${total - valid} of ${total} not valid`,
     },
     payment
@@ -306,7 +308,8 @@ export function verdictText(summary: ReceiptSummary): string {
   const { total, valid, trusted } = summary;
   if (total === 0) return "This receipt has no signed statements.";
   if (trusted) {
-    return total === 1 ? "The signature is valid." : `All ${total} signatures are valid.`;
+    if (total === 1) return "The signature is valid.";
+    return total === 2 ? "Both signatures are valid." : `All ${total} signatures are valid.`;
   }
   if (total === 1) return "The signature is not valid.";
   const bad = total - valid;

@@ -3,7 +3,7 @@
 import { Loader2, Play, Square } from "lucide-react";
 import { type FormEvent, type ReactNode, useId } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -48,9 +48,6 @@ export function QuestionCard(props: QuestionCardProps) {
     <Card>
       <CardHeader>
         <CardTitle>Ask the research agent</CardTitle>
-        <CardDescription>
-          It reads free previews, pays the fare only for pages worth it, and cites its receipts.
-        </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="flex flex-col gap-4">
@@ -69,7 +66,7 @@ export function QuestionCard(props: QuestionCardProps) {
               }}
             />
             <div className="flex flex-wrap gap-2">
-              {SUGGESTED_QUESTIONS.map((suggestion) => (
+              {SUGGESTED_QUESTIONS.filter((q) => q !== props.question).map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
@@ -83,7 +80,14 @@ export function QuestionCard(props: QuestionCardProps) {
             </div>
           </div>
 
-          {props.modelPicker}
+          {props.modelPicker ? (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-xs text-muted-foreground">
+                Change the AI model
+              </summary>
+              <div className="mt-2">{props.modelPicker}</div>
+            </details>
+          ) : null}
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="flex flex-1 flex-col gap-2">

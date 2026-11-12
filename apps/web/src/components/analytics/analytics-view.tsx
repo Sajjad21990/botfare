@@ -30,13 +30,8 @@ export interface AnalyticsViewProps {
 /** The analytics page body: toolbar, empty state, and the AG Studio dashboard. */
 export function AnalyticsView({ initial, ai }: AnalyticsViewProps) {
   const [data, setData] = useState(initial);
-  const [mode, setMode] = useState<AgStudioMode>("edit");
+  const [mode, setMode] = useState<AgStudioMode>("view");
   const [checking, setChecking] = useState(false);
-
-  // Small screens open in view mode, which lays widgets out in one column.
-  useEffect(() => {
-    if (!window.matchMedia("(min-width: 1024px)").matches) setMode("view");
-  }, []);
 
   const check = useCallback(async () => {
     setChecking(true);
@@ -72,14 +67,14 @@ export function AnalyticsView({ initial, ai }: AnalyticsViewProps) {
             </TabsTrigger>
             <TabsTrigger value="edit">
               <LayoutDashboard />
-              Edit &amp; ask AI
+              Ask AI
             </TabsTrigger>
           </TabsList>
         </Tabs>
         <p className="hidden text-sm text-muted-foreground md:block">
           {mode === "edit"
             ? "Drag widgets, add charts from the data panel, or ask the assistant on the right."
-            : "Click a bar to cross-filter every widget. Filters live on the right."}
+            : "Click a bar to filter every chart. Switch to Ask AI to ask questions about your traffic."}
         </p>
         <div className="ml-auto">
           {ai.available ? (

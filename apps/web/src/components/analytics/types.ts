@@ -24,7 +24,8 @@ export interface ReceiptRow {
   status: "settled" | "refunded";
   /**
    * Why BotFare asked this request to pay, in words (e.g. "Agent header", "CDN bot score");
-   * "Not recorded" for receipts settled before signals were recorded.
+   * UNRECORDED_SIGNAL_LABEL ("Demo history (before detection)") for receipts settled before
+   * signals were recorded.
    */
   detectionSignal: string;
 }

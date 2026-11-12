@@ -1,4 +1,6 @@
+import { DEMO_PERSONAS } from "@botfare/contracts";
 import type { Metadata } from "next";
+import { SandboxAccount } from "@/components/judge/sandbox-account";
 import { AgentKeysCard } from "@/components/wallet/agent-keys-card";
 import { BalanceCard } from "@/components/wallet/balance-card";
 import { DisputesCard } from "@/components/wallet/disputes-card";
@@ -6,6 +8,7 @@ import { ReceiptsCard } from "@/components/wallet/receipts-card";
 import { TopUpCard } from "@/components/wallet/top-up-card";
 import { getDb } from "@/lib/server/db";
 import { getOwnerDisputes, OWNER_DISPUTE_LIMIT } from "@/lib/server/fare-court-api";
+import { isJudge, judgeSandboxBuyer } from "@/lib/server/judge";
 import { paypalClientId } from "@/lib/server/paypal";
 import { requireUser } from "@/lib/server/session";
 import { getWalletView, WALLET_RECEIPT_LIMIT } from "@/lib/server/wallet";
@@ -13,7 +16,10 @@ import { getWalletView, WALLET_RECEIPT_LIMIT } from "@/lib/server/wallet";
 export const metadata: Metadata = { title: "Wallet · BotFare" };
 export const dynamic = "force-dynamic";
 
-/** The agent owner's wallet: balance and PayPal top-up, agent keys with budgets, receipts. */
+/**
+ * The agent owner's wallet: balance and PayPal top-up (with the sandbox buyer for the demo
+ * personas, as on /judge), agent keys with budgets, disputes, recent receipts.
+ */
 export default async function Page() {
   const user = await requireUser();
   const [view, disputes] = await Promise.all([
@@ -37,6 +43,7 @@ export default async function Page() {
             spendTodayMicros={view.spendTodayMicros}
             activeKeys={activeKeys}
             topups={view.topups}
+            demoWallet={user.email?.trim().toLowerCase() === DEMO_PERSONAS.agentOwner.email}
           />
         </div>
         <div className="lg:col-span-2">
@@ -44,9 +51,11 @@ export default async function Page() {
         </div>
       </div>
 
+      {isJudge(user) && <SandboxAccount account={judgeSandboxBuyer()} />}
+
       <AgentKeysCard keys={view.keys} sites={view.sites} />
-      <ReceiptsCard receipts={view.receipts} limit={WALLET_RECEIPT_LIMIT} />
       <DisputesCard disputes={disputes} limit={OWNER_DISPUTE_LIMIT} />
+      <ReceiptsCard receipts={view.receipts} limit={WALLET_RECEIPT_LIMIT} />
     </div>
   );
 }

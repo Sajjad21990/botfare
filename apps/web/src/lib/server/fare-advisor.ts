@@ -175,6 +175,7 @@ export const ADVISOR_SYSTEM_PROMPT = [
   "- evidence: copy offers, paid, declined, cited and disputed exactly from that rule, and topReasons only from that rule's topReasons, with their exact text and counts. Recommendations whose numbers differ from the input are discarded.",
   "- headline: one short sentence that leads with the key numbers, e.g. '0 of 23 agents bought at 50¢; 14 called it a thin listicle'. rationale: two to four plain sentences.",
   "- Use only numbers from the input (counts, prices, the window in days) or simple percentages of them. Do not state revenue projections; BotFare computes its own. projectedWeeklyRevenueDeltaCents is your rough guess and is recomputed.",
+  "- Always include a recommendation for any rule with at least 20 offers and under 10% of them paid.",
   "- confidence from 0 to 1: lower when there are few signals.",
   "- Reasons cluster: many 'too expensive' or 'over budget' notes suggest a lower price; 'thin' or 'vague preview' notes suggest a better preview, a lower price, or both; pages that sell and get cited can hold or raise their price; disputes suggest the page does not match its offer.",
   "",
@@ -526,6 +527,14 @@ function checkOne(item: unknown, inputs: AdvisorInputs): AdvisorRecommendationVi
   const projection = projectWeeklyRevenue(rule, view, inputs.days);
   view.projectedWeeklyRevenueDeltaCents =
     projection.projectedWeeklyCents - projection.currentWeeklyCents;
+  // A price raise that BotFare's own estimate says loses money is not shown; price cuts stay.
+  if (
+    view.kind === "price" &&
+    (view.suggestedPriceCents ?? 0) > rule.priceCents &&
+    view.projectedWeeklyRevenueDeltaCents < 0
+  ) {
+    return null;
+  }
   return {
     ...view,
     id: `${rule.method} ${rule.pattern} ${view.kind}`,

@@ -141,9 +141,6 @@ export function ModelPicker({ providers, value, onChange, disabled }: ModelPicke
           </SelectContent>
         </Select>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Free and smaller models can be weaker at tool use, so a run may stop before it answers.
-      </p>
     </div>
   );
 }

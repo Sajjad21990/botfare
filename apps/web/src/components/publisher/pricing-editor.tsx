@@ -101,10 +101,12 @@ export function PricingEditor({
   );
   const [saving, setSaving] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  const [freeOpen, setFreeOpen] = useState(false);
 
   const dirty = snapshot(rows, freePaths, chargeKnownBots) !== baseline;
   const freePathList = parseFreePaths(freePaths);
   const freePathErrors = freePathList.filter((path) => patternError(path) !== null);
+  const freePathsInvalid = showErrors && freePathErrors.length > 0;
   const rowErrors = useMemo(
     () => rows.map((row) => ({ pattern: patternError(row.pattern), price: priceError(row.price) })),
     [rows],
@@ -377,42 +379,35 @@ export function PricingEditor({
         )}
       </section>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <section className="space-y-2">
-          <Label htmlFor={`${site.id}-free`} className="text-sm font-medium">
-            Free paths
-          </Label>
+      <details
+        open={freeOpen || freePathsInvalid}
+        onToggle={(e) => setFreeOpen(e.currentTarget.open)}
+      >
+        <summary className="cursor-pointer text-sm font-medium">Free paths (advanced)</summary>
+        <div className="mt-2 space-y-2">
           <Textarea
             id={`${site.id}-free`}
+            aria-label="Free paths"
             value={freePaths}
             onChange={(e) => setFreePaths(e.target.value)}
             placeholder={"/about\n/articles/free-*"}
             rows={3}
             spellCheck={false}
-            aria-invalid={(showErrors && freePathErrors.length > 0) || undefined}
+            aria-invalid={freePathsInvalid || undefined}
             className="font-mono text-xs md:text-xs"
           />
           <p
             className={cn(
               "text-xs",
-              showErrors && freePathErrors.length > 0
-                ? "text-destructive"
-                : "text-muted-foreground",
+              freePathsInvalid ? "text-destructive" : "text-muted-foreground",
             )}
           >
-            {showErrors && freePathErrors.length > 0
+            {freePathsInvalid
               ? `Check ${freePathErrors.join(", ")}: paths start with / and use * only at the end.`
               : "One per line. Always free, even for agents, whatever the rules say."}
           </p>
-        </section>
-        <section className="space-y-2">
-          <div className="text-sm font-medium">Who counts as an agent</div>
-          <p className="rounded-lg border p-3 text-xs text-muted-foreground">
-            &ldquo;Agents only&rdquo; rules charge requests BotFare treats as agents. Choose how
-            strict that is, including known AI crawlers such as GPTBot, on the Bot detection tab.
-          </p>
-        </section>
-      </div>
+        </div>
+      </details>
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
         {dirty && <span className="mr-auto text-xs text-muted-foreground">Unsaved changes</span>}
