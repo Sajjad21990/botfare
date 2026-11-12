@@ -100,8 +100,6 @@ export function PublisherView({
 
       <EarningsCard data={data} onPayout={addPayout} />
 
-      {data.sites.length > 0 && <FareAdvisorCard sites={data.sites} onApplied={applyFromAdvisor} />}
-
       <section className="space-y-4" aria-labelledby="publisher-sites">
         <div className="space-y-1">
           <h2 id="publisher-sites" className="text-lg font-semibold tracking-tight">
@@ -143,6 +141,8 @@ export function PublisherView({
           </div>
         )}
       </section>
+
+      {data.sites.length > 0 && <FareAdvisorCard sites={data.sites} onApplied={applyFromAdvisor} />}
 
       <section className="space-y-4" aria-labelledby="publisher-payouts">
         <div className="space-y-1">
