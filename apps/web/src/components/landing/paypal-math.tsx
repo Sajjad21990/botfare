@@ -9,7 +9,7 @@ const apis = ["PayPal Checkout", "Payouts", "Webhooks", "Log in with PayPal", "x
 
 const linkClass = `${styles.focusRing} inline-flex shrink-0 items-center whitespace-nowrap gap-1.5 rounded-sm font-semibold underline decoration-foreground/40 underline-offset-4 hover:decoration-foreground`;
 
-/** One row of the fee picture: a dot per PayPal fee. */
+/** One row of the fee picture: a cent coin per PayPal fee. */
 function FeeRow({ label, count, fees }: { label: string; count: string; fees: number }) {
   return (
     <div>
@@ -17,10 +17,14 @@ function FeeRow({ label, count, fees }: { label: string; count: string; fees: nu
         <span className="font-semibold">{label}</span>
         <span className={`${styles.tabular} whitespace-nowrap`}>{count}</span>
       </p>
-      <div aria-hidden className="mt-2.5 flex flex-wrap gap-1">
-        {Array.from({ length: fees }, (_, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: identical dots, never reordered
-          <span key={i} className="size-2.5 rounded-[3px] bg-chart-4" />
+      <div aria-hidden className="mt-2.5 flex flex-wrap gap-[3px]">
+        {Array.from({ length: fees }, (_, i) => `fee-${i}`).map((id) => (
+          <span
+            key={id}
+            className="flex size-3.5 items-center justify-center rounded-full bg-chart-4 text-[9px] leading-none font-bold text-white"
+          >
+            ¢
+          </span>
         ))}
       </div>
     </div>
