@@ -154,6 +154,14 @@ Saffron & Salt, a recipe blog, replaces the coffee site Crema Notes. `pnpm seed`
 | ✅ | Links to other sites and side trips open in a new tab | `/judge` tour steps too |
 | ✅ | Animated How it works: one scene with four actors (AI agent, Saffron & Salt, BotFare, PayPal) and what passes between them in 8 steps; a stepper, one caption per step, Prev, Play (about 25 s) and Next; Show the details keeps the exact facts | `components/landing/how-scene.tsx`; actors stack on phones and labels travel down; reduced motion shows each step's end state |
 
+## Phase 3h: Judge-ready from a judge-persona audit ✅ (12 Nov)
+
+| | Task | Notes |
+| --- | --- | --- |
+| ✅ | Four first-time-judge personas audited the live site (60 findings, ranked into 30 fixes); five area engineers and reviewers applied them; three personas rechecked live; a second round fixed what they found | Analytics opens in View with an Ask AI tab, agent timeline without raw reasoning, "Payment details", sandbox buyer on the wallet, Fare Advisor under Earnings, persona follows the page, phone layouts fit at 375 px |
+| ✅ | 👤 AI on OpenAI gpt-5-mini (free daily tier with data sharing) and the AG Studio trial licence | A research run takes about 20 s (Groq hit the 4-minute limit); no AG watermark |
+| ✅ | Fare Advisor repairs loosely copied evidence with the real numbers instead of discarding suggestions | gpt-5-mini's answers were all discarded before; prose with invented numbers is still blanked or dropped |
+
 ## Phase 4: Deploy to Render ⏳
 
 Deploying is the last build step, by choice. It must happen by Wednesday night so the live demo can be checked before recording.
