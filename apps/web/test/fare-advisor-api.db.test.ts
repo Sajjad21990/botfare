@@ -136,7 +136,7 @@ function scriptedModel() {
                   currentPriceCents: 50,
                   previewAdvice: "Say which grinders are compared.",
                   headline: "1,000 agents want a better preview",
-                  rationale: "Invented.",
+                  rationale: "1,000 agents want a better preview.",
                   evidence: {
                     offers: 23,
                     paid: 0,

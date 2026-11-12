@@ -148,32 +148,101 @@ describe("checkRecommendations", () => {
     expect(result).toEqual({ recommendations: [], dropped: 1 });
   });
 
-  it("drops recommendations whose evidence counts differ from the inputs", () => {
-    for (const evidence of [
-      { ...honest.evidence, offers: 230 },
-      { ...honest.evidence, paid: 1 },
-      { ...honest.evidence, cited: 3 },
-      { ...honest.evidence, topReasons: [{ reason: "Thin listicle, no specifics", count: 12 }] },
-      { ...honest.evidence, topReasons: [{ reason: "Written by a robot", count: 9 }] },
+  it("repairs evidence counts, the current price and quoted reasons with the rule's real ones", () => {
+    for (const changed of [
+      { evidence: { ...honest.evidence, offers: 230 } },
+      { evidence: { ...honest.evidence, paid: 1 } },
+      { evidence: { ...honest.evidence, cited: 3 } },
+      { evidence: { ...honest.evidence, disputed: -1 } },
+      { evidence: undefined },
+      { currentPriceCents: 45 },
     ]) {
-      expect(checkRecommendations({ recommendations: [{ ...honest, evidence }] }, inputs)).toEqual({
-        recommendations: [],
-        dropped: 1,
+      const result = checkRecommendations({ recommendations: [{ ...honest, ...changed }] }, inputs);
+      expect(result.dropped).toBe(0);
+      expect(result.recommendations[0]).toMatchObject({
+        currentPriceCents: 50,
+        evidence: { offers: 23, paid: 0, declined: 14, cited: 0, disputed: 0 },
       });
     }
+    const recount = checkRecommendations(
+      {
+        recommendations: [
+          {
+            ...honest,
+            evidence: {
+              ...honest.evidence,
+              topReasons: [{ reason: "  thin LISTICLE,   no specifics ", count: 12 }],
+            },
+          },
+        ],
+      },
+      inputs,
+    );
+    expect(recount.recommendations[0]?.evidence.topReasons).toEqual([
+      { reason: "Thin listicle, no specifics", count: 9 },
+    ]);
   });
 
-  it("drops invented numbers in the headline or rationale and a wrong current price", () => {
+  it("drops quoted reasons that are not real ones but keeps the recommendation", () => {
+    const result = checkRecommendations(
+      {
+        recommendations: [
+          {
+            ...honest,
+            evidence: {
+              ...honest.evidence,
+              topReasons: [
+                { reason: "Written by a robot", count: 9 },
+                { reason: "50 cents is too much for a roundup", count: 3 },
+                { reason: "50 cents is too much for a roundup", count: 5 },
+              ],
+            },
+          },
+        ],
+      },
+      inputs,
+    );
+    expect(result.dropped).toBe(0);
+    expect(result.recommendations[0]?.evidence.topReasons).toEqual([
+      { reason: "50 cents is too much for a roundup", count: 5 },
+    ]);
+  });
+
+  it("blanks a headline with an invented number, so the dashboard writes a plain one", () => {
+    const result = checkRecommendations(
+      { recommendations: [{ ...honest, headline: "0 of 2,300 agents bought at 50¢" }] },
+      inputs,
+    );
+    expect(result.dropped).toBe(0);
+    expect(result.recommendations[0]).toMatchObject({ headline: "", suggestedPriceCents: 8 });
+    expect(result.recommendations[0]?.rationale).toBe(honest.rationale);
+  });
+
+  it("drops a recommendation whose rationale states an invented number", () => {
     const invented = [
-      { ...honest, headline: "0 of 2,300 agents bought at 50¢" },
       { ...honest, rationale: "This page could earn $40.00 a week." },
       { ...honest, rationale: "87% of agents called it thin." },
-      { ...honest, currentPriceCents: 45 },
+      { ...honest, rationale: "Agents saw this offer 230 times." },
     ];
     expect(checkRecommendations({ recommendations: invented }, inputs)).toEqual({
       recommendations: [],
-      dropped: 4,
+      dropped: 3,
     });
+  });
+
+  it("removes ungrounded side advice, but drops a preview recommendation whose advice is ungrounded", () => {
+    const advice = "1,000 agents want the grinders named.";
+    const price = checkRecommendations(
+      { recommendations: [{ ...honest, previewAdvice: advice }] },
+      inputs,
+    );
+    expect(price.dropped).toBe(0);
+    expect(price.recommendations[0]?.previewAdvice).toBeUndefined();
+    const preview = checkRecommendations(
+      { recommendations: [{ ...honest, kind: "preview", previewAdvice: advice }] },
+      inputs,
+    );
+    expect(preview).toEqual({ recommendations: [], dropped: 1 });
   });
 
   it("checks the kind: a price needs a new price, an audience a new audience, a preview advice", () => {
@@ -230,6 +299,46 @@ describe("checkRecommendations", () => {
       { ...inputs, rules: [premium, uncited] },
     );
     expect(loses).toEqual({ recommendations: [], dropped: 1 });
+
+    // A raise on a rule nobody pays for estimates ±0: not shown either (3¢ to $100.00 here).
+    const unsold = { ...articles, paid: 0, cited: 0, revenueCents: 0 };
+    const nothing = checkRecommendations(
+      {
+        recommendations: [
+          {
+            ...raise(unsold),
+            suggestedPriceCents: 10_000,
+            headline: "Raise it",
+            rationale: "Try it.",
+          },
+        ],
+      },
+      { ...inputs, rules: [premium, unsold] },
+    );
+    expect(nothing).toEqual({ recommendations: [], dropped: 1 });
+  });
+
+  it("tolerates loose shapes in fields BotFare replaces or trims", () => {
+    const { recommendations, dropped } = checkRecommendations(
+      {
+        recommendations: [
+          {
+            ...honest,
+            pattern: "/articles/premium-* ",
+            projectedWeeklyRevenueDeltaCents: 12.5,
+            headline: " ".repeat(3),
+          },
+          { ...honest, kind: "keep", previewAdvice: "Show the list. ".repeat(40) },
+        ],
+      },
+      inputs,
+    );
+    expect(dropped).toBe(0);
+    expect(recommendations[0]).toMatchObject({ pattern: "/articles/premium-*", headline: "" });
+    expect(recommendations[0]?.projectedWeeklyRevenueDeltaCents).toBeGreaterThan(0);
+    // Advice over the contract's 400 characters is removed from a keep; the keep stays.
+    expect(recommendations[1]?.kind).toBe("keep");
+    expect(recommendations[1]?.previewAdvice).toBeUndefined();
   });
 
   it("drops shapes the contract rejects, duplicates, and anything past six", () => {
@@ -251,8 +360,8 @@ describe("checkRecommendations", () => {
   });
 
   it("matches a rule by method when a pattern has rules for several methods", () => {
-    const post = rule({ pattern: "/api/brew-ratio", method: "POST", priceCents: 1, offers: 4 });
-    const get = rule({ pattern: "/api/brew-ratio", method: "GET", priceCents: 1, offers: 9 });
+    const post = rule({ pattern: "/api/brew-ratio", method: "POST", priceCents: 3, offers: 4 });
+    const get = rule({ pattern: "/api/brew-ratio", method: "GET", priceCents: 3, offers: 9 });
     const twoMethods: AdvisorInputs = { ...inputs, rules: [get, post] };
     const { recommendations } = checkRecommendations(
       {
@@ -260,7 +369,7 @@ describe("checkRecommendations", () => {
           {
             pattern: "/api/brew-ratio",
             kind: "price",
-            currentPriceCents: 1,
+            currentPriceCents: 3,
             suggestedPriceCents: 2,
             headline: "4 offers, no purchases yet",
             rationale: "Too early to tell.",
@@ -273,6 +382,7 @@ describe("checkRecommendations", () => {
       twoMethods,
     );
     expect(recommendations[0]?.method).toBe("POST");
+    expect(recommendations[0]?.evidence.offers).toBe(4);
   });
 });
 
@@ -284,6 +394,7 @@ describe("numbersAreGrounded", () => {
       "Over 14 days 61% declined.",
       "Two weeks, 3 notes, about 0.5 of them on price.",
       "Agents on /articles/premium-* skipped it.",
+      "0.50 dollars is the price; 0.08 USD would sell.",
     ]) {
       expect(numbersAreGrounded(text, premium, 14, 8), text).toBe(true);
     }
@@ -297,6 +408,11 @@ describe("numbersAreGrounded", () => {
       "45¢ would work",
       "93% declined",
       "1.5x",
+      "10k agents declined",
+      "2 million offers",
+      "5 dollars is too much",
+      "USD 9 is right",
+      "$5k a week",
     ]) {
       expect(numbersAreGrounded(text, premium, 14, 8), text).toBe(false);
     }
@@ -395,7 +511,7 @@ describe("generateRecommendations", () => {
   });
 
   it("asks once more when every suggestion was dropped, and uses the second answer", async () => {
-    const wrong = { ...honest, evidence: { ...honest.evidence, offers: 230 } };
+    const wrong = { ...honest, rationale: "87% of agents called it thin." };
     const replies = [
       JSON.stringify({ recommendations: [wrong] }),
       JSON.stringify({ recommendations: [honest] }),
@@ -413,6 +529,26 @@ describe("generateRecommendations", () => {
     expect(result.dropped).toBe(0);
   });
 
+  it("repairs loosely copied numbers without asking again", async () => {
+    const loose = {
+      ...honest,
+      currentPriceCents: 45,
+      evidence: {
+        ...honest.evidence,
+        offers: 24,
+        topReasons: [{ reason: "Thin listicle, no specifics", count: 8 }],
+      },
+    };
+    const fake = scripted(async () => message(JSON.stringify({ recommendations: [loose] })));
+    const result = await generateRecommendations(fake.model, inputs);
+    expect(fake.calls).toHaveLength(1);
+    expect(result).toMatchObject({ status: "ready", dropped: 0 });
+    expect(result.recommendations[0]?.evidence).toEqual({
+      ...evidenceOf(premium),
+      topReasons: [{ reason: "Thin listicle, no specifics", count: 9 }],
+    });
+  });
+
   it("does not ask again when some suggestions survive or none were made", async () => {
     for (const recs of [[honest, { ...honest, pattern: "/nope/*" }], []]) {
       const fake = scripted(async () => message(JSON.stringify({ recommendations: recs })));
@@ -423,7 +559,7 @@ describe("generateRecommendations", () => {
   });
 
   it("reports an error, and does not cache it, when the retry is dropped too", async () => {
-    const wrong = { ...honest, evidence: { ...honest.evidence, paid: 1 } };
+    const wrong = { ...honest, rationale: "This page could earn $40.00 a week." };
     const create = vi.fn<AdvisorModelClient["beta"]["messages"]["create"]>(async () =>
       message(JSON.stringify({ recommendations: [wrong] })),
     );

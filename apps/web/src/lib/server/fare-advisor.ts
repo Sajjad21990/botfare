@@ -35,11 +35,14 @@ import { toSiteView } from "./publisher";
  * Fare Advisor: "why didn't the bot buy?". Reads what agents did on a publisher's pages (offers
  * shown, paid, declined with a reason, cited, disputed), asks the model (Claude by default, or the
  * server's AI_PROVIDER: ./ai/providers) for at most six price, preview
- * or audience recommendations, and checks every one in code before the publisher sees it:
+ * or audience recommendations, and repairs and checks every one in code before the publisher sees it:
  *
- * - The pattern must be one of the site's pricing rules, and the current price must be that rule's.
- * - The evidence counts must equal the rule's real counts, and quoted decline reasons must be real
- *   reasons with their real counts. Numbers in the headline and rationale must come from the data.
+ * - The pattern must be one of the site's pricing rules; anything else is dropped.
+ * - The current price and evidence counts are replaced with the rule's real ones, and quoted decline
+ *   reasons are kept only when they are real reasons (shown with their real text and counts).
+ * - Numbers in the prose must come from the data: an ungrounded headline is blanked (the dashboard
+ *   writes a plain one), ungrounded side advice is removed, and an ungrounded rationale (or a
+ *   preview recommendation's advice) drops the recommendation.
  * - The projected weekly revenue change is computed here from the funnel, not taken from the model.
  *
  * Nothing changes a price except POST /api/publisher/advisor/apply, which a publisher's click
@@ -172,9 +175,9 @@ export const ADVISOR_SYSTEM_PROMPT = [
   `Return at most ${MAX_RECOMMENDATIONS} recommendations, the most valuable first, for rules where the evidence supports a change. Return an empty list if nothing is supported.`,
   "- pattern: exactly one of the rule patterns in the input. currentPriceCents: that rule's priceCents.",
   "- kind 'price': set suggestedPriceCents (whole cents, 1 to 10000). kind 'preview': set previewAdvice (how to make the free title and preview show what the page offers). kind 'audience': set suggestedAudience ('agents' or 'everyone'). kind 'keep': the price works; say why (for example, high paid and cited counts).",
-  "- evidence: copy offers, paid, declined, cited and disputed exactly from that rule, and topReasons only from that rule's topReasons, with their exact text and counts. Recommendations whose numbers differ from the input are discarded.",
+  "- evidence: copy offers, paid, declined, cited and disputed exactly from that rule, and topReasons only from that rule's topReasons, with their exact text and counts. Quoted reasons that are not in the input are removed.",
   "- headline: one short sentence that leads with the key numbers, e.g. '0 of 23 agents bought at 50¢; 14 called it a thin listicle'. rationale: two to four plain sentences.",
-  "- Use only numbers from the input (counts, prices, the window in days) or simple percentages of them. Do not state revenue projections; BotFare computes its own. projectedWeeklyRevenueDeltaCents is your rough guess and is recomputed.",
+  "- Use only numbers from the input (counts, prices, the window in days) or simple percentages of them. A rationale or preview advice with any other number is discarded. Do not state revenue projections; BotFare computes its own. projectedWeeklyRevenueDeltaCents is your rough guess and is recomputed.",
   "- Always include a recommendation for any rule with at least 20 offers and under 10% of them paid.",
   "- confidence from 0 to 1: lower when there are few signals.",
   "- Reasons cluster: many 'too expensive' or 'over budget' notes suggest a lower price; 'thin' or 'vague preview' notes suggest a better preview, a lower price, or both; pages that sell and get cited can hold or raise their price; disputes suggest the page does not match its offer.",
@@ -328,12 +331,26 @@ function groundedNumbers(rule: AdvisorRuleStats, days: number, suggested: number
   return { plain, cents: new Set(cents), percentages };
 }
 
-/** A number with optional thousands separators ("1,000" is one thousand, not 1 and 0). */
-const NUMBER_PATTERN = /(\$)?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(%|¢|cents?\b)?/gi;
+/**
+ * A number with optional thousands separators ("1,000" is one thousand, not 1 and 0), a currency
+ * prefix ($, USD) and a unit (%, ¢, cents, dollars) or magnitude ("10k", "2 million").
+ */
+const NUMBER_PATTERN =
+  /(\$|\busd\s?)?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(%|¢|cents?\b|dollars?\b|usd\b|bucks\b|k\b|m\b|bn\b|thousand\b|million\b|billion\b)?/gi;
+
+/** "10k" is ten thousand: a small number with a magnitude is checked at its full size. */
+const MAGNITUDES: Record<string, number> = {
+  k: 1e3,
+  thousand: 1e3,
+  m: 1e6,
+  million: 1e6,
+  bn: 1e9,
+  billion: 1e9,
+};
 
 /**
- * True when every number in `text` comes from the data: a count, a price (as 50¢, 50 cents or
- * $0.50), the window, or a percentage of two counts (±1). Small numbers (up to 10) and fractions
+ * True when every number in `text` comes from the data: a count, a price (as 50¢, 50 cents,
+ * $0.50 or 0.50 dollars), the window, or a percentage of two counts (±1). Small numbers (up to 10) and fractions
  * below 1 are allowed as ordinary words. Patterns and paths are removed first.
  */
 export function numbersAreGrounded(
@@ -348,10 +365,15 @@ export function numbersAreGrounded(
     stripped = stripped.split(known).join(" ");
   }
   for (const match of stripped.matchAll(NUMBER_PATTERN)) {
-    const [, dollar, digits = "", unit = ""] = match;
-    const value = Number(digits.replaceAll(",", ""));
-    if (dollar) {
+    const [, prefix, digits = "", suffix = ""] = match;
+    const unit = suffix.toLowerCase();
+    const value = Number(digits.replaceAll(",", "")) * (MAGNITUDES[unit] ?? 1);
+    if (prefix || /^(dollars?|usd|bucks)$/.test(unit)) {
       if (!allowed.cents.has(Math.round(value * 100))) return false;
+      continue;
+    }
+    if (MAGNITUDES[unit]) {
+      if (!allowed.plain.has(value)) return false;
       continue;
     }
     if (unit === "%") {
@@ -422,36 +444,82 @@ export function projectWeeklyRevenue(
   return { currentWeeklyCents: Math.round(current), projectedWeeklyCents: Math.round(projected) };
 }
 
-function sameCounts(evidence: AdvisorRecommendation["evidence"], rule: AdvisorRuleStats): boolean {
+/**
+ * A recommendation as the model may write it. The contract's shape, except for the numbers BotFare
+ * replaces with its own (current price, evidence counts, reason counts, the revenue projection),
+ * which are not checked here, a headline that may be blank or too long (the dashboard then writes
+ * its own) and preview advice of any length (checked in checkOne).
+ */
+const modelRecommendationSchema = advisorRecommendationSchema.extend({
+  currentPriceCents: z.unknown().optional(),
+  projectedWeeklyRevenueDeltaCents: z.unknown().optional(),
+  headline: z.string(),
+  previewAdvice: z.string().optional(),
+  evidence: z
+    .object({
+      offers: z.unknown().optional(),
+      paid: z.unknown().optional(),
+      declined: z.unknown().optional(),
+      cited: z.unknown().optional(),
+      disputed: z.unknown().optional(),
+      topReasons: z.array(z.unknown()).catch([]),
+    })
+    .catch({ topReasons: [] })
+    .optional(),
+});
+type ModelRecommendation = z.infer<typeof modelRecommendationSchema>;
+
+const quotedReasonSchema = z.object({ reason: z.string() });
+
+/** The contract's limit on preview advice. */
+const MAX_PREVIEW_ADVICE_CHARS = 400;
+
+/**
+ * The rule a recommendation names: by pattern only (the model's answer has no method). When a
+ * pattern has rules for several methods, the one whose counts the model copied wins, else the first.
+ */
+function ruleFor(rec: ModelRecommendation, inputs: AdvisorInputs): AdvisorRuleStats | undefined {
+  const pattern = rec.pattern.trim();
+  const candidates = rulesForModel(inputs).filter((rule) => rule.pattern === pattern);
+  if (candidates.length <= 1) return candidates[0];
+  const copied = rec.evidence;
   return (
-    evidence.offers === rule.offers &&
-    evidence.paid === rule.paid &&
-    evidence.declined === rule.declined &&
-    evidence.cited === rule.cited &&
-    evidence.disputed === rule.disputed
+    candidates.find(
+      (rule) =>
+        copied?.offers === rule.offers &&
+        copied.paid === rule.paid &&
+        copied.declined === rule.declined &&
+        copied.cited === rule.cited &&
+        copied.disputed === rule.disputed,
+    ) ?? candidates[0]
   );
 }
 
-/** The quoted reasons with the rule's own text, or null if any is not a real reason and count. */
-function groundedReasons(
-  quoted: AdvisorRecommendation["evidence"]["topReasons"],
-  rule: AdvisorRuleStats,
-): FunnelReason[] | null {
+/**
+ * The quoted reasons that are real reasons of this rule, with the rule's own text and counts
+ * (at most five, each once). Quotes that match no real reason are left out.
+ */
+function groundedReasons(quoted: unknown[], rule: AdvisorRuleStats): FunnelReason[] {
   const real = new Map(
     rule.topReasons.map((r) => [normalize(reasonForModel(r.reason)), r] as const),
   );
   const result: FunnelReason[] = [];
+  const used = new Set<string>();
   for (const item of quoted) {
-    const match = real.get(normalize(item.reason));
-    if (!match || match.count !== item.count) return null;
+    const parsed = quotedReasonSchema.safeParse(item);
+    if (!parsed.success) continue;
+    const key = normalize(reasonForModel(parsed.data.reason));
+    const match = real.get(key);
+    if (!match || used.has(key)) continue;
+    used.add(key);
     result.push({ reason: reasonForModel(match.reason), count: match.count });
   }
-  return result;
+  return result.slice(0, 5);
 }
 
 /**
- * Validates the model's answer against the inputs it was given. Returns the recommendations that
- * pass every check (at most six, one per rule and kind) and how many were discarded.
+ * Repairs and checks the model's answer against the inputs it was given. Returns the
+ * recommendations that survive (at most six, one per rule and kind) and how many were discarded.
  */
 export function checkRecommendations(
   raw: unknown,
@@ -479,24 +547,33 @@ export function checkRecommendations(
   return { recommendations: kept, dropped };
 }
 
+/**
+ * One recommendation, repaired: the rule's real price, counts and reasons replace the model's.
+ * Null when it names no rule, its kind changes nothing, or its rationale (or a preview's advice)
+ * states a number that is not in the data. An ungrounded headline becomes "" (the dashboard writes
+ * a plain one) and ungrounded advice on another kind is removed.
+ */
 function checkOne(item: unknown, inputs: AdvisorInputs): AdvisorRecommendationView | null {
-  const parsed = advisorRecommendationSchema.safeParse(item);
+  const parsed = modelRecommendationSchema.safeParse(item);
   if (!parsed.success) return null;
   const rec = parsed.data;
-  const rule = rulesForModel(inputs).find(
-    (candidate) => candidate.pattern === rec.pattern && sameCounts(rec.evidence, candidate),
-  );
-  if (!rule || rec.currentPriceCents !== rule.priceCents) return null;
-  const topReasons = groundedReasons(rec.evidence.topReasons, rule);
-  if (!topReasons) return null;
+  const rule = ruleFor(rec, inputs);
+  if (!rule) return null;
 
   const view: AdvisorRecommendation = {
-    pattern: rec.pattern,
+    pattern: rule.pattern,
     kind: rec.kind,
     currentPriceCents: rule.priceCents,
     headline: rec.headline.trim(),
     rationale: rec.rationale.trim(),
-    evidence: { ...rec.evidence, topReasons },
+    evidence: {
+      offers: rule.offers,
+      paid: rule.paid,
+      declined: rule.declined,
+      cited: rule.cited,
+      disputed: rule.disputed,
+      topReasons: groundedReasons(rec.evidence?.topReasons ?? [], rule),
+    },
     projectedWeeklyRevenueDeltaCents: 0,
     confidence: rec.confidence,
   };
@@ -518,20 +595,30 @@ function checkOne(item: unknown, inputs: AdvisorInputs): AdvisorRecommendationVi
     case "keep":
       break;
   }
-  if (rec.previewAdvice?.trim() && rec.kind !== "preview") view.previewAdvice = rec.previewAdvice;
-  const suggested = view.suggestedPriceCents;
-  for (const text of [view.headline, view.rationale, view.previewAdvice ?? ""]) {
-    if (!numbersAreGrounded(text, rule, inputs.days, suggested)) return null;
+  if (rec.previewAdvice?.trim() && rec.kind !== "preview") {
+    view.previewAdvice = rec.previewAdvice.trim();
   }
+
+  // Prose with a number that is not in the data is never shown.
+  const suggested = view.suggestedPriceCents;
+  const grounded = (text: string) => numbersAreGrounded(text, rule, inputs.days, suggested);
+  if (!grounded(view.rationale)) return null;
+  const adviceFits = (text: string) => text.length <= MAX_PREVIEW_ADVICE_CHARS && grounded(text);
+  if (view.previewAdvice !== undefined && !adviceFits(view.previewAdvice)) {
+    if (view.kind === "preview") return null;
+    delete view.previewAdvice;
+  }
+  if (view.headline.length > 160 || !grounded(view.headline)) view.headline = "";
 
   const projection = projectWeeklyRevenue(rule, view, inputs.days);
   view.projectedWeeklyRevenueDeltaCents =
     projection.projectedWeeklyCents - projection.currentWeeklyCents;
-  // A price raise that BotFare's own estimate says loses money is not shown; price cuts stay.
+  // A price raise is shown only when BotFare's own estimate says it gains money (a raise on a rule
+  // nobody pays for estimates ±0); price cuts stay.
   if (
     view.kind === "price" &&
     (view.suggestedPriceCents ?? 0) > rule.priceCents &&
-    view.projectedWeeklyRevenueDeltaCents < 0
+    view.projectedWeeklyRevenueDeltaCents <= 0
   ) {
     return null;
   }
@@ -654,11 +741,11 @@ function visitors(): TurnLimiter {
   return globalForBudget.__botfareAdvisorVisitors;
 }
 
-/** Sent when every suggestion in the first answer failed the grounding checks. */
+/** Sent when every suggestion in the first answer failed the checks. */
 export const ADVISOR_RETRY_PROMPT = [
-  "BotFare discarded all of your recommendations because their evidence numbers or reasons did not match the input exactly.",
-  "Answer again. Copy offers, paid, declined, cited, disputed and topReasons (reason text and count) verbatim from the rule's numbers in the input,",
-  "and use only numbers that appear in the input in headlines and rationales.",
+  "BotFare discarded all of your recommendations: each named a pattern that is not a rule in the input, did not change the price or audience its kind asks for,",
+  "or stated a number in its rationale or preview advice that is not in the input.",
+  "Answer again. Copy patterns, counts and prices verbatim from the input, and use only those numbers (or simple percentages of them) in your sentences.",
 ].join(" ");
 
 /** Shown when the retry's suggestions were discarded too. */

@@ -44,7 +44,10 @@ export function formatDelta(cents: number): string {
   return `${cents > 0 ? "+" : "−"}${formatPrice(Math.abs(cents))}`;
 }
 
-/** A plain headline for when the AI's own one was only a revenue claim. */
+/**
+ * A plain headline for when the AI's own one was only a revenue claim, or blank (the server blanks
+ * a headline that states numbers not in the data).
+ */
 function fallbackHeadline(rec: AdvisorRecommendationView): string {
   switch (rec.kind) {
     case "price":
